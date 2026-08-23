@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Contratti di Affitto - Studio Commercialista</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fas fa-balance-scale"></i>
+                <span>Studio Santantonio</span>
+            </div>
+            <button class="sidebar-close" id="sidebarClose">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-page="dashboard">
+                <i class="fas fa-th-large"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="#" class="nav-item" data-page="contratti">
+                <i class="fas fa-file-contract"></i>
+                <span>Contratti</span>
+            </a>
+            <a href="#" class="nav-item" data-page="scadenze">
+                <i class="fas fa-calendar-alt"></i>
+                <span>Scadenze</span>
+            </a>
+            <a href="#" class="nav-item" data-page="inquilini">
+                <i class="fas fa-users"></i>
+                <span>Inquilini</span>
+            </a>
+            <a href="#" class="nav-item" data-page="pagamenti">
+                <i class="fas fa-euro-sign"></i>
+                <span>Pagamenti</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user-tie"></i>
+                </div>
+                <div class="user-details">
+                    <span class="user-name">Santantonio Robertino Luigi</span>
+                    <span class="user-role">Dottore Commercialista</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="topbar">
+            <button class="menu-toggle" id="menuToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="topbar-search">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Cerca contratti, inquilini..." id="globalSearch">
+            </div>
+            <div class="topbar-actions">
+                <button class="topbar-btn" id="notifBtn" title="Notifiche">
+                    <i class="fas fa-bell"></i>
+                    <span class="notif-badge" id="notifBadge">3</span>
+                </button>
+                <button class="topbar-btn" id="themeToggle" title="Tema">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Notification Panel -->
+        <div class="notification-panel" id="notifPanel">
+            <div class="notif-header">
+                <h3>Notifiche</h3>
+                <button class="notif-clear" id="notifClear">Segna tutte come lette</button>
+            </div>
+            <div class="notif-list" id="notifList">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Page: Dashboard -->
+        <section class="page active" id="page-dashboard">
+            <div class="page-header">
+                <div>
+                    <h1>Dashboard</h1>
+                    <p class="page-subtitle">Panoramica generale dei contratti di affitto</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openModal('newContratto')">
+                        <i class="fas fa-plus"></i> Nuovo Contratto
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card stat-blue">
+                    <div class="stat-icon"><i class="fas fa-file-contract"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statContratti">0</span>
+                        <span class="stat-label">Contratti Attivi</span>
+                    </div>
+                    <div class="stat-trend up"><i class="fas fa-arrow-up"></i> 12%</div>
+                </div>
+                <div class="stat-card stat-green">
+                    <div class="stat-icon"><i class="fas fa-euro-sign"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statEntrate">€0</span>
+                        <span class="stat-label">Entrate Mensili</span>
+                    </div>
+                    <div class="stat-trend up"><i class="fas fa-arrow-up"></i> 8%</div>
+                </div>
+                <div class="stat-card stat-orange">
+                    <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statScadenze">0</span>
+                        <span class="stat-label">Scadenze Imminenti</span>
+                    </div>
+                    <div class="stat-trend warning"><i class="fas fa-clock"></i> Urgenti</div>
+                </div>
+                <div class="stat-card stat-purple">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statInquilini">0</span>
+                        <span class="stat-label">Inquilini Totali</span>
+                    </div>
+                    <div class="stat-trend neutral"><i class="fas fa-minus"></i> Stabile</div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Entrate vs Uscite</h3>
+                        <select id="chartPeriod" class="chart-select">
+                            <option value="6">Ultimi 6 mesi</option>
+                            <option value="12">Ultimo anno</option>
+                        </select>
+                    </div>
+                    <canvas id="chartEntrate" height="250"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Distribuzione Tipologie</h3>
+                    </div>
+                    <canvas id="chartTipologie" height="250"></canvas>
+                </div>
+            </div>
+
+            <!-- Recent Activity & Upcoming -->
+            <div class="bottom-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-clock"></i> Scadenze Prossime</h3>
+                        <a href="#" class="card-link" onclick="navigateTo('scadenze')">Vedi tutte</a>
+                    </div>
+                    <div class="upcoming-list" id="upcomingDeadlines">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-history"></i> Attività Recenti</h3>
+                    </div>
+                    <div class="activity-list" id="recentActivity">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page: Contratti -->
+        <section class="page" id="page-contratti">
+            <div class="page-header">
+                <div>
+                    <h1>Gestione Contratti</h1>
+                    <p class="page-subtitle">Gestisci tutti i contratti di locazione</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" onclick="exportData('contratti')">
+                        <i class="fas fa-download"></i> Esporta
+                    </button>
+                    <button class="btn btn-primary" onclick="openModal('newContratto')">
+                        <i class="fas fa-plus"></i> Nuovo Contratto
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterStato" class="filter-select">
+                        <option value="all">Tutti gli stati</option>
+                        <option value="attivo">Attivo</option>
+                        <option value="in-scadenza">In Scadenza</option>
+                        <option value="scaduto">Scaduto</option>
+                        <option value="sospeso">Sospeso</option>
+                    </select>
+                    <select id="filterTipologia" class="filter-select">
+                        <option value="all">Tutte le tipologie</option>
+                        <option value="residenziale">Residenziale</option>
+                        <option value="commerciale">Commerciale</option>
+                        <option value="garage">Garage</option>
+                        <option value="magazzino">Magazzino</option>
+                    </select>
+                </div>
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="cards" onclick="setView('cards')">
+                        <i class="fas fa-th"></i>
+                    </button>
+                    <button class="view-btn" data-view="table" onclick="setView('table')">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cards View -->
+            <div class="contracts-grid" id="contractsCards">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Table View -->
+            <div class="table-container" id="contractsTable" style="display:none;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Codice</th>
+                            <th>Inquilino</th>
+                            <th>Immobile</th>
+                            <th>Canone</th>
+                            <th>Inizio</th>
+                            <th>Scadenza</th>
+                            <th>Stato</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contractsTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Scadenze -->
+        <section class="page" id="page-scadenze">
+            <div class="page-header">
+                <div>
+                    <h1>Scadenze e Adempimenti</h1>
+                    <p class="page-subtitle">Gestisci le scadenze fiscali e contrattuali</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openModal('newScadenza')">
+                        <i class="fas fa-plus"></i> Nuova Scadenza
+                    </button>
+                </div>
+            </div>
+
+            <!-- Calendar View Toggle -->
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterScadenzaTipo" class="filter-select">
+                        <option value="all">Tutti i tipi</option>
+                        <option value="canone">Canone d'affitto</option>
+                        <option value="imposta">Imposta di registro</option>
+                        <option value="bolletta">Bolletta/UTenze</option>
+                        <option value="sicurezza">Sicurezza/Manutenzione</option>
+                        <option value="rinnovo">Rinnovo contratto</option>
+                        <option value="versamento">Versamento IMU/TARI</option>
+                    </select>
+                    <select id="filterScadenzaUrgenza" class="filter-select">
+                        <option value="all">Tutta la priorità</option>
+                        <option value="alta">Alta</option>
+                        <option value="media">Media</option>
+                        <option value="bassa">Bassa</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Timeline View -->
+            <div class="scadenze-timeline" id="scadenzeTimeline">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Page: Inquilini -->
+        <section class="page" id="page-inquilini">
+            <div class="page-header">
+                <div>
+                    <h1>Gestione Inquilini</h1>
+                    <p class="page-subtitle">Anagrafica completa degli inquilini</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="openModal('newInquilino')">
+                        <i class="fas fa-plus"></i> Nuovo Inquilino
+                    </button>
+                </div>
+            </div>
+
+            <div class="inquilini-grid" id="inquiliniGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Page: Pagamenti -->
+        <section class="page" id="page-pagamenti">
+            <div class="page-header">
+                <div>
+                    <h1>Pagamenti</h1>
+                    <p class="page-subtitle">Gestisci i movimenti finanziari</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" onclick="exportData('pagamenti')">
+                        <i class="fas fa-download"></i> Esporta CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="openModal('newPagamento')">
+                        <i class="fas fa-plus"></i> Registra Pagamento
+                    </button>
+                </div>
+            </div>
+
+            <!-- Payment Summary -->
+            <div class="payment-summary">
+                <div class="pay-card pay-entrata">
+                    <i class="fas fa-arrow-down"></i>
+                    <div>
+                        <span class="pay-amount" id="payEntrate">€0</span>
+                        <span class="pay-label">Entrate Totali</span>
+                    </div>
+                </div>
+                <div class="pay-card pay-uscita">
+                    <i class="fas fa-arrow-up"></i>
+                    <div>
+                        <span class="pay-amount" id="payUscite">€0</span>
+                        <span class="pay-label">Uscite Totali</span>
+                    </div>
+                </div>
+                <div class="pay-card pay-bilancio">
+                    <i class="fas fa-balance-scale"></i>
+                    <div>
+                        <span class="pay-amount" id="payBilancio">€0</span>
+                        <span class="pay-label">Bilancio</span>
+                    </div>
+                </div>
+                <div class="pay-card pay-in-attesa">
+                    <i class="fas fa-hourglass-half"></i>
+                    <div>
+                        <span class="pay-amount" id="payInAttesa">€0</span>
+                        <span class="pay-label">In Attesa</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3>Storico Pagamenti</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Contratto</th>
+                            <th>Inquilino</th>
+                            <th>Tipo</th>
+                            <th>Importo</th>
+                            <th>Stato</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pagamentiTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Nuovo Contratto</h2>
+                <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+</body>
+</html>
