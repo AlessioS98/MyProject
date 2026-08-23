@@ -4,7 +4,7 @@
 
 // --- Supabase Init ---
 const SUPABASE_URL = 'https://djqbrwlbjctloxspepnc.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_divaANu6NCYODdJpDdFvAg_iyb1Z7aG';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqcWJyd2xiamN0bG94c3BlcG5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0ODc5NDAsImV4cCI6MjEwMzA2Mzk0MH0.ah9cvekaWwu9PkamgkhlTroy6z5Hd9gGgoo77W4uI3c';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
@@ -64,7 +64,7 @@ function getImmobileLabel(id) {
 }
 
 // --- Calculate contract status ---
-function calcContrattoStato(c) {
+function  calcContrattoStato(c) {
     if (c.data_chiusura) return 'scaduto';
     var d = daysUntil(c.data_scadenza);
     if (d <= 0) return 'scaduto';
@@ -128,7 +128,7 @@ document.addEventListener('click', function(e) {
         case 'new-scadenza': openModal('newScadenza'); break;
         case 'edit-scadenza': openModal('editScadenza', id); break;
         case 'delete-scadenza': deleteScadenza(id); break;
-        case 'complete-scadenza': completeScadenza(id); break;
+        case 'complete-scadenza': openModal('completeScadenza', id); break;
         case 'new-inquilino': openModal('newInquilino'); break;
         case 'new-pagamento': openModal('newPagamento'); break;
         case 'delete-pagamento': deletePagamento(id); break;
@@ -250,17 +250,17 @@ function openModal(type, id) {
         html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="cf_loc_rs" value="' + (loc ? (loc.ragione_sociale || '') : '') + '"></div>';
 
         // --- SEZIONE CONDUTTORE ---
-        html += '<div class="form-section-title full"><i class="fas fa-user"></i> Conduttore</div>';
+        html += '<br><div class="form-section-title full"><i class="fas fa-user"></i> Conduttore</div>';
         html += '<div class="form-group"><label>Nome</label><input type="text" id="cf_cond_nome" value="' + (cond ? cond.nome : '') + '" required></div>';
         html += '<div class="form-group"><label>Cognome</label><input type="text" id="cf_cond_cognome" value="' + (cond ? cond.cognome : '') + '" required></div>';
         html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="cf_cond_cf" value="' + (cond ? (cond.codice_fiscale || '') : '') + '"></div>';
         html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="cf_cond_rs" value="' + (cond ? (cond.ragione_sociale || '') : '') + '"></div>';
 
         // --- SEZIONE IMMOBILE ---
-        html += '<div class="form-section-title full"><i class="fas fa-home"></i> Immobile</div>';
+        html += '<br><div class="form-section-title full"><i class="fas fa-home"></i> Immobile</div>';
         html += '<div class="form-group full"><label>Indirizzo</label><input type="text" id="cf_imm_indirizzo" value="' + (imm ? imm.indirizzo : '') + '" required></div>';
         html += '<div class="form-group"><label>Città</label><input type="text" id="cf_imm_citta" value="' + (imm ? imm.citta : '') + '" required></div>';
-        html += '<div class="form-group"><label>APE</label><label class="checkbox-label"><input type="checkbox" id="cf_imm_ape"' + (imm && imm.ape ? ' checked' : '') + '> Ha APE</label></div>';
+        html += '<div class="form-group"><label>APE</label><label class="checkbox-label"><input type="checkbox" id="cf_imm_ape"' + (imm && imm.ape ? ' checked' : '') + '></label></div>';
         html += '<div class="form-group"><label>Foglio</label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '"></div>';
         html += '<div class="form-group"><label>Particella</label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '"></div>';
         html += '<div class="form-group"><label>Sub</label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '"></div>';
@@ -314,6 +314,22 @@ function openModal(type, id) {
         html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="iqf_cf"></div>';
         html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="iqf_rs"></div>';
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</form>';
+
+    } else if (type === 'completeScadenza') {
+        var sc = appData.scadenze.find(function(x) { return x.id === id; });
+        if (!sc) return;
+        var ct = appData.contratti.find(function(x) { return x.id === sc.contratto_id; });
+        title.textContent = 'Completa Scadenza';
+        html = '<form id="completeScadenzaForm" class="form-grid">';
+        html += '<div class="form-group full" style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px">';
+        html += '<strong>' + sc.titolo + '</strong><br>';
+        html += '<span style="color:var(--text-muted)">' + getTipoLabel(sc.tipo) + ' &bull; ' + formatDate(sc.data) + '</span>';
+        if (ct) html += '<br><span style="color:var(--text-muted)">' + ct.identificativo + ' - ' + getPersonaLabel(ct.conduttore_id) + '</span>';
+        html += '</div>';
+        html += '<div class="form-group"><label>Data Pagamento</label><input type="date" id="csf_data" value="' + sc.data + '" required></div>';
+        html += '<div class="form-group"><label>Importo (EUR)</label><input type="number" id="csf_importo" min="0" step="0.01" required></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Completa e Registra Pagamento</button></div>';
         html += '</form>';
 
     } else if (type === 'viewContratto') {
@@ -374,6 +390,8 @@ function openModal(type, id) {
     if (pf) pf.addEventListener('submit', function(e) { e.preventDefault(); savePagamento(); });
     var iqf = document.getElementById('inquilinoForm');
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
+    var csf = document.getElementById('completeScadenzaForm');
+    if (csf) csf.addEventListener('submit', function(e) { e.preventDefault(); confirmCompleteScadenza(id); });
 }
 
 function closeModal() {
@@ -554,13 +572,35 @@ async function deleteScadenza(id) {
     await refreshPage('scadenze');
 }
 
-async function completeScadenza(id) {
-    var { error } = await db.from('scadenze').update({ stato: 'completata' }).eq('id', id);
-    if (error) { showToast('Errore', 'error'); return; }
-    var s = appData.scadenze.find(function(x) { return x.id === id; });
-    if (s) s.stato = 'completata';
-    showToast('Scadenza completata!', 'success');
+async function confirmCompleteScadenza(scadenzaId) {
+    var s = appData.scadenze.find(function(x) { return x.id === scadenzaId; });
+    if (!s) return;
+    var data = document.getElementById('csf_data').value;
+    var importo = parseFloat(document.getElementById('csf_importo').value) || 0;
+    if (!data || importo <= 0) { showToast('Inserisci data e importo', 'error'); return; }
+
+    // 1. Mark scadenza as completed
+    var { error: err1 } = await db.from('scadenze').update({ stato: 'completata' }).eq('id', scadenzaId);
+    if (err1) { showToast('Errore aggiornamento scadenza', 'error'); return; }
+    s.stato = 'completata';
+
+    // 2. Create linked payment
+    var pagamento = {
+        contratto_id: s.contratto_id,
+        data: data,
+        tipo: s.tipo,
+        importo: importo,
+        stato: 'completato'
+    };
+    var { data: insData, error: err2 } = await db.from('pagamenti').insert(pagamento).select('id').single();
+    if (err2) { console.error('Errore creazione pagamento:', err2); showToast('Scadenza completata ma errore nel pagamento', 'error'); closeModal(); await refreshPage('scadenze'); return; }
+    pagamento.id = insData.id;
+    appData.pagamenti.push(pagamento);
+
+    closeModal();
+    showToast('Scadenza completata e pagamento registrato!', 'success');
     await refreshPage('scadenze');
+    await refreshPage('pagamenti');
 }
 
 async function deletePagamento(id) {
@@ -651,7 +691,7 @@ async function renderDashboard() {
 // --- Charts ---
 var chartEntrate = null, chartTipologie = null;
 function renderCharts() {
-    var months = [], entrateData = [], usciteData = [], now = new Date();
+    var months = [], entrateData = [], now = new Date();
     for (var i = 5; i >= 0; i--) {
         var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         months.push(d.toLocaleDateString('it-IT', { month: 'short', year: '2-digit' }));
@@ -661,11 +701,10 @@ function renderCharts() {
             return pd.getMonth() === m && pd.getFullYear() === y && p.tipo === 'canone' && p.stato === 'completato';
         }).reduce(function(s, p) { return s + p.importo; }, 0);
         entrateData.push(ent);
-        usciteData.push(Math.round(ent * 0.15));
     }
     if (chartEntrate) chartEntrate.destroy();
     chartEntrate = new Chart(document.getElementById('chartEntrate').getContext('2d'), {
-        type: 'bar', data: { labels: months, datasets: [{ label: 'Entrate', data: entrateData, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 6 }, { label: 'Uscite', data: usciteData, backgroundColor: 'rgba(239,68,68,0.5)', borderRadius: 6 }] },
+        type: 'bar', data: { labels: months, datasets: [{ label: 'Entrate', data: entrateData, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 6 }] },
         options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true } } }
     });
 
@@ -800,15 +839,10 @@ async function renderInquilini() {
 
 // --- Render Pagamenti ---
 async function renderPagamenti() {
-    var pagamenti = appData.pagamenti.slice().sort(function(a, b) { return new Date(b.data) - new Date(a.data); });
-    var entrata = pagamenti.filter(function(p) { return p.stato === 'completato'; }).reduce(function(s, p) { return s + p.importo; }, 0);
-    var inAttesa = pagamenti.filter(function(p) { return p.stato === 'in-attesa'; }).reduce(function(s, p) { return s + p.importo; }, 0);
-    var uscite = Math.round(entrata * 0.15);
+    var pagamenti = appData.pagamenti.filter(function(p) { return p.stato === 'completato'; }).sort(function(a, b) { return new Date(b.data) - new Date(a.data); });
+    var entrata = pagamenti.reduce(function(s, p) { return s + p.importo; }, 0);
 
     document.getElementById('payEntrate').textContent = formatCurrency(entrata);
-    document.getElementById('payUscite').textContent = formatCurrency(uscite);
-    document.getElementById('payBilancio').textContent = formatCurrency(entrata - uscite);
-    document.getElementById('payInAttesa').textContent = formatCurrency(inAttesa);
 
     var tbody = document.getElementById('pagamentiTableBody');
     tbody.innerHTML = pagamenti.map(function(p) {
