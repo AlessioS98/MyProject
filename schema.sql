@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS pagamenti (
   created_at timestamptz DEFAULT now()
 );
 
+-- 6. Aggiunta colonne percentuale e valore_assoluto
+ALTER TABLE contratti ADD COLUMN IF NOT EXISTS percentuale numeric DEFAULT 0;
+ALTER TABLE contratti ADD COLUMN IF NOT EXISTS valore_assoluto numeric DEFAULT 0;
+
 -- Disabilita RLS (single-user app)
 ALTER TABLE anagrafica_persona DISABLE ROW LEVEL SECURITY;
 ALTER TABLE immobili DISABLE ROW LEVEL SECURITY;
@@ -116,3 +120,9 @@ INSERT INTO pagamenti (contratto_id, data, tipo, importo, stato) VALUES
 (4, '2024-12-01', 'canone', 1800, 'completato'),
 (1, '2025-01-10', 'spese', 150, 'completato'),
 (2, '2025-02-01', 'canone', 2500, 'in-attesa');
+
+-- Contratti fittizzi di esempio
+INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, tassazione_cedolare_secca, locatore_id, conduttore_id, immobile_id, canone_mensile, canone_annuale, percentuale, valore_assoluto, note) VALUES
+('LOC-2025-010', '2025-01-01', '2026-09-10', NULL, false, 2, 1, 5, 750, 9000, 15, 1125, 'Bilocale centro - in scadenza a breve'),
+('LOC-2025-011', '2023-03-01', '2025-07-31', NULL, false, 4, 3, 2, 1500, 18000, 10, 1500, 'Locale commerciale - scaduto'),
+('LOC-2025-012', '2025-06-01', '2028-05-31', NULL, true, 6, 5, 4, 1100, 13200, 20, 2200, 'Trilocale con giardino - attivo');

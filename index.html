@@ -39,6 +39,10 @@
                 <i class="fas fa-euro-sign"></i>
                 <span>Pagamenti</span>
             </a>
+            <a href="#" class="nav-item" data-page="archivio">
+                <i class="fas fa-archive"></i>
+                <span>Archivio Contratti Chiusi</span>
+            </a>
         </nav>
         <div class="sidebar-footer">
             <div class="user-info">
@@ -89,11 +93,6 @@
                     <h1>Dashboard</h1>
                     <p class="page-subtitle">Panoramica generale dei contratti di affitto</p>
                 </div>
-                <div class="header-actions">
-                    <button class="btn btn-primary" onclick="openModal('newContratto')">
-                        <i class="fas fa-plus"></i> Nuovo Contratto
-                    </button>
-                </div>
             </div>
 
             <!-- Stats Cards -->
@@ -102,18 +101,10 @@
                     <div class="stat-icon"><i class="fas fa-file-contract"></i></div>
                     <div class="stat-info">
                         <span class="stat-value" id="statContratti">0</span>
-                        <span class="stat-label">Contratti Attivi</span>
+                        <span class="stat-label">Contratti Attivi e In Scadenza</span>
                     </div>
-                    <div class="stat-trend up"><i class="fas fa-arrow-up"></i> 12%</div>
                 </div>
-                <div class="stat-card stat-green">
-                    <div class="stat-icon"><i class="fas fa-euro-sign"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="statEntrate">€0</span>
-                        <span class="stat-label">Entrate Mensili</span>
-                    </div>
-                    <div class="stat-trend up"><i class="fas fa-arrow-up"></i> 8%</div>
-                </div>
+
                 <div class="stat-card stat-orange">
                     <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
                     <div class="stat-info">
@@ -128,19 +119,15 @@
             <div class="charts-grid">
                 <div class="chart-card">
                     <div class="chart-header">
-                        <h3>Entrate vs Uscite</h3>
-                        <select id="chartPeriod" class="chart-select">
-                            <option value="6">Ultimi 6 mesi</option>
-                            <option value="12">Ultimo anno</option>
-                        </select>
+                        <h3>Distribuzione Contratti</h3>
                     </div>
-                    <canvas id="chartEntrate" height="250"></canvas>
+                    <canvas id="chartTipologie" height="180"></canvas>
                 </div>
                 <div class="chart-card">
                     <div class="chart-header">
-                        <h3>Distribuzione Tipologie</h3>
+                        <h3>Distribuzione Scadenze per Priorità</h3>
                     </div>
-                    <canvas id="chartTipologie" height="250"></canvas>
+                    <canvas id="chartScadenzePriorita" height="180"></canvas>
                 </div>
             </div>
 
@@ -212,7 +199,8 @@
                     <thead>
                         <tr>
                             <th>Codice</th>
-                            <th>Inquilino</th>
+                            <th>Locatore</th>
+                            <th>Conduttore</th>
                             <th>Immobile</th>
                             <th>Canone</th>
                             <th>Inizio</th>
@@ -286,16 +274,7 @@
                 </div>
             </div>
 
-            <!-- Payment Summary -->
-            <div class="payment-summary">
-                <div class="pay-card pay-entrata">
-                    <i class="fas fa-arrow-down"></i>
-                    <div>
-                        <span class="pay-amount" id="payEntrate">€0</span>
-                        <span class="pay-label">Entrate Totali</span>
-                    </div>
-                </div>
-            </div>
+
 
             <div class="card">
                 <div class="card-header">
@@ -306,7 +285,8 @@
                         <tr>
                             <th>Data</th>
                             <th>Contratto</th>
-                            <th>Inquilino</th>
+                            <th>Locatore</th>
+                            <th>Conduttore</th>
                             <th>Tipo</th>
                             <th>Importo</th>
                             <th>Stato</th>
@@ -314,6 +294,44 @@
                         </tr>
                     </thead>
                     <tbody id="pagamentiTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Archivio -->
+        <section class="page" id="page-archivio">
+            <div class="page-header">
+                <div>
+                    <h1>Archivio Contratti Chiusi</h1>
+                    <p class="page-subtitle">Visualizza tutti i contratti chiusi o scaduti</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" onclick="exportData('archivio')">
+                        <i class="fas fa-download"></i> Esporta
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Codice</th>
+                            <th>Locatore</th>
+                            <th>Conduttore</th>
+                            <th>Immobile</th>
+                            <th>Canone</th>
+                            <th>Inizio</th>
+                            <th>Scadenza</th>
+                            <th>Chiusura</th>
+                            <th>Stato</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="archivioTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
