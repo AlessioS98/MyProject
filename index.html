@@ -35,10 +35,6 @@
                 <i class="fas fa-calendar-alt"></i>
                 <span>Scadenze</span>
             </a>
-            <a href="#" class="nav-item" data-page="inquilini">
-                <i class="fas fa-users"></i>
-                <span>Inquilini</span>
-            </a>
             <a href="#" class="nav-item" data-page="pagamenti">
                 <i class="fas fa-euro-sign"></i>
                 <span>Pagamenti</span>
@@ -64,10 +60,6 @@
             <button class="menu-toggle" id="menuToggle">
                 <i class="fas fa-bars"></i>
             </button>
-            <div class="topbar-search">
-                <i class="fas fa-search"></i>
-                <input type="text" placeholder="Cerca contratti, inquilini..." id="globalSearch">
-            </div>
             <div class="topbar-actions">
                 <button class="topbar-btn" id="notifBtn" title="Notifiche">
                     <i class="fas fa-bell"></i>
@@ -129,14 +121,6 @@
                         <span class="stat-label">Scadenze Imminenti</span>
                     </div>
                     <div class="stat-trend warning"><i class="fas fa-clock"></i> Urgenti</div>
-                </div>
-                <div class="stat-card stat-purple">
-                    <div class="stat-icon"><i class="fas fa-users"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="statInquilini">0</span>
-                        <span class="stat-label">Inquilini Totali</span>
-                    </div>
-                    <div class="stat-trend neutral"><i class="fas fa-minus"></i> Stabile</div>
                 </div>
             </div>
 
@@ -202,20 +186,10 @@
             <!-- Filters -->
             <div class="filters-bar">
                 <div class="filter-group">
-                    <select id="filterStato" class="filter-select">
-                        <option value="all">Tutti gli stati</option>
-                        <option value="attivo">Attivo</option>
-                        <option value="in-scadenza">In Scadenza</option>
-                        <option value="scaduto">Scaduto</option>
-                        <option value="sospeso">Sospeso</option>
-                    </select>
-                    <select id="filterTipologia" class="filter-select">
-                        <option value="all">Tutte le tipologie</option>
-                        <option value="residenziale">Residenziale</option>
-                        <option value="commerciale">Commerciale</option>
-                        <option value="garage">Garage</option>
-                        <option value="magazzino">Magazzino</option>
-                    </select>
+                    <button class="btn btn-outline" id="openFilterBtn" onclick="openFilterModal()">
+                        <i class="fas fa-search"></i> Cerca Contratto
+                    </button>
+
                 </div>
                 <div class="view-toggle">
                     <button class="view-btn active" data-view="cards" onclick="setView('cards')">
@@ -295,25 +269,6 @@
             </div>
         </section>
 
-        <!-- Page: Inquilini -->
-        <section class="page" id="page-inquilini">
-            <div class="page-header">
-                <div>
-                    <h1>Gestione Inquilini</h1>
-                    <p class="page-subtitle">Anagrafica completa degli inquilini</p>
-                </div>
-                <div class="header-actions">
-                    <button class="btn btn-primary" onclick="openModal('newInquilino')">
-                        <i class="fas fa-plus"></i> Nuovo Inquilino
-                    </button>
-                </div>
-            </div>
-
-            <div class="inquilini-grid" id="inquiliniGrid">
-                <!-- Populated by JS -->
-            </div>
-        </section>
-
         <!-- Page: Pagamenti -->
         <section class="page" id="page-pagamenti">
             <div class="page-header">
@@ -375,6 +330,112 @@
             </div>
             <div class="modal-body" id="modalBody">
                 <!-- Dynamic content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Modal -->
+    <div class="filter-modal-overlay" id="filterModalOverlay">
+        <div class="filter-modal">
+            <div class="filter-modal-header">
+                <h2><i class="fas fa-filter"></i> Cerca Contratto</h2>
+                <button class="modal-close" onclick="closeFilterModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="filter-modal-body">
+                <!-- Locatore -->
+                <div class="filter-section">
+                    <h3 class="filter-section-title"><i class="fas fa-user-tie"></i> Locatore</h3>
+                    <div class="filter-grid">
+                        <div class="filter-field">
+                            <label>Nome</label>
+                            <select id="ffLocNome"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Cognome</label>
+                            <select id="ffLocCognome"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Codice Fiscale</label>
+                            <select id="ffLocCF"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Ragione Sociale</label>
+                            <select id="ffLocRS"><option value="">Tutte</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Conduttore -->
+                <div class="filter-section">
+                    <h3 class="filter-section-title"><i class="fas fa-user"></i> Conduttore</h3>
+                    <div class="filter-grid">
+                        <div class="filter-field">
+                            <label>Nome</label>
+                            <select id="ffConNome"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Cognome</label>
+                            <select id="ffConCognome"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Codice Fiscale</label>
+                            <select id="ffConCF"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Ragione Sociale</label>
+                            <select id="ffConRS"><option value="">Tutte</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Immobile -->
+                <div class="filter-section">
+                    <h3 class="filter-section-title"><i class="fas fa-map-marker-alt"></i> Immobile</h3>
+                    <div class="filter-grid">
+                        <div class="filter-field">
+                            <label>Indirizzo</label>
+                            <select id="ffIndirizzo"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Città</label>
+                            <select id="ffCitta"><option value="">Tutte</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contratto -->
+                <div class="filter-section">
+                    <h3 class="filter-section-title"><i class="fas fa-file-contract"></i> Contratto</h3>
+                    <div class="filter-grid">
+                        <div class="filter-field">
+                            <label>Identificativo</label>
+                            <select id="ffIdentificativo"><option value="">Tutti</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label>Data Chiusura</label>
+                            <input type="date" id="ffDataChiusura">
+                        </div>
+                    </div>
+                    <div class="filter-range">
+                        <div class="filter-field">
+                            <label>Data Decorrenza</label>
+                            <input type="date" id="ffDecoDa">
+                        </div>
+                        <div class="filter-range-sep"><i class="fas fa-arrow-right"></i></div>
+                        <div class="filter-field">
+                            <label>Data Scadenza</label>
+                            <input type="date" id="ffScadA">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-modal-footer">
+                <button class="btn btn-outline" onclick="resetFilterModal()">
+                    <i class="fas fa-undo"></i> Reset
+                </button>
+                <button class="btn btn-primary" onclick="applyFilterModal()">
+                    <i class="fas fa-filter"></i> Esegui Filtro
+                </button>
             </div>
         </div>
     </div>

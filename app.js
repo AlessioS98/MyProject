@@ -109,7 +109,6 @@ async function refreshPage(page) {
         case 'dashboard': await renderDashboard(); break;
         case 'contratti': await renderContratti(); break;
         case 'scadenze': await renderScadenze(); break;
-        case 'inquilini': await renderInquilini(); break;
         case 'pagamenti': await renderPagamenti(); break;
     }
 }
@@ -173,18 +172,154 @@ document.getElementById('notifPanel').addEventListener('click', function(e) {
     e.stopPropagation();
 });
 
-// --- Search ---
-document.getElementById('globalSearch').addEventListener('input', function(e) {
-    var q = e.target.value.toLowerCase().trim();
-    if (!q) { renderContratti(); return; }
-    var f = appData.contratti.filter(function(c) {
-        var loc = getPersonaLabel(c.locatore_id).toLowerCase();
-        var cond = getPersonaLabel(c.conduttore_id).toLowerCase();
-        var imm = getImmobileLabel(c.immobile_id).toLowerCase();
-        return loc.indexOf(q) >= 0 || cond.indexOf(q) >= 0 || imm.indexOf(q) >= 0 || c.identificativo.toLowerCase().indexOf(q) >= 0;
+// --- Filter Modal ---
+function openFilterModal() {
+    var overlay = document.getElementById('filterModalOverlay');
+    overlay.classList.add('active');
+    populateFilterDropdowns();
+}
+
+function closeFilterModal() {
+    document.getElementById('filterModalOverlay').classList.remove('active');
+}
+
+function populateFilterDropdowns() {
+    var persone = appData.persone;
+    var immobili = appData.immobili;
+    var contratti = appData.contratti;
+
+    // Helper to populate a select with unique values
+    function populate(selectId, values, labelFn) {
+        var sel = document.getElementById(selectId);
+        var first = sel.options[0];
+        sel.innerHTML = '';
+        sel.appendChild(first);
+        var seen = {};
+        values.forEach(function(v) {
+            var label = labelFn(v);
+            if (label && !seen[label]) {
+                seen[label] = true;
+                var opt = document.createElement('option');
+                opt.value = label;
+                opt.textContent = label;
+                sel.appendChild(opt);
+            }
+        });
+    }
+
+    // Locatori
+    var locatori = [];
+    contratti.forEach(function(c) { var p = getPersona(c.locatore_id); if (p) locatori.push(p); });
+    populate('ffLocNome', locatori, function(p) { return p.nome; });
+    populate('ffLocCognome', locatori, function(p) { return p.cognome; });
+    populate('ffLocCF', locatori, function(p) { return p.codice_fiscale; });
+    populate('ffLocRS', locatori, function(p) { return p.ragione_sociale; });
+
+    // Conduttori
+    var conduttori = [];
+    contratti.forEach(function(c) { var p = getPersona(c.conduttore_id); if (p) conduttori.push(p); });
+    populate('ffConNome', conduttori, function(p) { return p.nome; });
+    populate('ffConCognome', conduttori, function(p) { return p.cognome; });
+    populate('ffConCF', conduttori, function(p) { return p.codice_fiscale; });
+    populate('ffConRS', conduttori, function(p) { return p.ragione_sociale; });
+
+    // Immobili
+    var immUsed = [];
+    contratti.forEach(function(c) { var i = getImmobile(c.immobile_id); if (i) immUsed.push(i); });
+    populate('ffIndirizzo', immUsed, function(i) { return i.indirizzo; });
+    populate('ffCitta', immUsed, function(i) { return i.citta; });
+
+    // Identificativi
+    populate('ffIdentificativo', contratti, function(c) { return c.identificativo; });
+}
+
+function resetFilterModal() {
+    document.getElementById('ffLocNome').value = '';
+    document.getElementById('ffLocCognome').value = '';
+    document.getElementById('ffLocCF').value = '';
+    document.getElementById('ffLocRS').value = '';
+    document.getElementById('ffConNome').value = '';
+    document.getElementById('ffConCognome').value = '';
+    document.getElementById('ffConCF').value = '';
+    document.getElementById('ffConRS').value = '';
+    document.getElementById('ffIndirizzo').value = '';
+    document.getElementById('ffCitta').value = '';
+    document.getElementById('ffIdentificativo').value = '';
+    document.getElementById('ffDecoDa').value = '';
+    document.getElementById('ffScadA').value = '';
+    document.getElementById('ffDataChiusura').value = '';
+}
+
+function applyFilterModal() {
+    var f = appData.contratti.slice();
+
+    function matchField(val, filterVal) {
+        if (!filterVal) return true;
+        return val && val.toLowerCase() === filterVal.toLowerCase();
+    }
+
+    // Locatore
+    var locNome = document.getElementById('ffLocNome').value;
+    var locCognome = document.getElementById('ffLocCognome').value;
+    var locCF = document.getElementById('ffLocCF').value;
+    var locRS = document.getElementById('ffLocRS').value;
+    f = f.filter(function(c) {
+        var p = getPersona(c.locatore_id);
+        if (!p) return false;
+        return matchField(p.nome, locNome) && matchField(p.cognome, locCognome) && matchField(p.codice_fiscale, locCF) && matchField(p.ragione_sociale, locRS);
     });
+
+    // Conduttore
+    var conNome = document.getElementById('ffConNome').value;
+    var conCognome = document.getElementById('ffConCognome').value;
+    var conCF = document.getElementById('ffConCF').value;
+    var conRS = document.getElementById('ffConRS').value;
+    f = f.filter(function(c) {
+        var p = getPersona(c.conduttore_id);
+        if (!p) return false;
+        return matchField(p.nome, conNome) && matchField(p.cognome, conCognome) && matchField(p.codice_fiscale, conCF) && matchField(p.ragione_sociale, conRS);
+    });
+
+    // Immobile
+    var indirizzo = document.getElementById('ffIndirizzo').value;
+    var citta = document.getElementById('ffCitta').value;
+    f = f.filter(function(c) {
+        var i = getImmobile(c.immobile_id);
+        if (!i) return false;
+        return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta);
+    });
+
+    // Contratto
+    var ident = document.getElementById('ffIdentificativo').value;
+    var dChi = document.getElementById('ffDataChiusura').value;
+    var dDecoDa = document.getElementById('ffDecoDa').value;
+    var dScadA = document.getElementById('ffScadA').value;
+    f = f.filter(function(c) {
+        // Identificativo
+        if (!matchField(c.identificativo, ident)) return false;
+        // Data chiusura
+        if (!matchField(c.data_chiusura, dChi)) return false;
+        // Date range
+        if (dDecoDa && dScadA) {
+            // Entrambi inseriti: mostra tutti i contratti che si sorappongono al range
+            if (c.data_decorrenza && c.data_decorrenza > dScadA) return false;
+            if (c.data_scadenza && c.data_scadenza < dDecoDa) return false;
+            if (!c.data_decorrenza && !c.data_scadenza) return false;
+        } else if (dDecoDa) {
+            // Solo da decorrenza: contratti con decorrenza >= dDecoDa
+            if (c.data_decorrenza && c.data_decorrenza < dDecoDa) return false;
+            if (!c.data_decorrenza) return false;
+        } else if (dScadA) {
+            // Solo a scadenza: contratti con scadenza <= dScadA
+            if (c.data_scadenza && c.data_scadenza > dScadA) return false;
+            if (!c.data_scadenza) return false;
+        }
+        return true;
+    });
+
+    closeFilterModal();
     renderContrattiList(f);
-});
+}
 
 // --- Export ---
 function exportData(type) {
@@ -548,7 +683,6 @@ async function saveInquilino() {
     appData.persone.push(d);
     closeModal();
     showToast('Inquilino salvato!', 'success');
-    await refreshPage('inquilini');
 }
 
 // --- Delete Operations ---
@@ -631,14 +765,6 @@ async function renderDashboard() {
     document.getElementById('statContratti').textContent = attivi.length;
     document.getElementById('statEntrate').textContent = formatCurrency(entrate);
     document.getElementById('statScadenze').textContent = scadenzeUrgenti.length;
-
-    // Unique personas from active contracts
-    var inqSet = {};
-    attivi.forEach(function(c) {
-        var p = getPersona(c.conduttore_id);
-        if (p) inqSet[p.id] = p;
-    });
-    document.getElementById('statInquilini').textContent = Object.keys(inqSet).length;
 
     // Upcoming deadlines
     var upcoming = appData.scadenze.filter(function(s) { return s.stato !== 'completata'; }).sort(function(a, b) { return new Date(a.data) - new Date(b.data); }).slice(0, 5);
@@ -724,9 +850,7 @@ function renderCharts() {
 // --- Render Contratti ---
 async function renderContratti() { renderContrattiList(appData.contratti); }
 function renderContrattiList(list) {
-    var stato = document.getElementById('filterStato').value;
     var filtered = list;
-    if (stato !== 'all') filtered = filtered.filter(function(c) { return calcContrattoStato(c) === stato; });
 
     var cardsEl = document.getElementById('contractsCards');
     if (filtered.length === 0) {
@@ -806,37 +930,6 @@ async function renderScadenze() {
     el.innerHTML = html;
 }
 
-// --- Render Inquilini ---
-async function renderInquilini() {
-    // Show all personas that are either locatore or conduttore in active contracts
-    var personaMap = {};
-    appData.contratti.forEach(function(c) {
-        var s = calcContrattoStato(c);
-        if (s === 'attivo' || s === 'in-scadenza') {
-            [c.locatore_id, c.conduttore_id].forEach(function(pid) {
-                if (pid && !personaMap[pid]) {
-                    var p = getPersona(pid);
-                    if (p) personaMap[pid] = { id: pid, nome: p.nome + ' ' + p.cognome, cf: p.codice_fiscale, contratti: 0, canone: 0 };
-                }
-                if (pid && personaMap[pid]) {
-                    personaMap[pid].contratti++;
-                    personaMap[pid].canone += (c.canone_mensile || 0);
-                }
-            });
-        }
-    });
-    var el = document.getElementById('inquiliniGrid');
-    var list = Object.values(personaMap);
-    if (list.length === 0) {
-        el.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><p>Nessun inquilino attivo</p></div>';
-        return;
-    }
-    el.innerHTML = list.map(function(iq) {
-        var initials = iq.nome.split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
-        return '<div class="inquilino-card"><div class="inquilino-avatar">' + initials + '</div><div class="inquilino-name">' + iq.nome + '</div>' + (iq.cf ? '<div class="inquilino-detail" style="font-size:0.8em;color:var(--text-muted)">' + iq.cf + '</div>' : '') + '<div class="inquilini-stats"><div class="inquilino-stat"><span class="val">' + iq.contratti + '</span><span class="lbl">Contratti</span></div><div class="inquilino-stat"><span class="val">' + formatCurrency(iq.canone) + '</span><span class="lbl">Canone/mese</span></div></div></div>';
-    }).join('');
-}
-
 // --- Render Pagamenti ---
 async function renderPagamenti() {
     var pagamenti = appData.pagamenti.filter(function(p) { return p.stato === 'completato'; }).sort(function(a, b) { return new Date(b.data) - new Date(a.data); });
@@ -853,8 +946,6 @@ async function renderPagamenti() {
 }
 
 // --- Filter Listeners ---
-document.getElementById('filterStato').addEventListener('change', renderContratti);
-document.getElementById('filterTipologia').addEventListener('change', renderContratti);
 document.getElementById('filterScadenzaTipo').addEventListener('change', renderScadenze);
 document.getElementById('filterScadenzaUrgenza').addEventListener('change', renderScadenze);
 
@@ -866,6 +957,5 @@ document.addEventListener('DOMContentLoaded', async function() {
     await renderDashboard();
     renderContratti();
     renderScadenze();
-    renderInquilini();
     renderPagamenti();
 });

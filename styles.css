@@ -762,6 +762,191 @@ input, select, textarea { font-family: inherit; }
 
 .filter-select:focus { border-color: var(--primary); }
 
+/* ---------- Filter Modal ---------- */
+.filter-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.filter-modal-overlay.active {
+    display: flex;
+}
+
+.filter-modal {
+    background: var(--surface);
+    border-radius: var(--radius-xl);
+    width: 100%;
+    max-width: 700px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    animation: modalSlideIn 0.25s ease;
+}
+
+@keyframes modalSlideIn {
+    from { opacity: 0; transform: translateY(-20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.filter-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.filter-modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+
+.filter-modal-header h2 i {
+    color: var(--primary);
+    font-size: 0.95rem;
+}
+
+.filter-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+}
+
+.filter-section {
+    margin-bottom: 20px;
+}
+
+.filter-section:last-child {
+    margin-bottom: 0;
+}
+
+.filter-section-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.filter-section-title i {
+    font-size: 0.75rem;
+    color: var(--primary);
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.filter-range {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.filter-range .filter-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.filter-range-sep {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.filter-field label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.filter-field select,
+.filter-field input[type="date"] {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.83rem;
+    outline: none;
+    transition: border-color var(--transition);
+    cursor: pointer;
+    width: 100%;
+}
+
+.filter-field select:focus,
+.filter-field input[type="date"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-bg);
+}
+
+.filter-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+}
+
+@media (max-width: 600px) {
+    .filter-modal { max-width: 100%; margin: 0; border-radius: var(--radius-lg); }
+    .filter-grid { grid-template-columns: 1fr; }
+    .filter-range { flex-direction: column; }
+    .filter-range-sep { transform: rotate(90deg); padding: 0; }
+    .filter-modal-body { padding: 16px; }
+}
+
+.search-suggestions .suggestion-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 16px;
+}
+
+.search-suggestions .suggestion-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.83rem;
+}
+
+.search-suggestions .suggestion-empty i {
+    display: block;
+    font-size: 1.4rem;
+    margin-bottom: 8px;
+    opacity: 0.4;
+}
+
 .view-toggle {
     display: flex;
     gap: 4px;
