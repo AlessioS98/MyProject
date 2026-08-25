@@ -44,22 +44,9 @@ CREATE TABLE IF NOT EXISTS contratti (
 CREATE TABLE IF NOT EXISTS scadenze (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
-  tipo text NOT NULL,
-  titolo text NOT NULL,
   data date NOT NULL,
+  prossima_scadenza date,
   urgenza text DEFAULT 'media',
-  stato text DEFAULT 'in-attesa',
-  descrizione text,
-  created_at timestamptz DEFAULT now()
-);
-
--- 5. Pagamenti
-CREATE TABLE IF NOT EXISTS pagamenti (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
-  data date NOT NULL,
-  tipo text NOT NULL,
-  importo numeric DEFAULT 0,
   stato text DEFAULT 'in-attesa',
   created_at timestamptz DEFAULT now()
 );
@@ -78,6 +65,8 @@ CREATE TABLE IF NOT EXISTS canoni_annuali (
   note text,
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS prossima_scadenza date;
 
 ALTER TABLE canoni_annuali DISABLE ROW LEVEL SECURITY;
 
@@ -104,7 +93,6 @@ ALTER TABLE anagrafica_persona DISABLE ROW LEVEL SECURITY;
 ALTER TABLE immobili DISABLE ROW LEVEL SECURITY;
 ALTER TABLE contratti DISABLE ROW LEVEL SECURITY;
 ALTER TABLE scadenze DISABLE ROW LEVEL SECURITY;
-ALTER TABLE pagamenti DISABLE ROW LEVEL SECURITY;
 
 -- Dati di esempio
 -- Persone Fisiche: nome + cognome, ragione_sociale = NULL
@@ -164,29 +152,9 @@ INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUE
 (8, 6000, '2025-08-01', '2026-07-31'),
 (9, 4800, '2024-06-01', '2025-05-31');
 
-INSERT INTO scadenze (contratto_id, tipo, titolo, data, urgenza, stato, descrizione) VALUES
-(1, 'canone', 'Versamento canone gennaio', '2025-01-05', 'media', 'completata', 'Canone mensile via Torino 12'),
-(1, 'canone', 'Versamento canone febbraio', '2025-02-05', 'media', 'in-attesa', 'Canone mensile via Torino 12'),
-(2, 'imposta', 'Imposta di registro annuale', '2025-06-01', 'alta', 'in-attesa', 'Registrazione contratto commerciale'),
-(2, 'sicurezza', 'Controllo antincendio locale', '2025-08-15', 'alta', 'in-attesa', 'Verifica impianto antincendio'),
-(3, 'canone', 'Canone mensile marzo', '2025-03-05', 'media', 'in-attesa', 'Canone mensile via Garibaldi 78'),
-(4, 'versamento', 'Versamento IMU Q1', '2025-06-16', 'alta', 'in-attesa', 'Prima rata IMU magazzino'),
-(5, 'bolletta', 'Bolletta elettricita monolocale', '2025-12-20', 'media', 'in-attesa', 'Scadenza bolletta Piazza Maggiore'),
-(6, 'rinnovo', 'Verifica rinnovo contratto box', '2025-11-15', 'bassa', 'in-attesa', 'Controllare clausola di rinnovo box auto'),
-(7, 'canone', 'Canone mensile aprile', '2025-04-05', 'media', 'in-attesa', 'Canone mensile Corso Italia'),
-(9, 'imposta', 'Imposta di registro attico', '2025-06-01', 'alta', 'in-attesa', 'Registrazione contratto attico');
-
-INSERT INTO pagamenti (contratto_id, data, tipo, importo, stato) VALUES
-(1, '2025-01-05', 'canone', 625, 'completato'),
-(2, '2025-06-01', 'canone', 2000, 'completato'),
-(3, '2025-01-05', 'canone', 350, 'completato'),
-(3, '2025-02-05', 'canone', 350, 'completato'),
-(4, '2025-09-05', 'canone', 300, 'completato'),
-(5, '2025-11-05', 'canone', 1200, 'completato'),
-(6, '2024-01-10', 'spese', 120, 'completato'),
-(6, '2025-01-10', 'spese', 125, 'completato'),
-(7, '2025-03-05', 'canone', 937, 'completato'),
-(9, '2024-06-05', 'canone', 400, 'completato');
+INSERT INTO scadenze (contratto_id, data, prossima_scadenza, urgenza, stato) VALUES
+(1, '2026-02-14', '2027-03-17', 'media', 'completata'),
+(2, '2025-06-01', '2026-07-01', 'alta', 'in-attesa');
 
 -- Dati di esempio per tabelle ponte (locatori/conduttori multipli)
 INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES

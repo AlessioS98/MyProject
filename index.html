@@ -35,10 +35,7 @@
                 <i class="fas fa-calendar-alt"></i>
                 <span>Scadenze</span>
             </a>
-            <a href="#" class="nav-item" data-page="pagamenti">
-                <i class="fas fa-euro-sign"></i>
-                <span>Pagamenti</span>
-            </a>
+
         </nav>
         <div class="sidebar-footer">
             <div class="user-info">
@@ -225,77 +222,55 @@
                     <h1>Scadenze e Adempimenti</h1>
                     <p class="page-subtitle">Gestisci le scadenze fiscali e contrattuali</p>
                 </div>
-                <div class="header-actions">
-                    <button class="btn btn-primary" onclick="openModal('newScadenza')">
-                        <i class="fas fa-plus"></i> Nuova Scadenza
-                    </button>
-                </div>
             </div>
 
-            <!-- Calendar View Toggle -->
+            <!-- Filters -->
             <div class="filters-bar">
                 <div class="filter-group">
-                    <select id="filterScadenzaTipo" class="filter-select">
-                        <option value="all">Tutti i tipi</option>
-                        <option value="canone">Canone d'affitto</option>
-                        <option value="imposta">Imposta di registro</option>
-                        <option value="bolletta">Bolletta/UTenze</option>
-                        <option value="sicurezza">Sicurezza/Manutenzione</option>
-                        <option value="rinnovo">Rinnovo contratto</option>
-                        <option value="versamento">Versamento IMU/TARI</option>
+                    <select id="filterScadenzeStato" class="filter-select" onchange="renderScadenze()">
+                        <option value="all">Tutte le scadenze</option>
+                        <option value="in-attesa">In Attesa</option>
+                        <option value="completata">Completate</option>
                     </select>
-                    <select id="filterScadenzaUrgenza" class="filter-select">
-                        <option value="all">Tutta la priorità</option>
+                    <select id="filterScadenzeUrgenza" class="filter-select" onchange="renderScadenze()">
+                        <option value="all">Tutte le priorità</option>
                         <option value="alta">Alta</option>
                         <option value="media">Media</option>
                         <option value="bassa">Bassa</option>
                     </select>
                 </div>
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="cards" onclick="setViewScadenze('cards')">
+                        <i class="fas fa-th"></i>
+                    </button>
+                    <button class="view-btn" data-view="table" onclick="setViewScadenze('table')">
+                        <i class="fas fa-list"></i>
+                    </button>
+                </div>
             </div>
 
-            <!-- Timeline View -->
-            <div class="scadenze-timeline" id="scadenzeTimeline">
+            <!-- Cards View -->
+            <div class="contracts-grid" id="scadenzeCards">
                 <!-- Populated by JS -->
             </div>
-        </section>
 
-        <!-- Page: Pagamenti -->
-        <section class="page" id="page-pagamenti">
-            <div class="page-header">
-                <div>
-                    <h1>Pagamenti</h1>
-                    <p class="page-subtitle">Gestisci i movimenti finanziari</p>
-                </div>
-                <div class="header-actions">
-                    <button class="btn btn-outline" onclick="exportData('pagamenti')">
-                        <i class="fas fa-download"></i> Esporta CSV
-                    </button>
-                    <button class="btn btn-primary" onclick="openModal('newPagamento')">
-                        <i class="fas fa-plus"></i> Registra Pagamento
-                    </button>
-                </div>
-            </div>
-
-
-
-            <div class="card">
-                <div class="card-header">
-                    <h3>Storico Pagamenti</h3>
-                </div>
+            <!-- Table View -->
+            <div class="table-container" id="scadenzeTable" style="display:none;">
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Data</th>
                             <th>Contratto</th>
+                            <th>Immobile</th>
                             <th>Locatore</th>
                             <th>Conduttore</th>
-                            <th>Tipo</th>
-                            <th>Importo</th>
+                            <th>Scadenza</th>
+                            <th>Rimanenza</th>
+                            <th>Priorità</th>
                             <th>Stato</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
-                    <tbody id="pagamentiTableBody">
+                    <tbody id="scadenzeTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
