@@ -107,85 +107,90 @@ ALTER TABLE scadenze DISABLE ROW LEVEL SECURITY;
 ALTER TABLE pagamenti DISABLE ROW LEVEL SECURITY;
 
 -- Dati di esempio
+-- Persone Fisiche: nome + cognome, ragione_sociale = NULL
+-- Aziende: nome = '', cognome = '', ragione_sociale = 'Ragione Sociale'
 INSERT INTO anagrafica_persona (nome, cognome, codice_fiscale, ragione_sociale) VALUES
-('Mario', 'Bianchi', 'BNCMRA80A01F205Z', NULL),
-('Laura', 'Verdi', 'VRDLRA85B42F205X', NULL),
-('Giovanni', 'Neri', 'NRIGVN82T15F205W', NULL),
-('Società', 'Rossi SRL', 'RSSSRL00A01F205K', 'Rossi Immobili SRL'),
-('Anna', 'Colombo', 'CLMNNN88D55F205Y', NULL),
-('Paolo', 'Ferrari', 'FRRPLA80E10F205Z', NULL);
+('Roberto', 'Santantonio', 'SNTROT60A01F205Z', NULL),
+('Maria', 'Rossi', 'RSSMRA85B42F205X', NULL),
+('Luca', 'Bianchi', 'BNCLOC82T15F205W', NULL),
+('', '', 'CSLMRC00A01F205K', 'CasaModa SRL'),
+('Francesca', 'Colombo', 'CLMFNC88D55F205Y', NULL),
+('', '', 'IMMUNI00B01F205P', 'Immobiliare Nord SPA'),
+('Giovanni', 'Ferrari', 'FRRGNN80E10F205Z', NULL),
+('', '', 'TRDRSG00A01F205M', 'Tridente Gestioni SRL'),
+('Elena', 'Romano', 'RMNLEE90F20F205T', NULL),
+('', '', 'BLUGRN00A01F205L', 'Blugreen Impianti SRL');
 
 INSERT INTO immobili (indirizzo, citta, foglio, particella, sub, ape) VALUES
-('Via Roma 15', 'Milano', '123', '456', '7', false),
-('Corso Italia 42', 'Roma', '200', '118', '3', true),
-('Via Napoli 8', 'Torino', '88', '92', '1', false),
-('Via Garibaldi 22', 'Firenze', '150', '300', '5', true),
-('Piazza Dante 5', 'Bologna', '65', '78', '2', false),
-('Viale Mazzini 31', 'Napoli', '110', '205', '1', false);
+('Via Torino 12', 'Milano', '052', '118', '3', false),
+('Corso Vittorio Emanuele 45', 'Torino', '088', '092', '1', true),
+('Via Garibaldi 78', 'Roma', '123', '456', '7', false),
+('Via Mazzini 22', 'Bologna', '035', '078', '2', false),
+('Piazza Maggiore 5', 'Firenze', '150', '300', '5', true),
+('Via Dante 31', 'Napoli', '065', '205', '1', false),
+('Corso Italia 100', 'Milano', '052', '220', '8', true),
+('Via Garibaldi 78', 'Roma', '123', '458', '2', false),
+('Largo Augusto 9', 'Torino', '088', '033', '4', false);
 
-INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, tassazione_cedolare_secca, locatore_id, conduttore_id, immobile_id, note) VALUES
-('LOC-2024-001', '2024-01-15', '2026-01-14', NULL, false, 1, 2, 1, 'Trilocale ristrutturato, piano 3'),
-('LOC-2024-002', '2023-06-01', '2025-05-31', NULL, true, 3, 4, 2, 'Locale commerciale angolare'),
-('LOC-2024-003', '2024-03-01', '2027-02-28', NULL, false, 5, 6, 3, 'Bilocale arredato'),
-('LOC-2024-004', '2022-09-01', '2025-08-31', NULL, false, 1, 4, 4, 'Magazzino 200mq con rampa'),
-('LOC-2024-005', '2023-11-01', '2026-10-31', NULL, true, 3, 5, 5, 'Monolocale centro storico'),
-('LOC-2023-006', '2023-01-01', '2024-12-31', '2024-12-31', false, 1, 6, 6, 'Box auto coperto');
+INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, tassazione_cedolare_secca, locatore_id, conduttore_id, immobile_id, percentuale, valore_assoluto, note) VALUES
+('AFF-2025-001', '2025-01-15', '2027-01-14', NULL, false, 1, 2, 1, 10, 750, 'Trilocale ristrutturato, piano 3 - via Torino'),
+('AFF-2025-002', '2025-06-01', '2028-05-31', NULL, true, 4, 3, 2, 0, 0, 'Locale commerciale angolare, Corso Vittorio Emanuele'),
+('AFF-2024-003', '2024-03-01', '2026-02-28', NULL, false, 5, 7, 3, 15, 420, 'Bilocale arredato, Via Garibaldi'),
+('AFF-2025-004', '2025-09-01', '2027-08-31', NULL, false, 6, 8, 4, 12, 300, 'Magazzino 200mq con rampa, Via Mazzini'),
+('AFF-2025-005', '2025-11-01', '2028-10-31', NULL, true, 6, 9, 5, 0, 0, 'Monolocale centro storico, Piazza Maggiore'),
+('AFF-2024-006', '2024-01-01', '2025-12-31', '2025-12-31', false, 1, 10, 6, 8, 180, 'Box auto coperto, Via Dante'),
+('AFF-2025-007', '2025-03-01', '2027-02-28', NULL, false, 1, 3, 7, 15, 1125, 'Trilocale con giardino, Corso Italia - attivo'),
+('AFF-2025-008', '2025-08-01', '2026-07-31', NULL, false, 5, 2, 8, 10, 600, 'Secondo appartamento Via Garibaldi'),
+('AFF-2024-009', '2024-06-01', '2025-05-31', NULL, false, 4, 7, 9, 12, 480, 'Attico Largo Augusto - scaduto');
 
--- Canoni annuali per i contratti di esempio
+-- Canoni annuali
 INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUES
-(1, 14400, '2024-01-15', '2025-01-14'),
-(1, 15000, '2025-01-15', '2026-01-14'),
-(2, 30000, '2023-06-01', '2024-05-31'),
-(2, 31500, '2024-06-01', '2025-05-31'),
-(3, 10200, '2024-03-01', '2025-02-28'),
-(3, 10710, '2025-03-01', '2026-02-28'),
-(3, 11245, '2026-03-01', '2027-02-28'),
-(4, 21600, '2022-09-01', '2023-08-31'),
-(4, 22000, '2023-09-01', '2024-08-31'),
-(4, 22400, '2024-09-01', '2025-08-31'),
-(5, 11400, '2023-11-01', '2024-10-31'),
-(5, 12000, '2024-11-01', '2025-10-31'),
-(5, 12600, '2025-11-01', '2026-10-31'),
-(6, 2400, '2023-01-01', '2024-12-31');
+(1, 7500, '2025-01-15', '2026-01-14'),
+(1, 7875, '2026-01-15', '2027-01-14'),
+(2, 24000, '2025-06-01', '2026-05-31'),
+(2, 25200, '2026-06-01', '2027-05-31'),
+(2, 26460, '2027-06-01', '2028-05-31'),
+(3, 4200, '2024-03-01', '2025-02-28'),
+(3, 4410, '2025-03-01', '2026-02-28'),
+(4, 3600, '2025-09-01', '2026-08-31'),
+(4, 3780, '2026-09-01', '2027-08-31'),
+(5, 14400, '2025-11-01', '2026-10-31'),
+(5, 15120, '2026-11-01', '2027-10-31'),
+(5, 15876, '2027-11-01', '2028-10-31'),
+(6, 2160, '2024-01-01', '2024-12-31'),
+(6, 2200, '2025-01-01', '2025-12-31'),
+(7, 11250, '2025-03-01', '2026-02-28'),
+(7, 11812, '2026-03-01', '2027-02-28'),
+(8, 6000, '2025-08-01', '2026-07-31'),
+(9, 4800, '2024-06-01', '2025-05-31');
 
 INSERT INTO scadenze (contratto_id, tipo, titolo, data, urgenza, stato, descrizione) VALUES
-(1, 'canone', 'Versamento canone gennaio', '2025-01-05', 'media', 'completata', 'Canone mensile via Roma'),
+(1, 'canone', 'Versamento canone gennaio', '2025-01-05', 'media', 'completata', 'Canone mensile via Torino 12'),
+(1, 'canone', 'Versamento canone febbraio', '2025-02-05', 'media', 'in-attesa', 'Canone mensile via Torino 12'),
 (2, 'imposta', 'Imposta di registro annuale', '2025-06-01', 'alta', 'in-attesa', 'Registrazione contratto commerciale'),
-(3, 'canone', 'Canone mensile febbraio', '2025-02-05', 'media', 'in-attesa', 'Canone apartamento Torino'),
+(2, 'sicurezza', 'Controllo antincendio locale', '2025-08-15', 'alta', 'in-attesa', 'Verifica impianto antincendio'),
+(3, 'canone', 'Canone mensile marzo', '2025-03-05', 'media', 'in-attesa', 'Canone mensile via Garibaldi 78'),
 (4, 'versamento', 'Versamento IMU Q1', '2025-06-16', 'alta', 'in-attesa', 'Prima rata IMU magazzino'),
-(1, 'rinnovo', 'Verifica rinnovo contratto', '2025-12-15', 'bassa', 'in-attesa', 'Controllare clausola di rinnovo'),
-(5, 'bolletta', 'Bolletta elettricita', '2025-02-20', 'media', 'in-attesa', 'Scadenza bolletta monolocale'),
-(2, 'sicurezza', 'Controllo antincendio', '2025-03-10', 'alta', 'in-attesa', 'Controllo locale commerciale'),
-(3, 'canone', 'Canone mensile marzo', '2025-03-05', 'media', 'in-attesa', 'Canone mensile Torino');
+(5, 'bolletta', 'Bolletta elettricita monolocale', '2025-12-20', 'media', 'in-attesa', 'Scadenza bolletta Piazza Maggiore'),
+(6, 'rinnovo', 'Verifica rinnovo contratto box', '2025-11-15', 'bassa', 'in-attesa', 'Controllare clausola di rinnovo box auto'),
+(7, 'canone', 'Canone mensile aprile', '2025-04-05', 'media', 'in-attesa', 'Canone mensile Corso Italia'),
+(9, 'imposta', 'Imposta di registro attico', '2025-06-01', 'alta', 'in-attesa', 'Registrazione contratto attico');
 
 INSERT INTO pagamenti (contratto_id, data, tipo, importo, stato) VALUES
-(1, '2025-01-05', 'canone', 1200, 'completato'),
-(2, '2024-12-01', 'canone', 2500, 'completato'),
-(3, '2025-01-05', 'canone', 850, 'completato'),
-(5, '2025-01-05', 'canone', 950, 'completato'),
-(4, '2024-12-01', 'canone', 1800, 'completato'),
-(1, '2025-01-10', 'spese', 150, 'completato'),
-(2, '2025-02-01', 'canone', 2500, 'in-attesa');
-
--- Contratti fittizzi di esempio
-INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, tassazione_cedolare_secca, locatore_id, conduttore_id, immobile_id, percentuale, valore_assoluto, note) VALUES
-('LOC-2025-010', '2025-01-01', '2026-09-10', NULL, false, 2, 1, 5, 15, 1125, 'Bilocale centro - in scadenza a breve'),
-('LOC-2025-011', '2023-03-01', '2025-07-31', NULL, false, 4, 3, 2, 10, 1500, 'Locale commerciale - scaduto'),
-('LOC-2025-012', '2025-06-01', '2028-05-31', NULL, true, 6, 5, 4, 20, 2200, 'Trilocale con giardino - attivo');
-
--- Canoni annuali per i contratti fittizzi
-INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUES
-(7, 9000, '2025-01-01', '2025-12-31'),
-(7, 9450, '2026-01-01', '2026-09-10'),
-(8, 18000, '2023-03-01', '2024-02-28'),
-(8, 18500, '2024-03-01', '2025-07-31'),
-(9, 13200, '2025-06-01', '2026-05-31'),
-(9, 13860, '2026-06-01', '2027-05-31'),
-(9, 14553, '2027-06-01', '2028-05-31');
+(1, '2025-01-05', 'canone', 625, 'completato'),
+(2, '2025-06-01', 'canone', 2000, 'completato'),
+(3, '2025-01-05', 'canone', 350, 'completato'),
+(3, '2025-02-05', 'canone', 350, 'completato'),
+(4, '2025-09-05', 'canone', 300, 'completato'),
+(5, '2025-11-05', 'canone', 1200, 'completato'),
+(6, '2024-01-10', 'spese', 120, 'completato'),
+(6, '2025-01-10', 'spese', 125, 'completato'),
+(7, '2025-03-05', 'canone', 937, 'completato'),
+(9, '2024-06-05', 'canone', 400, 'completato');
 
 -- Dati di esempio per tabelle ponte (locatori/conduttori multipli)
 INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES
-(1, 1), (2, 3), (3, 5), (4, 1), (5, 3), (6, 1), (7, 2), (8, 4), (9, 6);
+(1, 1), (2, 4), (3, 5), (4, 6), (5, 6), (6, 1), (7, 1), (8, 5), (9, 4);
 
 INSERT INTO contratto_conduttori (contratto_id, persona_id) VALUES
-(1, 2), (2, 4), (3, 6), (4, 4), (5, 5), (6, 6), (7, 1), (8, 3), (9, 5);
+(1, 2), (2, 3), (3, 7), (4, 8), (5, 9), (6, 10), (7, 3), (8, 2), (9, 7);

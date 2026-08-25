@@ -25,7 +25,7 @@ function daysUntil(d) {
     return Math.ceil((t - n) / 864e5);
 }
 function getStatusLabel(s) {
-    return { attivo: 'Attivo', scaduto: 'Scaduto', sospeso: 'Sospeso', completato: 'Completato', 'in-attesa': 'In Attesa' }[s] || s;
+    return { attivo: 'Attivo', scaduto: 'Scaduto', chiuso: 'Chiuso', sospeso: 'Sospeso', completato: 'Completato', 'in-attesa': 'In Attesa' }[s] || s;
 }
 function getTipoLabel(t) {
     return { canone: 'Canone Affitto', imposta: 'Imposta di Registro', bolletta: 'Bolletta/UTenze', sicurezza: 'Sicurezza', rinnovo: 'Rinnovo Contratto', versamento: 'Versamento IMU/TARI', spese: 'Spese Accessorie' }[t] || t;
@@ -119,7 +119,7 @@ function getPersona(id) {
 function getPersonaLabel(id) {
     var p = getPersona(id);
     if (!p) return 'N/A';
-    return p.nome + ' ' + p.cognome;
+    return getPersonaDisplayLabel(p);
 }
 function getImmobile(id) {
     return appData.immobili.find(function(i) { return i.id === id; }) || null;
@@ -176,9 +176,10 @@ function getConduttoriLabel(contrattoId) {
 }
 function getPersonaLabelShort(p) {
     if (!p) return 'N/A';
-    var label = p.nome + ' ' + p.cognome;
+    if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
+    var label = (p.nome || '') + ' ' + (p.cognome || '');
     if (p.ragione_sociale) label += ' (' + p.ragione_sociale + ')';
-    return label;
+    return label.trim();
 }
 
 // --- Canoni Annuali helpers ---
@@ -212,15 +213,135 @@ function addCanoneRow(importo, dataInizio, dataFine, note) {
     container.appendChild(row);
 }
 
+// --- CF Autocomplete ---
+function setupCfAutocomplete(inputEl, rowEl) {
+    var suggestionsEl = document.createElement('div');
+    suggestionsEl.className = 'cf-suggestions';
+    inputEl.parentNode.style.position = 'relative';
+    inputEl.parentNode.appendChild(suggestionsEl);
+
+    inputEl.addEventListener('input', function() {
+        var val = inputEl.value.trim().toUpperCase();
+        if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
+        // Determina il tipo selezionato (pf o azienda)
+        var tipoSel = 'pf';
+        var radioChecked = rowEl.querySelector('input[type="radio"]:checked');
+        if (radioChecked) tipoSel = radioChecked.value;
+        var isAzienda = (tipoSel === 'azienda');
+        var seen = {};
+        var matches = [];
+        appData.persone.forEach(function(p) {
+            if (p.codice_fiscale && p.codice_fiscale.toUpperCase().indexOf(val) === 0 && !seen[p.codice_fiscale]) {
+                // Filtra per tipo: pf = ha nome/cognome, azienda = ha ragione_sociale
+                if (isAzienda) {
+                    if (!p.ragione_sociale) return;
+                } else {
+                    if (!p.nome && !p.cognome) return;
+                }
+                seen[p.codice_fiscale] = true;
+                matches.push(p);
+            }
+        });
+        if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
+        suggestionsEl.innerHTML = matches.map(function(p, i) {
+            var label = p.nome ? (p.cognome + ' ' + p.nome) : (p.ragione_sociale || '-');
+            return '<div class="cf-suggestion-item" data-idx="' + i + '"><div class="cf-suggestion-cf">' + p.codice_fiscale + '</div><div class="cf-suggestion-name">' + label + '</div></div>';
+        }).join('');
+        suggestionsEl.classList.add('show');
+
+        suggestionsEl.querySelectorAll('.cf-suggestion-item').forEach(function(item, i) {
+            item.addEventListener('click', function() {
+                var p = matches[i];
+                inputEl.value = p.codice_fiscale || '';
+                suggestionsEl.classList.remove('show');
+                if (rowEl.classList.contains('locatore-row')) {
+                    var isAzienda = !!(p.ragione_sociale && !p.nome);
+                    var tipoRadio = rowEl.querySelector('input[name*="cf_loc_tipo"][value="' + (isAzienda ? 'azienda' : 'pf') + '"]');
+                    if (tipoRadio) { tipoRadio.checked = true; toggleLocatoreType(isAzienda ? 'azienda' : 'pf', rowEl); }
+                    var rsEl = rowEl.querySelector('.loc-rs');
+                    var cogEl = rowEl.querySelector('.loc-cognome');
+                    var nomEl = rowEl.querySelector('.loc-nome');
+                    if (rsEl) rsEl.value = p.ragione_sociale || '';
+                    if (cogEl) cogEl.value = p.cognome || '';
+                    if (nomEl) nomEl.value = p.nome || '';
+                } else if (rowEl.classList.contains('conduttore-row')) {
+                    var isAzienda2 = !!(p.ragione_sociale && !p.nome);
+                    var tipoRadio2 = rowEl.querySelector('input[name*="cf_cond_tipo"][value="' + (isAzienda2 ? 'azienda' : 'pf') + '"]');
+                    if (tipoRadio2) { tipoRadio2.checked = true; toggleConduttoreType(isAzienda2 ? 'azienda' : 'pf', rowEl); }
+                    var rsEl2 = rowEl.querySelector('.cond-rs');
+                    var cogEl2 = rowEl.querySelector('.cond-cognome');
+                    var nomEl2 = rowEl.querySelector('.cond-nome');
+                    if (rsEl2) rsEl2.value = p.ragione_sociale || '';
+                    if (cogEl2) cogEl2.value = p.cognome || '';
+                    if (nomEl2) nomEl2.value = p.nome || '';
+                }
+            });
+        });
+    });
+
+    inputEl.addEventListener('blur', function() {
+        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
+    });
+}
+
+// --- Immobile Field Autocomplete (Foglio / Particella / Sub) ---
+function setupImmobileFieldAutocomplete(inputEl, fieldType) {
+    var suggestionsEl = document.createElement('div');
+    suggestionsEl.className = 'imm-suggestions';
+    inputEl.parentNode.style.position = 'relative';
+    inputEl.parentNode.appendChild(suggestionsEl);
+
+    inputEl.addEventListener('input', function() {
+        var val = inputEl.value.trim().toUpperCase();
+        if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
+        var seen = {};
+        var matches = [];
+        appData.immobili.forEach(function(imm) {
+            var fieldVal = (imm[fieldType] || '').toUpperCase();
+            if (fieldVal.indexOf(val) === 0 && !seen[fieldVal]) {
+                seen[fieldVal] = true;
+                matches.push(imm);
+            }
+        });
+        if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
+        suggestionsEl.innerHTML = matches.map(function(imm, i) {
+            var detail = imm.indirizzo + ', ' + imm.citta;
+            var foglioPart = imm.foglio ? ('Fg.' + imm.foglio) : '';
+            var particellaPart = imm.particella ? ('Part.' + imm.particella) : '';
+            var subPart = imm.sub ? ('Sub ' + imm.sub) : '';
+            var cadastro = [foglioPart, particellaPart, subPart].filter(Boolean).join(' - ');
+            return '<div class="imm-suggestion-item" data-idx="' + i + '"><div class="imm-suggestion-addr">' + detail + '</div><div class="imm-suggestion-cad">' + cadastro + '</div></div>';
+        }).join('');
+        suggestionsEl.classList.add('show');
+
+        suggestionsEl.querySelectorAll('.imm-suggestion-item').forEach(function(item, idx) {
+            item.addEventListener('click', function() {
+                var imm = matches[idx];
+                document.getElementById('cf_imm_indirizzo').value = imm.indirizzo || '';
+                document.getElementById('cf_imm_citta').value = imm.citta || '';
+                document.getElementById('cf_imm_foglio').value = imm.foglio || '';
+                document.getElementById('cf_imm_particella').value = imm.particella || '';
+                document.getElementById('cf_imm_sub').value = imm.sub || '';
+                suggestionsEl.classList.remove('show');
+            });
+        });
+    });
+
+    inputEl.addEventListener('blur', function() {
+        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
+    });
+}
+
 // --- Locatore / Conduttore Row Helpers ---
 var locatoreRowCounter = 0;
-function addLocatoreRow(persona) {
+function addLocatoreRow(persona, isEdit) {
     locatoreRowCounter++;
     var container = document.getElementById('locatoriRowsContainer');
     if (!container) return;
     var idx = locatoreRowCounter;
     var p = persona || {};
     var locTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
+    var cfReadonly = isEdit ? 'readonly style="background:var(--border-light);cursor:not-allowed"' : '';
     var row = document.createElement('div');
     row.className = 'locatore-row';
     row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
@@ -232,23 +353,26 @@ function addLocatoreRow(persona) {
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo_${idx}" value="azienda" ${(locTipo==='azienda')?'checked':''} onchange="toggleLocatoreType(this.value, this.closest('.locatore-row'))"> Azienda</label>
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
         <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(locTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}" ${(locTipo==='pf')?'disabled':''}></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
         </div>
-    `;
-    container.appendChild(row);
+    `;    container.appendChild(row);
+    var cfInput = row.querySelector('.loc-cf');
+    if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
 }
 
+
 var conduttoreRowCounter = 0;
-function addConduttoreRow(persona) {
+function addConduttoreRow(persona, isEdit) {
     conduttoreRowCounter++;
     var container = document.getElementById('conduttoriRowsContainer');
     if (!container) return;
     var idx = conduttoreRowCounter;
     var p = persona || {};
     var condTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
+    var cfReadonly = isEdit ? 'readonly style="background:var(--border-light);cursor:not-allowed"' : '';
     var row = document.createElement('div');
     row.className = 'conduttore-row';
     row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
@@ -260,18 +384,20 @@ function addConduttoreRow(persona) {
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo_${idx}" value="azienda" ${(condTipo==='azienda')?'checked':''} onchange="toggleConduttoreType(this.value, this.closest('.conduttore-row'))"> Azienda</label>
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
         <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(condTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}" ${(condTipo==='pf')?'disabled':''}></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
         </div>
     `;
     container.appendChild(row);
+    var cfInput = row.querySelector('.cond-cf');
+    if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
 }
 
 // --- Calculate contract status ---
-function  calcContrattoStato(c) {
-    if (c.data_chiusura) return 'scaduto';
+function calcContrattoStato(c) {
+    if (c.data_chiusura) return 'chiuso';
     var d = daysUntil(c.data_scadenza);
     if (d <= 0) return 'scaduto';
     return 'attivo';
@@ -329,7 +455,6 @@ async function refreshPage(page) {
         case 'contratti': await renderContratti(); break;
         case 'scadenze': await renderScadenze(); break;
         case 'pagamenti': await renderPagamenti(); break;
-        case 'archivio': await renderArchivio(); break;
     }
 }
 
@@ -342,7 +467,7 @@ document.addEventListener('click', function(e) {
     switch (action) {
         case 'new-contratto': openModal('newContratto'); break;
         case 'edit-contratto': openModal('editContratto', id); break;
-        case 'delete-contratto': deleteContratto(id); break;
+        case 'delete-contratto': openModal('deleteContrattoConfirm', id); break;
         case 'view-contratto': openModal('viewContratto', id); break;
         case 'new-scadenza': openModal('newScadenza'); break;
         case 'edit-scadenza': openModal('editScadenza', id); break;
@@ -393,77 +518,137 @@ document.getElementById('notifPanel').addEventListener('click', function(e) {
 });
 
 // --- Filter Modal ---
-function openFilterModal() {
-    var overlay = document.getElementById('filterModalOverlay');
-    overlay.classList.add('active');
-    populateFilterDropdowns();
-}
-
 function closeFilterModal() {
     document.getElementById('filterModalOverlay').classList.remove('active');
 }
 
-function populateFilterDropdowns() {
-    var persone = appData.persone;
-    var immobili = appData.immobili;
-    var contratti = appData.contratti;
+// --- Filter Autocomplete ---
+function setupFilterAutocomplete(inputEl, getValues, onPick) {
+    var suggestionsEl = document.createElement('div');
+    suggestionsEl.className = 'imm-suggestions';
+    inputEl.parentNode.appendChild(suggestionsEl);
 
-    // Helper to populate a select with unique values
-    function populate(selectId, values, labelFn) {
-        var sel = document.getElementById(selectId);
-        var first = sel.options[0];
-        sel.innerHTML = '';
-        sel.appendChild(first);
+    inputEl.addEventListener('input', function() {
+        var val = inputEl.value.trim().toUpperCase();
+        if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
+        var items = getValues();
         var seen = {};
-        values.forEach(function(v) {
-            var label = labelFn(v);
-            if (label && !seen[label]) {
-                seen[label] = true;
-                var opt = document.createElement('option');
-                opt.value = label;
-                opt.textContent = label;
-                sel.appendChild(opt);
+        var matches = [];
+        items.forEach(function(item) {
+            var label = (typeof item === 'string') ? item : item.label;
+            if (label && label.toUpperCase().indexOf(val) === 0 && !seen[label.toUpperCase()]) {
+                seen[label.toUpperCase()] = true;
+                matches.push(item);
             }
         });
-    }
+        if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
+        suggestionsEl.innerHTML = matches.map(function(item, i) {
+            var label = (typeof item === 'string') ? item : item.label;
+            var sub = (typeof item === 'object' && item.sub) ? '<div class="imm-suggestion-cad">' + item.sub + '</div>' : '';
+            return '<div class="imm-suggestion-item" data-idx="' + i + '"><div class="imm-suggestion-addr">' + label + '</div>' + sub + '</div>';
+        }).join('');
+        suggestionsEl.classList.add('show');
 
-    // Locatori (via tabelle ponte)
+        suggestionsEl.querySelectorAll('.imm-suggestion-item').forEach(function(el, idx) {
+            el.addEventListener('click', function() {
+                var item = matches[idx];
+                var label = (typeof item === 'string') ? item : item.label;
+                inputEl.value = label;
+                suggestionsEl.classList.remove('show');
+                if (onPick && typeof item === 'object' && item.data) onPick(item.data);
+            });
+        });
+    });
+
+    inputEl.addEventListener('blur', function() {
+        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
+    });
+}
+
+function openFilterModal() {
+    var overlay = document.getElementById('filterModalOverlay');
+    overlay.classList.add('active');
+    setupFilterInputs();
+}
+
+function setupFilterInputs() {
+    // Collect persone used as locatori
     var locatori = [];
-    contratti.forEach(function(c) { getLocatoriByContratto(c.id).forEach(function(p) { locatori.push(p); }); });
-    populate('ffLocNome', locatori, function(p) { return p.nome; });
-    populate('ffLocCognome', locatori, function(p) { return p.cognome; });
-    populate('ffLocCF', locatori, function(p) { return p.codice_fiscale; });
-    populate('ffLocRS', locatori, function(p) { return p.ragione_sociale; });
-
-    // Conduttori (via tabelle ponte)
+    var seenLoc = {};
+    appData.contratti.forEach(function(c) {
+        getLocatoriByContratto(c.id).forEach(function(p) {
+            if (!seenLoc[p.id]) { seenLoc[p.id] = true; locatori.push(p); }
+        });
+    });
+    // Collect persone used as conduttori
     var conduttori = [];
-    contratti.forEach(function(c) { getConduttoriByContratto(c.id).forEach(function(p) { conduttori.push(p); }); });
-    populate('ffConNome', conduttori, function(p) { return p.nome; });
-    populate('ffConCognome', conduttori, function(p) { return p.cognome; });
-    populate('ffConCF', conduttori, function(p) { return p.codice_fiscale; });
-    populate('ffConRS', conduttori, function(p) { return p.ragione_sociale; });
-
-    // Immobili
+    var seenCond = {};
+    appData.contratti.forEach(function(c) {
+        getConduttoriByContratto(c.id).forEach(function(p) {
+            if (!seenCond[p.id]) { seenCond[p.id] = true; conduttori.push(p); }
+        });
+    });
+    // Collect immobili used in contracts
     var immUsed = [];
-    contratti.forEach(function(c) { var i = getImmobile(c.immobile_id); if (i) immUsed.push(i); });
-    populate('ffIndirizzo', immUsed, function(i) { return i.indirizzo; });
-    populate('ffCitta', immUsed, function(i) { return i.citta; });
+    var seenImm = {};
+    appData.contratti.forEach(function(c) {
+        var imm = getImmobile(c.immobile_id);
+        if (imm && !seenImm[imm.id]) { seenImm[imm.id] = true; immUsed.push(imm); }
+    });
 
-    // Identificativi
-    populate('ffIdentificativo', contratti, function(c) { return c.identificativo; });
+    // Locatore
+    setupFilterAutocomplete(document.getElementById('ffLocNome'),
+        function() { return locatori.map(function(p) { return { label: p.nome }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffLocCognome'),
+        function() { return locatori.map(function(p) { return { label: p.cognome }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffLocCF'),
+        function() { return locatori.map(function(p) { return p.codice_fiscale ? { label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffLocRS'),
+        function() { return locatori.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { label: p.ragione_sociale }; }); }, null);
+
+    // Conduttore
+    setupFilterAutocomplete(document.getElementById('ffConNome'),
+        function() { return conduttori.map(function(p) { return { label: p.nome }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffConCognome'),
+        function() { return conduttori.map(function(p) { return { label: p.cognome }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffConCF'),
+        function() { return conduttori.map(function(p) { return p.codice_fiscale ? { label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffConRS'),
+        function() { return conduttori.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { label: p.ragione_sociale }; }); }, null);
+
+    // Immobile
+    setupFilterAutocomplete(document.getElementById('ffIndirizzo'),
+        function() { return immUsed.map(function(i) { return { label: i.indirizzo, sub: i.citta }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffCitta'),
+        function() { return immUsed.map(function(i) { return { label: i.citta }; }); }, null);
+
+    // Identificativo
+    setupFilterAutocomplete(document.getElementById('ffIdentificativo'),
+        function() { return appData.contratti.map(function(c) { return { label: c.identificativo }; }); }, null);
+
+    // Immobile - Foglio, Particella, Sub
+    setupFilterAutocomplete(document.getElementById('ffFoglio'),
+        function() { return immUsed.map(function(i) { return i.foglio ? { label: i.foglio, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffParticella'),
+        function() { return immUsed.map(function(i) { return i.particella ? { label: i.particella, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffSub'),
+        function() { return immUsed.map(function(i) { return i.sub ? { label: i.sub, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
 }
 
 function resetFilterModal() {
-    document.getElementById('ffLocNome').value = '';
-    document.getElementById('ffLocCognome').value = '';
     document.getElementById('ffLocCF').value = '';
     document.getElementById('ffLocRS').value = '';
-    document.getElementById('ffConNome').value = '';
-    document.getElementById('ffConCognome').value = '';
+    document.getElementById('ffLocCognome').value = '';
+    document.getElementById('ffLocNome').value = '';
     document.getElementById('ffConCF').value = '';
     document.getElementById('ffConRS').value = '';
+    document.getElementById('ffConCognome').value = '';
+    document.getElementById('ffConNome').value = '';
     document.getElementById('ffIndirizzo').value = '';
     document.getElementById('ffCitta').value = '';
+    document.getElementById('ffFoglio').value = '';
+    document.getElementById('ffParticella').value = '';
+    document.getElementById('ffSub').value = '';
     document.getElementById('ffIdentificativo').value = '';
     document.getElementById('ffDecoDa').value = '';
     document.getElementById('ffScadA').value = '';
@@ -507,10 +692,13 @@ function applyFilterModal() {
     // Immobile
     var indirizzo = document.getElementById('ffIndirizzo').value;
     var citta = document.getElementById('ffCitta').value;
+    var foglio = document.getElementById('ffFoglio').value;
+    var particella = document.getElementById('ffParticella').value;
+    var sub = document.getElementById('ffSub').value;
     f = f.filter(function(c) {
         var i = getImmobile(c.immobile_id);
         if (!i) return false;
-        return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta);
+        return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta) && matchField(i.foglio, foglio) && matchField(i.particella, particella) && matchField(i.sub, sub);
     });
 
     // Contratto
@@ -765,6 +953,24 @@ function openModal(type, id) {
 
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px"><strong>Note:</strong> ' + (cv.note || 'Nessuna nota') + '</div>';
         html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'deleteContrattoConfirm') {
+        var cd = appData.contratti.find(function(x) { return x.id === id; });
+        if (!cd) return;
+        title.textContent = 'Conferma Eliminazione';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare il contratto <strong>' + cd.identificativo + '</strong> e tutti i dati collegati (locatori, conduttori, canoni, scadenze, pagamenti).</span>';
+        html += '</div>';
+        html += '<div class="form-group full"><label>Scrivi <strong>CONFERMA</strong> per procedere</label>';
+        html += '<input type="text" id="deleteConfirmInput" placeholder="CONFERMA" style="text-transform:uppercase">';
+        html += '<div id="deleteConfirmWarning" style="display:none;color:var(--danger);font-size:0.82rem;margin-top:6px"><i class="fas fa-exclamation-circle"></i> Testo non corretto. Scrivi esattamente <strong>CONFERMA</strong></div>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
     }
 
     body.innerHTML = html;
@@ -784,10 +990,10 @@ function openModal(type, id) {
             });
             // Populate existing locatori
             var existingLocs = getLocatoriByContratto(id);
-            existingLocs.forEach(function(p) { addLocatoreRow(p); });
+            existingLocs.forEach(function(p) { addLocatoreRow(p, true); });
             // Populate existing conduttori
             var existingConds = getConduttoriByContratto(id);
-            existingConds.forEach(function(p) { addConduttoreRow(p); });
+            existingConds.forEach(function(p) { addConduttoreRow(p, true); });
         }
         // If new contract, add one empty row for each section
         if (type === 'newContratto') {
@@ -795,6 +1001,13 @@ function openModal(type, id) {
             addLocatoreRow();
             addConduttoreRow();
         }
+        // Setup immobile field autocomplete
+        var foglioEl = document.getElementById('cf_imm_foglio');
+        var particellaEl = document.getElementById('cf_imm_particella');
+        var subEl = document.getElementById('cf_imm_sub');
+        if (foglioEl) setupImmobileFieldAutocomplete(foglioEl, 'foglio');
+        if (particellaEl) setupImmobileFieldAutocomplete(particellaEl, 'particella');
+        if (subEl) setupImmobileFieldAutocomplete(subEl, 'sub');
     }
     var sf = document.getElementById('scadenzaForm');
     if (sf) sf.addEventListener('submit', function(e) { e.preventDefault(); saveScadenza(id); });
@@ -804,6 +1017,24 @@ function openModal(type, id) {
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
     var csf = document.getElementById('completeScadenzaForm');
     if (csf) csf.addEventListener('submit', function(e) { e.preventDefault(); confirmCompleteScadenza(id); });
+
+    // Delete confirmation modal
+    var deleteInput = document.getElementById('deleteConfirmInput');
+    var deleteBtn = document.getElementById('deleteConfirmBtn');
+    var deleteWarning = document.getElementById('deleteConfirmWarning');
+    if (deleteInput && deleteBtn) {
+        deleteInput.addEventListener('input', function() {
+            var isCorrect = deleteInput.value.trim().toUpperCase() === 'CONFERMA';
+            deleteBtn.disabled = !isCorrect;
+            if (deleteWarning) deleteWarning.style.display = (deleteInput.value.length > 0 && !isCorrect) ? 'block' : 'none';
+        });
+        deleteBtn.addEventListener('click', function() {
+            if (deleteInput.value.trim().toUpperCase() === 'CONFERMA') {
+                closeModal();
+                deleteContratto(id);
+            }
+        });
+    }
 }
 
 function closeModal() {
@@ -1043,9 +1274,16 @@ async function saveInquilino() {
 
 // --- Delete Operations ---
 async function deleteContratto(id) {
-    if (!confirm('Eliminare questo contratto e tutti i dati collegati?')) return;
+    // 1. Elimina prima i record collegati nelle tabelle figlie
+    await db.from('contratto_locatori').delete().eq('contratto_id', id);
+    await db.from('contratto_conduttori').delete().eq('contratto_id', id);
+    await db.from('scadenze').delete().eq('contratto_id', id);
+    await db.from('pagamenti').delete().eq('contratto_id', id);
+    await db.from('canoni_annuali').delete().eq('contratto_id', id);
+    // 2. Elimina il contratto
     var { error } = await db.from('contratti').delete().eq('id', id);
-    if (error) { showToast('Errore eliminazione', 'error'); return; }
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    // 3. Aggiorna la cache locale
     appData.contratti = appData.contratti.filter(function(c) { return c.id !== id; });
     appData.scadenze = appData.scadenze.filter(function(s) { return s.contratto_id !== id; });
     appData.pagamenti = appData.pagamenti.filter(function(p) { return p.contratto_id !== id; });
@@ -1213,7 +1451,14 @@ function renderCharts() {
 }
 
 // --- Render Contratti ---
-async function renderContratti() { renderContrattiList(appData.contratti); }
+async function renderContratti() {
+    var filtroStato = document.getElementById('filterContrattoStato').value;
+    var list = appData.contratti;
+    if (filtroStato !== 'all') {
+        list = list.filter(function(c) { return calcContrattoStato(c) === filtroStato; });
+    }
+    renderContrattiList(list);
+}
 function renderContrattiList(list) {
     var filtered = list.slice().sort(function(a, b) {
         return (b.data_decorrenza || '').localeCompare(a.data_decorrenza || '');
@@ -1317,33 +1562,6 @@ async function renderPagamenti() {
 // --- Filter Listeners ---
 document.getElementById('filterScadenzaTipo').addEventListener('change', renderScadenze);
 document.getElementById('filterScadenzaUrgenza').addEventListener('change', renderScadenze);
-
-// ============================================
-// --- Render Archivio Contratti Chiusi ---
-async function renderArchivio() {
-    var chiusi = appData.contratti.filter(function(c) {
-        var s = calcContrattoStato(c);
-        return s === 'scaduto';
-    });
-    chiusi.sort(function(a, b) {
-        // Ordina per data chiusura/scadenza decrescente
-        var da = a.data_chiusura || a.data_scadenza || '';
-        var db = b.data_chiusura || b.data_scadenza || '';
-        return new Date(db) - new Date(da);
-    });
-
-    var tbody = document.getElementById('archivioTableBody');
-    if (!tbody) return;
-    if (chiusi.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--text-muted)"><i class="fas fa-archive" style="font-size:2rem;display:block;margin-bottom:0.5rem"></i>Nessun contratto chiuso o scaduto</td></tr>';
-    } else {
-        tbody.innerHTML = chiusi.map(function(c) {
-            var stato = calcContrattoStato(c);
-            var caArch = getCanoneAttuale(c.id);
-            return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getLocatoriLabel(c.id) + '</td><td>' + getConduttoriLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + (caArch ? formatCurrency(caArch.importo) : '-') + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td>' + formatDate(c.data_chiusura) + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td></tr>';
-        }).join('');
-    }
-}
 
 // INIT
 // ============================================

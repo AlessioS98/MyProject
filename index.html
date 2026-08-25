@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Contratti di Affitto - Studio Commercialista</title>
+    <title>Gestione Contratti di Affitto</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,10 +38,6 @@
             <a href="#" class="nav-item" data-page="pagamenti">
                 <i class="fas fa-euro-sign"></i>
                 <span>Pagamenti</span>
-            </a>
-            <a href="#" class="nav-item" data-page="archivio">
-                <i class="fas fa-archive"></i>
-                <span>Archivio Contratti Chiusi</span>
             </a>
         </nav>
         <div class="sidebar-footer">
@@ -176,6 +172,12 @@
                     <button class="btn btn-outline" id="openFilterBtn" onclick="openFilterModal()">
                         <i class="fas fa-search"></i> Cerca Contratto
                     </button>
+                    <select id="filterContrattoStato" class="filter-select" onchange="renderContratti()">
+                        <option value="all">Tutti i contratti</option>
+                        <option value="attivo" selected>Attivi</option>
+                        <option value="scaduto">Scaduti</option>
+                        <option value="chiuso">Chiusi</option>
+                    </select>
 
                 </div>
                 <div class="view-toggle">
@@ -203,7 +205,7 @@
                             <th>Conduttore</th>
                             <th>Immobile</th>
                             <th>Canone Annuale</th>
-                            <th>Inizio</th>
+                            <th>Decorrenza</th>
                             <th>Scadenza</th>
                             <th>Stato</th>
                             <th>Azioni</th>
@@ -300,43 +302,6 @@
             </div>
         </section>
 
-        <!-- Page: Archivio -->
-        <section class="page" id="page-archivio">
-            <div class="page-header">
-                <div>
-                    <h1>Archivio Contratti Chiusi</h1>
-                    <p class="page-subtitle">Visualizza tutti i contratti chiusi o scaduti</p>
-                </div>
-                <div class="header-actions">
-                    <button class="btn btn-outline" onclick="exportData('archivio')">
-                        <i class="fas fa-download"></i> Esporta
-                    </button>
-                </div>
-            </div>
-
-            <!-- Table View -->
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Codice</th>
-                            <th>Locatore</th>
-                            <th>Conduttore</th>
-                            <th>Immobile</th>
-                            <th>Canone Annuale</th>
-                            <th>Inizio</th>
-                            <th>Scadenza</th>
-                            <th>Chiusura</th>
-                            <th>Stato</th>
-                            <th>Azioni</th>
-                        </tr>
-                    </thead>
-                    <tbody id="archivioTableBody">
-                        <!-- Populated by JS -->
-                    </tbody>
-                </table>
-            </div>
-        </section>
     </main>
 
     <!-- Modal Overlay -->
@@ -364,21 +329,21 @@
                 <div class="filter-section">
                     <h3 class="filter-section-title"><i class="fas fa-user-tie"></i> Locatore</h3>
                     <div class="filter-grid">
-                        <div class="filter-field">
-                            <label>Nome</label>
-                            <select id="ffLocNome"><option value="">Tutti</option></select>
-                        </div>
-                        <div class="filter-field">
-                            <label>Cognome</label>
-                            <select id="ffLocCognome"><option value="">Tutti</option></select>
-                        </div>
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Codice Fiscale</label>
-                            <select id="ffLocCF"><option value="">Tutti</option></select>
+                            <input type="text" id="ffLocCF" placeholder="Cerca...">
                         </div>
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Ragione Sociale</label>
-                            <select id="ffLocRS"><option value="">Tutte</option></select>
+                            <input type="text" id="ffLocRS" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Cognome</label>
+                            <input type="text" id="ffLocCognome" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Nome</label>
+                            <input type="text" id="ffLocNome" placeholder="Cerca...">
                         </div>
                     </div>
                 </div>
@@ -387,21 +352,21 @@
                 <div class="filter-section">
                     <h3 class="filter-section-title"><i class="fas fa-user"></i> Conduttore</h3>
                     <div class="filter-grid">
-                        <div class="filter-field">
-                            <label>Nome</label>
-                            <select id="ffConNome"><option value="">Tutti</option></select>
-                        </div>
-                        <div class="filter-field">
-                            <label>Cognome</label>
-                            <select id="ffConCognome"><option value="">Tutti</option></select>
-                        </div>
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Codice Fiscale</label>
-                            <select id="ffConCF"><option value="">Tutti</option></select>
+                            <input type="text" id="ffConCF" placeholder="Cerca...">
                         </div>
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Ragione Sociale</label>
-                            <select id="ffConRS"><option value="">Tutte</option></select>
+                            <input type="text" id="ffConRS" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Cognome</label>
+                            <input type="text" id="ffConCognome" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Nome</label>
+                            <input type="text" id="ffConNome" placeholder="Cerca...">
                         </div>
                     </div>
                 </div>
@@ -410,13 +375,25 @@
                 <div class="filter-section">
                     <h3 class="filter-section-title"><i class="fas fa-map-marker-alt"></i> Immobile</h3>
                     <div class="filter-grid">
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Indirizzo</label>
-                            <select id="ffIndirizzo"><option value="">Tutti</option></select>
+                            <input type="text" id="ffIndirizzo" placeholder="Cerca...">
                         </div>
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Città</label>
-                            <select id="ffCitta"><option value="">Tutte</option></select>
+                            <input type="text" id="ffCitta" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Foglio</label>
+                            <input type="text" id="ffFoglio" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Particella</label>
+                            <input type="text" id="ffParticella" placeholder="Cerca...">
+                        </div>
+                        <div class="filter-field" style="position:relative">
+                            <label>Sub</label>
+                            <input type="text" id="ffSub" placeholder="Cerca...">
                         </div>
                     </div>
                 </div>
@@ -425,9 +402,9 @@
                 <div class="filter-section">
                     <h3 class="filter-section-title"><i class="fas fa-file-contract"></i> Contratto</h3>
                     <div class="filter-grid">
-                        <div class="filter-field">
+                        <div class="filter-field" style="position:relative">
                             <label>Identificativo</label>
-                            <select id="ffIdentificativo"><option value="">Tutti</option></select>
+                            <input type="text" id="ffIdentificativo" placeholder="Cerca...">
                         </div>
                         <div class="filter-field">
                             <label>Data Chiusura</label>
