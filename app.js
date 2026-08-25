@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], pagamenti: [], canoni_annuali: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], pagamenti: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -25,7 +25,7 @@ function daysUntil(d) {
     return Math.ceil((t - n) / 864e5);
 }
 function getStatusLabel(s) {
-    return { attivo: 'Attivo', 'in-scadenza': 'In Scadenza', scaduto: 'Scaduto', sospeso: 'Sospeso', completato: 'Completato', 'in-attesa': 'In Attesa' }[s] || s;
+    return { attivo: 'Attivo', scaduto: 'Scaduto', sospeso: 'Sospeso', completato: 'Completato', 'in-attesa': 'In Attesa' }[s] || s;
 }
 function getTipoLabel(t) {
     return { canone: 'Canone Affitto', imposta: 'Imposta di Registro', bolletta: 'Bolletta/UTenze', sicurezza: 'Sicurezza', rinnovo: 'Rinnovo Contratto', versamento: 'Versamento IMU/TARI', spese: 'Spese Accessorie' }[t] || t;
@@ -46,15 +46,15 @@ function showToast(msg, type) {
 }
 
 // --- Toggle Locatore Type ---
-function toggleLocatoreType(tipo) {
-    var locNomeEl = document.getElementById('cf_loc_nome');
-    var locCognomeEl = document.getElementById('cf_loc_cognome');
-    var locRsEl = document.getElementById('cf_loc_rs');
-    var locNomeGroup = document.getElementById('cf_loc_nome_group');
-    var locCognomeGroup = document.getElementById('cf_loc_cognome_group');
-    var locRsGroup = document.getElementById('cf_loc_rs_group');
+function toggleLocatoreType(tipo, rowEl) {
+    var container = rowEl || document;
+    var locNomeEl = container.querySelector('.loc-nome');
+    var locCognomeEl = container.querySelector('.loc-cognome');
+    var locRsEl = container.querySelector('.loc-rs');
+    var locNomeGroup = locNomeEl ? locNomeEl.closest('.form-group') : null;
+    var locCognomeGroup = locCognomeEl ? locCognomeEl.closest('.form-group') : null;
+    var locRsGroup = locRsEl ? locRsEl.closest('.form-group') : null;
     if (tipo === 'azienda') {
-        // Disable nome/cognome, enable ragione sociale
         if (locNomeEl) locNomeEl.disabled = true;
         if (locCognomeEl) locCognomeEl.disabled = true;
         if (locRsEl) locRsEl.disabled = false;
@@ -62,7 +62,6 @@ function toggleLocatoreType(tipo) {
         if (locCognomeGroup) locCognomeGroup.style.opacity = '0.4';
         if (locRsGroup) locRsGroup.style.opacity = '1';
     } else {
-        // Disable ragione sociale, enable nome/cognome
         if (locNomeEl) locNomeEl.disabled = false;
         if (locCognomeEl) locCognomeEl.disabled = false;
         if (locRsEl) locRsEl.disabled = true;
@@ -88,13 +87,14 @@ function toggleCedolarePercentuale() {
     }
 }
 
-function toggleConduttoreType(tipo) {
-    var conNomeEl = document.getElementById('cf_cond_nome');
-    var conCognomeEl = document.getElementById('cf_cond_cognome');
-    var conRsEl = document.getElementById('cf_cond_rs');
-    var conNomeGroup = document.getElementById('cf_cond_nome_group');
-    var conCognomeGroup = document.getElementById('cf_cond_cognome_group');
-    var conRsGroup = document.getElementById('cf_cond_rs_group');
+function toggleConduttoreType(tipo, rowEl) {
+    var container = rowEl || document;
+    var conNomeEl = container.querySelector('.cond-nome');
+    var conCognomeEl = container.querySelector('.cond-cognome');
+    var conRsEl = container.querySelector('.cond-rs');
+    var conNomeGroup = conNomeEl ? conNomeEl.closest('.form-group') : null;
+    var conCognomeGroup = conCognomeEl ? conCognomeEl.closest('.form-group') : null;
+    var conRsGroup = conRsEl ? conRsEl.closest('.form-group') : null;
     if (tipo === 'azienda') {
         if (conNomeEl) conNomeEl.disabled = true;
         if (conCognomeEl) conCognomeEl.disabled = true;
@@ -130,6 +130,57 @@ function getImmobileLabel(id) {
     return i.indirizzo + ', ' + i.citta;
 }
 
+// --- Multi-person helpers (tabelle ponte) ---
+function getLocatoriByContratto(contrattoId) {
+    var rels = appData.contratto_locatori.filter(function(r) { return r.contratto_id === contrattoId; });
+    if (rels.length === 0) {
+        // Fallback to old single locatore_id
+        var c = appData.contratti.find(function(x) { return x.id === contrattoId; });
+        if (c && c.locatore_id) {
+            var p = getPersona(c.locatore_id);
+            return p ? [p] : [];
+        }
+        return [];
+    }
+    return rels.map(function(r) { return getPersona(r.persona_id); }).filter(Boolean);
+}
+function getConduttoriByContratto(contrattoId) {
+    var rels = appData.contratto_conduttori.filter(function(r) { return r.contratto_id === contrattoId; });
+    if (rels.length === 0) {
+        // Fallback to old single conduttore_id
+        var c = appData.contratti.find(function(x) { return x.id === contrattoId; });
+        if (c && c.conduttore_id) {
+            var p = getPersona(c.conduttore_id);
+            return p ? [p] : [];
+        }
+        return [];
+    }
+    return rels.map(function(r) { return getPersona(r.persona_id); }).filter(Boolean);
+}
+function getPersonaDisplayLabel(p) {
+    if (!p) return 'N/A';
+    // Azienda: ragione_sociale impostata, nome/cognome vuoti
+    if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
+    // Persona fisica: nome e cognome
+    return p.nome + ' ' + p.cognome;
+}
+function getLocatoriLabel(contrattoId) {
+    var locs = getLocatoriByContratto(contrattoId);
+    if (locs.length === 0) return 'N/A';
+    return locs.map(function(p) { return getPersonaDisplayLabel(p); }).join(', ');
+}
+function getConduttoriLabel(contrattoId) {
+    var conds = getConduttoriByContratto(contrattoId);
+    if (conds.length === 0) return 'N/A';
+    return conds.map(function(p) { return getPersonaDisplayLabel(p); }).join(', ');
+}
+function getPersonaLabelShort(p) {
+    if (!p) return 'N/A';
+    var label = p.nome + ' ' + p.cognome;
+    if (p.ragione_sociale) label += ' (' + p.ragione_sociale + ')';
+    return label;
+}
+
 // --- Canoni Annuali helpers ---
 function getCanoniByContratto(contrattoId) {
     return appData.canoni_annuali.filter(function(ca) { return ca.contratto_id === contrattoId; });
@@ -161,12 +212,68 @@ function addCanoneRow(importo, dataInizio, dataFine, note) {
     container.appendChild(row);
 }
 
+// --- Locatore / Conduttore Row Helpers ---
+var locatoreRowCounter = 0;
+function addLocatoreRow(persona) {
+    locatoreRowCounter++;
+    var container = document.getElementById('locatoriRowsContainer');
+    if (!container) return;
+    var idx = locatoreRowCounter;
+    var p = persona || {};
+    var locTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
+    var row = document.createElement('div');
+    row.className = 'locatore-row';
+    row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
+    row.innerHTML = `
+        <button type="button" class="btn btn-sm btn-outline" style="position:absolute;top:8px;right:8px;color:var(--danger)" onclick="this.closest('.locatore-row').remove()"><i class="fas fa-trash"></i></button>
+        <div class="form-group full" style="margin-bottom:8px"><label>Tipo</label>
+        <div class="radio-group" style="display:flex;gap:16px;margin-top:6px">
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo_${idx}" value="pf" ${(locTipo==='pf')?'checked':''} onchange="toggleLocatoreType(this.value, this.closest('.locatore-row'))"> Persona Fisica</label>
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo_${idx}" value="azienda" ${(locTipo==='azienda')?'checked':''} onchange="toggleLocatoreType(this.value, this.closest('.locatore-row'))"> Azienda</label>
+        </div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(locTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}" ${(locTipo==='pf')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+var conduttoreRowCounter = 0;
+function addConduttoreRow(persona) {
+    conduttoreRowCounter++;
+    var container = document.getElementById('conduttoriRowsContainer');
+    if (!container) return;
+    var idx = conduttoreRowCounter;
+    var p = persona || {};
+    var condTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
+    var row = document.createElement('div');
+    row.className = 'conduttore-row';
+    row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
+    row.innerHTML = `
+        <button type="button" class="btn btn-sm btn-outline" style="position:absolute;top:8px;right:8px;color:var(--danger)" onclick="this.closest('.conduttore-row').remove()"><i class="fas fa-trash"></i></button>
+        <div class="form-group full" style="margin-bottom:8px"><label>Tipo</label>
+        <div class="radio-group" style="display:flex;gap:16px;margin-top:6px">
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo_${idx}" value="pf" ${(condTipo==='pf')?'checked':''} onchange="toggleConduttoreType(this.value, this.closest('.conduttore-row'))"> Persona Fisica</label>
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo_${idx}" value="azienda" ${(condTipo==='azienda')?'checked':''} onchange="toggleConduttoreType(this.value, this.closest('.conduttore-row'))"> Azienda</label>
+        </div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(condTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}" ${(condTipo==='pf')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
 // --- Calculate contract status ---
 function  calcContrattoStato(c) {
     if (c.data_chiusura) return 'scaduto';
     var d = daysUntil(c.data_scadenza);
     if (d <= 0) return 'scaduto';
-    if (d <= 60) return 'in-scadenza';
     return 'attivo';
 }
 
@@ -181,13 +288,15 @@ function calcScadenzaUrgenza(s) {
 // --- Data Loading ---
 async function loadAllData() {
     try {
-        var [persone, immobili, contratti, scadenze, pagamenti, canoni] = await Promise.all([
+        var [persone, immobili, contratti, scadenze, pagamenti, canoni, locRel, condRel] = await Promise.all([
             db.from('anagrafica_persona').select('*'),
             db.from('immobili').select('*'),
             db.from('contratti').select('*'),
             db.from('scadenze').select('*'),
             db.from('pagamenti').select('*'),
-            db.from('canoni_annuali').select('*')
+            db.from('canoni_annuali').select('*'),
+            db.from('contratto_locatori').select('*'),
+            db.from('contratto_conduttori').select('*')
         ]);
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
@@ -195,6 +304,8 @@ async function loadAllData() {
         appData.scadenze = scadenze.data || [];
         appData.pagamenti = pagamenti.data || [];
         appData.canoni_annuali = canoni.data || [];
+        appData.contratto_locatori = locRel.data || [];
+        appData.contratto_conduttori = condRel.data || [];
     } catch (e) {
         console.error('Errore caricamento dati:', e);
         showToast('Errore nel caricamento dei dati', 'error');
@@ -316,17 +427,17 @@ function populateFilterDropdowns() {
         });
     }
 
-    // Locatori
+    // Locatori (via tabelle ponte)
     var locatori = [];
-    contratti.forEach(function(c) { var p = getPersona(c.locatore_id); if (p) locatori.push(p); });
+    contratti.forEach(function(c) { getLocatoriByContratto(c.id).forEach(function(p) { locatori.push(p); }); });
     populate('ffLocNome', locatori, function(p) { return p.nome; });
     populate('ffLocCognome', locatori, function(p) { return p.cognome; });
     populate('ffLocCF', locatori, function(p) { return p.codice_fiscale; });
     populate('ffLocRS', locatori, function(p) { return p.ragione_sociale; });
 
-    // Conduttori
+    // Conduttori (via tabelle ponte)
     var conduttori = [];
-    contratti.forEach(function(c) { var p = getPersona(c.conduttore_id); if (p) conduttori.push(p); });
+    contratti.forEach(function(c) { getConduttoriByContratto(c.id).forEach(function(p) { conduttori.push(p); }); });
     populate('ffConNome', conduttori, function(p) { return p.nome; });
     populate('ffConCognome', conduttori, function(p) { return p.cognome; });
     populate('ffConCF', conduttori, function(p) { return p.codice_fiscale; });
@@ -367,26 +478,30 @@ function applyFilterModal() {
         return val && val.toLowerCase() === filterVal.toLowerCase();
     }
 
-    // Locatore
+    // Locatore (check all locatori of the contract)
     var locNome = document.getElementById('ffLocNome').value;
     var locCognome = document.getElementById('ffLocCognome').value;
     var locCF = document.getElementById('ffLocCF').value;
     var locRS = document.getElementById('ffLocRS').value;
     f = f.filter(function(c) {
-        var p = getPersona(c.locatore_id);
-        if (!p) return false;
-        return matchField(p.nome, locNome) && matchField(p.cognome, locCognome) && matchField(p.codice_fiscale, locCF) && matchField(p.ragione_sociale, locRS);
+        var locs = getLocatoriByContratto(c.id);
+        if (locs.length === 0) return false;
+        return locs.some(function(p) {
+            return matchField(p.nome, locNome) && matchField(p.cognome, locCognome) && matchField(p.codice_fiscale, locCF) && matchField(p.ragione_sociale, locRS);
+        });
     });
 
-    // Conduttore
+    // Conduttore (check all conduttori of the contract)
     var conNome = document.getElementById('ffConNome').value;
     var conCognome = document.getElementById('ffConCognome').value;
     var conCF = document.getElementById('ffConCF').value;
     var conRS = document.getElementById('ffConRS').value;
     f = f.filter(function(c) {
-        var p = getPersona(c.conduttore_id);
-        if (!p) return false;
-        return matchField(p.nome, conNome) && matchField(p.cognome, conCognome) && matchField(p.codice_fiscale, conCF) && matchField(p.ragione_sociale, conRS);
+        var conds = getConduttoriByContratto(c.id);
+        if (conds.length === 0) return false;
+        return conds.some(function(p) {
+            return matchField(p.nome, conNome) && matchField(p.cognome, conCognome) && matchField(p.codice_fiscale, conCF) && matchField(p.ragione_sociale, conRS);
+        });
     });
 
     // Immobile
@@ -438,7 +553,7 @@ function exportData(type) {
         appData.contratti.forEach(function(c) {
             var stato = calcContrattoStato(c);
             var caExp = getCanoneAttuale(c.id);
-            csv += '"' + c.identificativo + '","' + getPersonaLabel(c.locatore_id) + '","' + getPersonaLabel(c.conduttore_id) + '","' + getImmobileLabel(c.immobile_id) + '",' + (caExp ? caExp.importo : 0) + ',"' + (c.data_decorrenza||'') + '","' + (c.data_scadenza||'') + '","' + getStatusLabel(stato) + '",' + (c.tassazione_cedolare_secca ? 'SI' : 'NO') + '\n';
+            csv += '"' + c.identificativo + '","' + getLocatoriLabel(c.id) + '","' + getConduttoriLabel(c.id) + '","' + getImmobileLabel(c.immobile_id) + '",' + (caExp ? caExp.importo : 0) + ',"' + (c.data_decorrenza||'') + '","' + (c.data_scadenza||'') + '","' + getStatusLabel(stato) + '",' + (c.tassazione_cedolare_secca ? 'SI' : 'NO') + '\n';
         });
     } else {
         csv = 'Data,Contratto,Tipo,Importo,Stato\n';
@@ -469,9 +584,7 @@ function openModal(type, id) {
         var c = type === 'editContratto' ? appData.contratti.find(function(x) { return x.id === id; }) : null;
         title.textContent = c ? 'Modifica Contratto' : 'Nuovo Contratto';
 
-        // Get locatore/conduttore data for edit
-        var loc = c ? getPersona(c.locatore_id) : null;
-        var cond = c ? getPersona(c.conduttore_id) : null;
+        // Get immobile data for edit
         var imm = c ? getImmobile(c.immobile_id) : null;
 
         html = '<form id="contrattoForm" class="form-grid">';
@@ -499,33 +612,15 @@ function openModal(type, id) {
         html += '</div></div>';
         html += '<div class="form-group full"><label>Note</label><textarea id="cf_note">' + (c ? (c.note || '') : '') + '</textarea></div>';
 
-        // --- SEZIONE LOCATORE ---
-        var locTipo = 'pf';
-        if (loc && loc.ragione_sociale && !loc.nome) locTipo = 'azienda';
-        html += '<div class="form-section-title full"><i class="fas fa-user-tie"></i> Locatore</div>';
-        html += '<div class="form-group full"><label>Tipo Locatore</label>';
-        html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo" value="pf"' + (locTipo === 'pf' ? ' checked' : '') + ' onchange="toggleLocatoreType(this.value)"> Persona Fisica</label>';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo" value="azienda"' + (locTipo === 'azienda' ? ' checked' : '') + ' onchange="toggleLocatoreType(this.value)"> Azienda</label>';
-        html += '</div></div>';
-        html += '<div class="form-group" id="cf_loc_nome_group"><label>Nome</label><input type="text" id="cf_loc_nome" value="' + (loc ? loc.nome : '') + '"' + (locTipo === 'azienda' ? ' disabled' : '') + '></div>';
-        html += '<div class="form-group" id="cf_loc_cognome_group"><label>Cognome</label><input type="text" id="cf_loc_cognome" value="' + (loc ? loc.cognome : '') + '"' + (locTipo === 'azienda' ? ' disabled' : '') + '></div>';
-        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="cf_loc_cf" value="' + (loc ? (loc.codice_fiscale || '') : '') + '"></div>';
-        html += '<div class="form-group" id="cf_loc_rs_group"><label>Ragione Sociale</label><input type="text" id="cf_loc_rs" value="' + (loc ? (loc.ragione_sociale || '') : '') + '"' + (locTipo === 'pf' ? ' disabled' : '') + '></div>';
+        // --- SEZIONE LOCATORI ---
+        html += '<div class="form-section-title full"><i class="fas fa-user-tie"></i> Locatori</div>';
+        html += '<div class="form-group full"><div id="locatoriRowsContainer"></div>';
+        html += '<button type="button" class="btn btn-sm btn-outline" onclick="addLocatoreRow()"><i class="fas fa-plus"></i> Aggiungi Locatore</button></div>';
 
-        // --- SEZIONE CONDUTTORE ---
-        var condTipo = 'pf';
-        if (cond && cond.ragione_sociale && !cond.nome) condTipo = 'azienda';
-        html += '<div class="form-section-title full"><i class="fas fa-user"></i> Conduttore</div>';
-        html += '<div class="form-group full"><label>Tipo Conduttore</label>';
-        html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo" value="pf"' + (condTipo === 'pf' ? ' checked' : '') + ' onchange="toggleConduttoreType(this.value)"> Persona Fisica</label>';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo" value="azienda"' + (condTipo === 'azienda' ? ' checked' : '') + ' onchange="toggleConduttoreType(this.value)"> Azienda</label>';
-        html += '</div></div>';
-        html += '<div class="form-group" id="cf_cond_nome_group"><label>Nome</label><input type="text" id="cf_cond_nome" value="' + (cond ? cond.nome : '') + '"' + (condTipo === 'azienda' ? ' disabled' : '') + '></div>';
-        html += '<div class="form-group" id="cf_cond_cognome_group"><label>Cognome</label><input type="text" id="cf_cond_cognome" value="' + (cond ? cond.cognome : '') + '"' + (condTipo === 'azienda' ? ' disabled' : '') + '></div>';
-        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="cf_cond_cf" value="' + (cond ? (cond.codice_fiscale || '') : '') + '"></div>';
-        html += '<div class="form-group" id="cf_cond_rs_group"><label>Ragione Sociale</label><input type="text" id="cf_cond_rs" value="' + (cond ? (cond.ragione_sociale || '') : '') + '"' + (condTipo === 'pf' ? ' disabled' : '') + '></div>';
+        // --- SEZIONE CONDUTTORI ---
+        html += '<div class="form-section-title full"><i class="fas fa-user"></i> Conduttori</div>';
+        html += '<div class="form-group full"><div id="conduttoriRowsContainer"></div>';
+        html += '<button type="button" class="btn btn-sm btn-outline" onclick="addConduttoreRow()"><i class="fas fa-plus"></i> Aggiungi Conduttore</button></div>';
 
         // --- SEZIONE IMMOBILE ---
         html += '<div class="form-section-title full"><i class="fas fa-home"></i> Immobile</div>';
@@ -537,9 +632,11 @@ function openModal(type, id) {
         html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape" value="true"' + (!apeChecked ? ' checked' : '') + '> Sì</label>';
         html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape" value="false"' + (apeChecked ? ' checked' : '') + '> No</label>';
         html += '</div></div>';
-        html += '<div class="form-group"><label>Foglio</label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '"></div>';
-        html += '<div class="form-group"><label>Particella</label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '"></div>';
-        html += '<div class="form-group"><label>Sub</label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '"></div>';
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio</label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '" style="max-width:100px"></div>';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella</label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '" style="max-width:100px"></div>';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub</label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '" style="max-width:100px"></div>';
+        html += '</div>';
 
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
@@ -548,7 +645,7 @@ function openModal(type, id) {
         var s = type === 'editScadenza' ? appData.scadenze.find(function(x) { return x.id === id; }) : null;
         title.textContent = s ? 'Modifica Scadenza' : 'Nuova Scadenza';
         var copts = appData.contratti.map(function(c) {
-            return '<option value="' + c.id + '"' + (s && s.contratto_id === c.id ? ' selected' : '') + '>' + c.identificativo + ' - ' + getPersonaLabel(c.conduttore_id) + '</option>';
+            return '<option value="' + c.id + '"' + (s && s.contratto_id === c.id ? ' selected' : '') + '>' + c.identificativo + ' - ' + getConduttoriLabel(c.id) + '</option>';
         }).join('');
         var tipos = ['canone','imposta','bolletta','sicurezza','rinnovo','versamento'].map(function(t) {
             return '<option value="' + t + '"' + (s && s.tipo === t ? ' selected' : '') + '>' + getTipoLabel(t) + '</option>';
@@ -565,7 +662,7 @@ function openModal(type, id) {
     } else if (type === 'newPagamento') {
         title.textContent = 'Registra Pagamento';
         var pc = appData.contratti.map(function(c) {
-            return '<option value="' + c.id + '">' + c.identificativo + ' - ' + getPersonaLabel(c.conduttore_id) + '</option>';
+            return '<option value="' + c.id + '">' + c.identificativo + ' - ' + getConduttoriLabel(c.id) + '</option>';
         }).join('');
         var ptipos = ['canone','imposta','bolletta','sicurezza','versamento','spese'].map(function(t) {
             return '<option value="' + t + '">' + getTipoLabel(t) + '</option>';
@@ -597,7 +694,7 @@ function openModal(type, id) {
         html += '<div class="form-group full" style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px">';
         html += '<strong>' + sc.titolo + '</strong><br>';
         html += '<span style="color:var(--text-muted)">' + getTipoLabel(sc.tipo) + ' &bull; ' + formatDate(sc.data) + '</span>';
-        if (ct) html += '<br><span style="color:var(--text-muted)">' + ct.identificativo + ' - ' + getPersonaLabel(ct.conduttore_id) + '</span>';
+        if (ct) html += '<br><span style="color:var(--text-muted)">' + ct.identificativo + ' - ' + getConduttoriLabel(ct.id) + '</span>';
         html += '</div>';
         html += '<div class="form-group"><label>Data Pagamento</label><input type="date" id="csf_data" value="' + sc.data + '" required></div>';
         html += '<div class="form-group"><label>Importo (EUR)</label><input type="number" id="csf_importo" min="0" step="0.01" required></div>';
@@ -612,8 +709,8 @@ function openModal(type, id) {
         var dv = daysUntil(cv.data_scadenza);
         var dl = dv > 0 ? dv + ' giorni alla scadenza' : dv === 0 ? 'Scade oggi!' : 'Scaduto da ' + Math.abs(dv) + ' giorni';
         var dc = dv <= 30 ? 'urgent' : '';
-        var loc = getPersona(cv.locatore_id);
-        var cond = getPersona(cv.conduttore_id);
+        var locs = getLocatoriByContratto(cv.id);
+        var conds = getConduttoriByContratto(cv.id);
         var imm = getImmobile(cv.immobile_id);
 
         html = '<div class="contract-details" style="margin-bottom:16px">';
@@ -636,16 +733,28 @@ function openModal(type, id) {
         html += '<div class="contract-detail"><label>Rimanenza</label><span class="' + dc + '">' + dl + '</span></div>';
         html += '</div>';
 
-        // Locatore
+        // Locatori
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:12px">';
-        html += '<strong><i class="fas fa-user-tie"></i> Locatore:</strong> ';
-        html += loc ? loc.nome + ' ' + loc.cognome + (loc.codice_fiscale ? ' (CF: ' + loc.codice_fiscale + ')' : '') + (loc.ragione_sociale ? ' - ' + loc.ragione_sociale : '') : 'N/A';
+        html += '<strong><i class="fas fa-user-tie"></i> Locatori:</strong><br>';
+        if (locs.length > 0) {
+            locs.forEach(function(loc) {
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(loc) + (loc.codice_fiscale ? ' <small>(CF: ' + loc.codice_fiscale + ')</small>' : '') + '</span><br>';
+            });
+        } else {
+            html += 'N/A';
+        }
         html += '</div>';
 
-        // Conduttore
+        // Conduttori
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:12px">';
-        html += '<strong><i class="fas fa-user"></i> Conduttore:</strong> ';
-        html += cond ? cond.nome + ' ' + cond.cognome + (cond.codice_fiscale ? ' (CF: ' + cond.codice_fiscale + ')' : '') + (cond.ragione_sociale ? ' - ' + cond.ragione_sociale : '') : 'N/A';
+        html += '<strong><i class="fas fa-user"></i> Conduttori:</strong><br>';
+        if (conds.length > 0) {
+            conds.forEach(function(cond) {
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(cond) + (cond.codice_fiscale ? ' <small>(CF: ' + cond.codice_fiscale + ')</small>' : '') + '</span><br>';
+            });
+        } else {
+            html += 'N/A';
+        }
         html += '</div>';
 
         // Immobile
@@ -665,11 +774,6 @@ function openModal(type, id) {
     var cf = document.getElementById('contrattoForm');
     if (cf) {
         cf.addEventListener('submit', function(e) { e.preventDefault(); saveContratto(id); });
-        // Apply initial locatore/conduttore type toggle
-        var checkedTipo = document.querySelector('input[name="cf_loc_tipo"]:checked');
-        if (checkedTipo) toggleLocatoreType(checkedTipo.value);
-        var checkedCondTipo = document.querySelector('input[name="cf_cond_tipo"]:checked');
-        if (checkedCondTipo) toggleConduttoreType(checkedCondTipo.value);
         // Apply initial cedolare percentuale toggle
         toggleCedolarePercentuale();
         // Populate existing canoni annuali for edit mode
@@ -678,10 +782,18 @@ function openModal(type, id) {
             existingCanoni.forEach(function(ca) {
                 addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '');
             });
+            // Populate existing locatori
+            var existingLocs = getLocatoriByContratto(id);
+            existingLocs.forEach(function(p) { addLocatoreRow(p); });
+            // Populate existing conduttori
+            var existingConds = getConduttoriByContratto(id);
+            existingConds.forEach(function(p) { addConduttoreRow(p); });
         }
-        // If new contract, add one empty row
+        // If new contract, add one empty row for each section
         if (type === 'newContratto') {
             addCanoneRow();
+            addLocatoreRow();
+            addConduttoreRow();
         }
     }
     var sf = document.getElementById('scadenzaForm');
@@ -737,26 +849,36 @@ async function upsertImmobile(dati) {
 
 // --- Save/Update Contratto ---
 async function saveContratto(editId) {
-    var locTipo = (document.querySelector('input[name="cf_loc_tipo"]:checked') || {}).value || 'pf';
-    var locNomeEl = document.getElementById('cf_loc_nome');
-    var locCognomeEl = document.getElementById('cf_loc_cognome');
-    var locRsEl = document.getElementById('cf_loc_rs');
-    var locId = await upsertPersona({
-        nome: locTipo === 'azienda' ? '' : locNomeEl.value.trim(),
-        cognome: locTipo === 'azienda' ? '' : locCognomeEl.value.trim(),
-        codice_fiscale: document.getElementById('cf_loc_cf').value.trim(),
-        ragione_sociale: locTipo === 'pf' ? '' : locRsEl.value.trim()
-    });
-    var condTipo = (document.querySelector('input[name="cf_cond_tipo"]:checked') || {}).value || 'pf';
-    var condNomeEl = document.getElementById('cf_cond_nome');
-    var condCognomeEl = document.getElementById('cf_cond_cognome');
-    var condRsEl = document.getElementById('cf_cond_rs');
-    var condId = await upsertPersona({
-        nome: condTipo === 'azienda' ? '' : condNomeEl.value.trim(),
-        cognome: condTipo === 'azienda' ? '' : condCognomeEl.value.trim(),
-        codice_fiscale: document.getElementById('cf_cond_cf').value.trim(),
-        ragione_sociale: condTipo === 'pf' ? '' : condRsEl.value.trim()
-    });
+    // Collect all locatori from dynamic rows
+    var locRows = document.querySelectorAll('#locatoriRowsContainer .locatore-row');
+    var locIds = [];
+    for (var i = 0; i < locRows.length; i++) {
+        var row = locRows[i];
+        var locTipo = (row.querySelector('input[type="radio"]:checked') || {}).value || 'pf';
+        var locId = await upsertPersona({
+            nome: locTipo === 'azienda' ? '' : (row.querySelector('.loc-nome') || {}).value.trim(),
+            cognome: locTipo === 'azienda' ? '' : (row.querySelector('.loc-cognome') || {}).value.trim(),
+            codice_fiscale: (row.querySelector('.loc-cf') || {}).value.trim(),
+            ragione_sociale: locTipo === 'pf' ? '' : (row.querySelector('.loc-rs') || {}).value.trim()
+        });
+        if (locId) locIds.push(locId);
+    }
+
+    // Collect all conduttori from dynamic rows
+    var condRows = document.querySelectorAll('#conduttoriRowsContainer .conduttore-row');
+    var condIds = [];
+    for (var j = 0; j < condRows.length; j++) {
+        var crow = condRows[j];
+        var condTipo = (crow.querySelector('input[type="radio"]:checked') || {}).value || 'pf';
+        var condId = await upsertPersona({
+            nome: condTipo === 'azienda' ? '' : (crow.querySelector('.cond-nome') || {}).value.trim(),
+            cognome: condTipo === 'azienda' ? '' : (crow.querySelector('.cond-cognome') || {}).value.trim(),
+            codice_fiscale: (crow.querySelector('.cond-cf') || {}).value.trim(),
+            ragione_sociale: condTipo === 'pf' ? '' : (crow.querySelector('.cond-rs') || {}).value.trim()
+        });
+        if (condId) condIds.push(condId);
+    }
+
     var immId = await upsertImmobile({
         indirizzo: document.getElementById('cf_imm_indirizzo').value.trim(),
         citta: document.getElementById('cf_imm_citta').value.trim(),
@@ -772,8 +894,8 @@ async function saveContratto(editId) {
         data_scadenza: document.getElementById('cf_scadenza').value || null,
         data_chiusura: document.getElementById('cf_chiusura').value || null,
         tassazione_cedolare_secca: document.querySelector('input[name="cf_cedolare"]:checked').value === 'true',
-        locatore_id: locId,
-        conduttore_id: condId,
+        locatore_id: locIds.length > 0 ? locIds[0] : null,
+        conduttore_id: condIds.length > 0 ? condIds[0] : null,
         immobile_id: immId,
         percentuale: parseFloat(document.getElementById('cf_percentuale').value) || 0,
         valore_assoluto: parseFloat(document.getElementById('cf_valore_assoluto').value) || 0,
@@ -824,6 +946,32 @@ async function saveContratto(editId) {
         if (!errCanoni && insCanoni) {
             appData.canoni_annuali = appData.canoni_annuali.concat(insCanoni);
         }
+    }
+
+    // --- Gestione Locatori/Conduttori (tabelle ponte) ---
+    // Delete old relations
+    var oldLocRels = appData.contratto_locatori.filter(function(r) { return r.contratto_id === targetId; });
+    if (oldLocRels.length > 0) {
+        var oldLocIds = oldLocRels.map(function(r) { return r.id; });
+        await db.from('contratto_locatori').delete().in('id', oldLocIds);
+        appData.contratto_locatori = appData.contratto_locatori.filter(function(r) { return r.contratto_id !== targetId; });
+    }
+    var oldCondRels = appData.contratto_conduttori.filter(function(r) { return r.contratto_id === targetId; });
+    if (oldCondRels.length > 0) {
+        var oldCondIds = oldCondRels.map(function(r) { return r.id; });
+        await db.from('contratto_conduttori').delete().in('id', oldCondIds);
+        appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.contratto_id !== targetId; });
+    }
+    // Insert new relations
+    if (locIds.length > 0) {
+        var locInserts = locIds.map(function(lid) { return { contratto_id: targetId, persona_id: lid }; });
+        var { data: insLoc, error: errLoc } = await db.from('contratto_locatori').insert(locInserts).select();
+        if (!errLoc && insLoc) appData.contratto_locatori = appData.contratto_locatori.concat(insLoc);
+    }
+    if (condIds.length > 0) {
+        var condInserts = condIds.map(function(cid) { return { contratto_id: targetId, persona_id: cid }; });
+        var { data: insCond, error: errCond } = await db.from('contratto_conduttori').insert(condInserts).select();
+        if (!errCond && insCond) appData.contratto_conduttori = appData.contratto_conduttori.concat(insCond);
     }
 
     closeModal();
@@ -902,6 +1050,8 @@ async function deleteContratto(id) {
     appData.scadenze = appData.scadenze.filter(function(s) { return s.contratto_id !== id; });
     appData.pagamenti = appData.pagamenti.filter(function(p) { return p.contratto_id !== id; });
     appData.canoni_annuali = appData.canoni_annuali.filter(function(ca) { return ca.contratto_id !== id; });
+    appData.contratto_locatori = appData.contratto_locatori.filter(function(r) { return r.contratto_id !== id; });
+    appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.contratto_id !== id; });
     showToast('Contratto eliminato', 'info');
     await refreshPage('contratti');
 }
@@ -968,7 +1118,7 @@ function setView(view) {
 // ============================================
 
 async function renderDashboard() {
-    var attivi = appData.contratti.filter(function(c) { var s = calcContrattoStato(c); return s === 'attivo' || s === 'in-scadenza'; });
+    var attivi = appData.contratti.filter(function(c) { return calcContrattoStato(c) === 'attivo'; });
     var entrate = attivi.reduce(function(s, c) { return s + (getCanoneAttuale(c.id) ? getCanoneAttuale(c.id).importo : 0); }, 0);
     var scadenzeUrgenti = appData.scadenze.filter(function(s) { return s.stato !== 'completata' && daysUntil(s.data) <= 30; });
 
@@ -985,7 +1135,7 @@ async function renderDashboard() {
             var d = daysUntil(s.data);
             var dc = d <= 7 ? 'red' : d <= 30 ? 'orange' : 'green';
             var ct = appData.contratti.find(function(x) { return x.id === s.contratto_id; });
-            var inqLabel = ct ? getPersonaLabel(ct.conduttore_id) : 'N/A';
+            var inqLabel = ct ? getConduttoriLabel(ct.id) : 'N/A';
             return '<div class="upcoming-item"><div class="upcoming-dot ' + dc + '"></div><div class="upcoming-info"><span class="up-title">' + s.titolo + '</span><span class="up-sub">' + inqLabel + '</span></div><span class="upcoming-date">' + formatDate(s.data) + '</span></div>';
         }).join('');
     }
@@ -998,7 +1148,7 @@ async function renderDashboard() {
     } else {
         actEl.innerHTML = recent.map(function(p) {
             var ct = appData.contratti.find(function(x) { return x.id === p.contratto_id; });
-            var inqLabel = ct ? getPersonaLabel(ct.conduttore_id) : 'N/A';
+            var inqLabel = ct ? getConduttoriLabel(ct.id) : 'N/A';
             return '<div class="activity-item"><div class="activity-dot"></div><span class="activity-text">' + inqLabel + ' - ' + getTipoLabel(p.tipo) + ' ' + formatCurrency(p.importo) + '</span><span class="activity-time">' + formatDate(p.data) + '</span></div>';
         }).join('');
     }
@@ -1011,7 +1161,7 @@ async function renderDashboard() {
         notifs.push({
             icon: 'fa-exclamation-triangle',
             iconClass: d <= 7 ? 'danger' : 'warning',
-            text: s.titolo + ' - ' + (ct ? getPersonaLabel(ct.conduttore_id) : '') + ' (' + d + ' gg)',
+            text: s.titolo + ' - ' + (ct ? getConduttoriLabel(ct.id) : '') + ' (' + d + ' gg)',
             time: formatDate(s.data)
         });
     });
@@ -1065,7 +1215,9 @@ function renderCharts() {
 // --- Render Contratti ---
 async function renderContratti() { renderContrattiList(appData.contratti); }
 function renderContrattiList(list) {
-    var filtered = list;
+    var filtered = list.slice().sort(function(a, b) {
+        return (b.data_decorrenza || '').localeCompare(a.data_decorrenza || '');
+    });
 
     var cardsEl = document.getElementById('contractsCards');
     if (filtered.length === 0) {
@@ -1076,8 +1228,8 @@ function renderContrattiList(list) {
             var d = daysUntil(c.data_scadenza);
             var dt = d > 0 ? d + ' gg' : 'Scaduto';
             var ds = d <= 30 ? 'color:var(--danger)' : '';
-            var locLabel = getPersonaLabel(c.locatore_id);
-            var condLabel = getPersonaLabel(c.conduttore_id);
+            var locLabel = getLocatoriLabel(c.id);
+            var condLabel = getConduttoriLabel(c.id);
             var immLabel = getImmobileLabel(c.immobile_id);
             var h = '<div class="contract-card">';
             h += '<div class="contract-top"><span class="contract-code">' + c.identificativo + '</span><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></div>';
@@ -1102,7 +1254,8 @@ function renderContrattiList(list) {
     var tbody = document.getElementById('contractsTableBody');
     tbody.innerHTML = filtered.map(function(c) {
         var stato = calcContrattoStato(c);
-        return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getPersonaLabel(c.locatore_id) + '</td><td>' + getPersonaLabel(c.conduttore_id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+        var caTab = getCanoneAttuale(c.id);
+        return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getLocatoriLabel(c.id) + '</td><td>' + getConduttoriLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + (caTab ? formatCurrency(caTab.importo) : '-') + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
     }).join('');
 }
 
@@ -1135,7 +1288,7 @@ async function renderScadenze() {
         var h = '<div class="scadenza-card ' + urg + '" style="' + (ic ? 'opacity:0.5' : '') + '">';
         h += '<div class="scadenza-icon"><i class="fas ' + getScadenzaIcon(s.tipo) + '"></i></div>';
         h += '<div class="scadenza-info"><span class="scadenza-title">' + s.titolo + '</span>';
-        h += '<span class="scadenza-sub">' + (ct ? ct.identificativo + ' - ' + getPersonaLabel(ct.conduttore_id) : 'N/A') + ' &bull; ' + getTipoLabel(s.tipo) + '</span></div>';
+        h += '<span class="scadenza-sub">' + (ct ? ct.identificativo + ' - ' + getConduttoriLabel(ct.id) : 'N/A') + ' &bull; ' + getTipoLabel(s.tipo) + '</span></div>';
         h += '<div class="scadenza-actions">';
         h += ic ? '<span class="status-badge attivo">Completata</span>' : '<button class="btn btn-sm btn-success" data-action="complete-scadenza" data-id="' + s.id + '" title="Segna completata"><i class="fas fa-check"></i></button>';
         h += '<button class="btn btn-sm btn-outline" data-action="edit-scadenza" data-id="' + s.id + '" title="Modifica"><i class="fas fa-edit"></i></button>';
@@ -1155,8 +1308,8 @@ async function renderPagamenti() {
     var tbody = document.getElementById('pagamentiTableBody');
     tbody.innerHTML = pagamenti.map(function(p) {
         var c = appData.contratti.find(function(x) { return x.id === p.contratto_id; });
-        var condLabel = c ? getPersonaLabel(c.conduttore_id) : 'N/A';
-        var locLabel = c ? getPersonaLabel(c.locatore_id) : 'N/A';
+        var condLabel = c ? getConduttoriLabel(c.id) : 'N/A';
+        var locLabel = c ? getLocatoriLabel(c.id) : 'N/A';
         return '<tr><td>' + formatDate(p.data) + '</td><td>' + (c ? c.identificativo : '-') + '</td><td>' + locLabel + '</td><td>' + condLabel + '</td><td>' + getTipoLabel(p.tipo) + '</td><td><strong>' + formatCurrency(p.importo) + '</strong></td><td><span class="status-badge ' + p.stato + '">' + getStatusLabel(p.stato) + '</span></td><td><div class="td-actions"><button class="danger" data-action="delete-pagamento" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
     }).join('');
 }
@@ -1187,7 +1340,7 @@ async function renderArchivio() {
         tbody.innerHTML = chiusi.map(function(c) {
             var stato = calcContrattoStato(c);
             var caArch = getCanoneAttuale(c.id);
-            return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getPersonaLabel(c.locatore_id) + '</td><td>' + getPersonaLabel(c.conduttore_id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + (caArch ? formatCurrency(caArch.importo) : '-') + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td>' + formatDate(c.data_chiusura) + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td></tr>';
+            return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getLocatoriLabel(c.id) + '</td><td>' + getConduttoriLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + (caArch ? formatCurrency(caArch.importo) : '-') + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td>' + formatDate(c.data_chiusura) + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td></tr>';
         }).join('');
     }
 }

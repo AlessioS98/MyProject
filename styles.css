@@ -1080,7 +1080,7 @@ input, select, textarea { font-family: inherit; }
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
+    overflow-x: auto;
 }
 
 .data-table {
@@ -1089,9 +1089,9 @@ input, select, textarea { font-family: inherit; }
 }
 
 .data-table th {
-    padding: 12px 16px;
+    padding: 8px 10px;
     text-align: left;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -1102,8 +1102,8 @@ input, select, textarea { font-family: inherit; }
 }
 
 .data-table td {
-    padding: 12px 16px;
-    font-size: 0.85rem;
+    padding: 7px 10px;
+    font-size: 0.78rem;
     border-bottom: 1px solid var(--border-light);
     white-space: nowrap;
 }
@@ -1122,14 +1122,14 @@ input, select, textarea { font-family: inherit; }
 }
 
 .data-table .td-actions button {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--text-secondary);
-    font-size: 0.82rem;
+    font-size: 0.75rem;
     transition: all var(--transition);
 }
 

@@ -81,6 +81,24 @@ CREATE TABLE IF NOT EXISTS canoni_annuali (
 
 ALTER TABLE canoni_annuali DISABLE ROW LEVEL SECURITY;
 
+-- 8. Tabelle ponte per Locatori e Conduttori multipli
+CREATE TABLE IF NOT EXISTS contratto_locatori (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
+  persona_id bigint REFERENCES anagrafica_persona(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS contratto_conduttori (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
+  persona_id bigint REFERENCES anagrafica_persona(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE contratto_locatori DISABLE ROW LEVEL SECURITY;
+ALTER TABLE contratto_conduttori DISABLE ROW LEVEL SECURITY;
+
 -- Disabilita RLS (single-user app)
 ALTER TABLE anagrafica_persona DISABLE ROW LEVEL SECURITY;
 ALTER TABLE immobili DISABLE ROW LEVEL SECURITY;
@@ -164,3 +182,10 @@ INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUE
 (9, 13200, '2025-06-01', '2026-05-31'),
 (9, 13860, '2026-06-01', '2027-05-31'),
 (9, 14553, '2027-06-01', '2028-05-31');
+
+-- Dati di esempio per tabelle ponte (locatori/conduttori multipli)
+INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES
+(1, 1), (2, 3), (3, 5), (4, 1), (5, 3), (6, 1), (7, 2), (8, 4), (9, 6);
+
+INSERT INTO contratto_conduttori (contratto_id, persona_id) VALUES
+(1, 2), (2, 4), (3, 6), (4, 4), (5, 5), (6, 6), (7, 1), (8, 3), (9, 5);
