@@ -31,10 +31,7 @@
                 <i class="fas fa-file-contract"></i>
                 <span>Contratti</span>
             </a>
-            <a href="#" class="nav-item" data-page="scadenze">
-                <i class="fas fa-calendar-alt"></i>
-                <span>Scadenze</span>
-            </a>
+
 
         </nav>
         <div class="sidebar-footer">
@@ -97,15 +94,6 @@
                         <span class="stat-label">Contratti Attivi</span>
                     </div>
                 </div>
-
-                <div class="stat-card stat-orange">
-                    <div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="statScadenze">0</span>
-                        <span class="stat-label">Scadenze Imminenti</span>
-                    </div>
-                    <div class="stat-trend warning"><i class="fas fa-clock"></i> Urgenti</div>
-                </div>
             </div>
 
             <!-- Charts Row -->
@@ -115,33 +103,6 @@
                         <h3>Distribuzione Contratti</h3>
                     </div>
                     <canvas id="chartTipologie" height="180"></canvas>
-                </div>
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <h3>Distribuzione Scadenze per Priorità</h3>
-                    </div>
-                    <canvas id="chartScadenzePriorita" height="180"></canvas>
-                </div>
-            </div>
-
-            <!-- Recent Activity & Upcoming -->
-            <div class="bottom-grid">
-                <div class="card">
-                    <div class="card-header">
-                        <h3><i class="fas fa-clock"></i> Scadenze Prossime</h3>
-                        <a href="#" class="card-link" onclick="navigateTo('scadenze')">Vedi tutte</a>
-                    </div>
-                    <div class="upcoming-list" id="upcomingDeadlines">
-                        <!-- Populated by JS -->
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3><i class="fas fa-history"></i> Attività Recenti</h3>
-                    </div>
-                    <div class="activity-list" id="recentActivity">
-                        <!-- Populated by JS -->
-                    </div>
                 </div>
             </div>
         </section>
@@ -215,67 +176,7 @@
             </div>
         </section>
 
-        <!-- Page: Scadenze -->
-        <section class="page" id="page-scadenze">
-            <div class="page-header">
-                <div>
-                    <h1>Scadenze e Adempimenti</h1>
-                    <p class="page-subtitle">Gestisci le scadenze fiscali e contrattuali</p>
-                </div>
-            </div>
 
-            <!-- Filters -->
-            <div class="filters-bar">
-                <div class="filter-group">
-                    <select id="filterScadenzeStato" class="filter-select" onchange="renderScadenze()">
-                        <option value="all">Tutte le scadenze</option>
-                        <option value="in-attesa">In Attesa</option>
-                        <option value="completata">Completate</option>
-                    </select>
-                    <select id="filterScadenzeUrgenza" class="filter-select" onchange="renderScadenze()">
-                        <option value="all">Tutte le priorità</option>
-                        <option value="alta">Alta</option>
-                        <option value="media">Media</option>
-                        <option value="bassa">Bassa</option>
-                    </select>
-                </div>
-                <div class="view-toggle">
-                    <button class="view-btn active" data-view="cards" onclick="setViewScadenze('cards')">
-                        <i class="fas fa-th"></i>
-                    </button>
-                    <button class="view-btn" data-view="table" onclick="setViewScadenze('table')">
-                        <i class="fas fa-list"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Cards View -->
-            <div class="contracts-grid" id="scadenzeCards">
-                <!-- Populated by JS -->
-            </div>
-
-            <!-- Table View -->
-            <div class="table-container" id="scadenzeTable" style="display:none;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Contratto</th>
-                            <th>Immobile</th>
-                            <th>Locatore</th>
-                            <th>Conduttore</th>
-                            <th>Scadenza</th>
-                            <th>Rimanenza</th>
-                            <th>Priorità</th>
-                            <th>Stato</th>
-                            <th>Azioni</th>
-                        </tr>
-                    </thead>
-                    <tbody id="scadenzeTableBody">
-                        <!-- Populated by JS -->
-                    </tbody>
-                </table>
-            </div>
-        </section>
 
     </main>
 
