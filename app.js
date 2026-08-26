@@ -517,49 +517,66 @@ function closeFilterModal() {
 
 // --- Filter Autocomplete ---
 function setupFilterAutocomplete(inputEl, getValues, onPick) {
-    // Remove any existing suggestions container to avoid duplicates on re-open
+    // Idempotent binding: remove a previously attached handler and the old
+    // suggestions container so reopening the modal never stacks listeners.
+    if (inputEl.__filterHandler) inputEl.removeEventListener('input', inputEl.__filterHandler);
+    if (inputEl.__blurHandler) inputEl.removeEventListener('blur', inputEl.__blurHandler);
     var existing = inputEl.parentNode.querySelector('.imm-suggestions');
     if (existing) existing.remove();
+
     var suggestionsEl = document.createElement('div');
     suggestionsEl.className = 'imm-suggestions';
     inputEl.parentNode.appendChild(suggestionsEl);
 
-    inputEl.addEventListener('input', function() {
+    // Escape text so DB values can't break the innerHTML markup.
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function toLabel(item) {
+        return String((typeof item === 'string') ? item : (item ? item.label : '')).trim();
+    }
+
+    inputEl.__blurHandler = function() {
+        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
+    };
+    inputEl.addEventListener('blur', inputEl.__blurHandler);
+
+    inputEl.__filterHandler = function() {
         var val = inputEl.value.trim().toUpperCase();
         if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
-        var items = getValues();
+        var items = getValues() || [];
         var seen = {};
         var matches = [];
         items.forEach(function(item) {
-            var label = (typeof item === 'string') ? item : item.label;
-            var key = (item && item.id != null) ? item.id : label.toUpperCase();
-            if (label && label.toUpperCase().indexOf(val) === 0 && !seen[key]) {
-                seen[key] = true;
+            var label = toLabel(item);
+            var upper = label.toUpperCase();
+            // Dedupe by the displayed value so identical texts appear once.
+            if (label.length > 0 && upper.indexOf(val) === 0 && !seen[upper]) {
+                seen[upper] = true;
                 matches.push(item);
             }
         });
         if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
         suggestionsEl.innerHTML = matches.map(function(item, i) {
-            var label = (typeof item === 'string') ? item : item.label;
-            var sub = (typeof item === 'object' && item.sub) ? '<div class="imm-suggestion-cad">' + item.sub + '</div>' : '';
-            return '<div class="imm-suggestion-item" data-idx="' + i + '"><div class="imm-suggestion-addr">' + label + '</div>' + sub + '</div>';
+            var label = toLabel(item);
+            var sub = (typeof item === 'object' && item.sub) ? '<div class="imm-suggestion-cad">' + esc(item.sub) + '</div>' : '';
+            return '<div class="imm-suggestion-item" data-idx="' + i + '"><div class="imm-suggestion-addr">' + esc(label) + '</div>' + sub + '</div>';
         }).join('');
         suggestionsEl.classList.add('show');
 
         suggestionsEl.querySelectorAll('.imm-suggestion-item').forEach(function(el, idx) {
             el.addEventListener('click', function() {
                 var item = matches[idx];
-                var label = (typeof item === 'string') ? item : item.label;
-                inputEl.value = label;
+                inputEl.value = toLabel(item);
                 suggestionsEl.classList.remove('show');
                 if (onPick && typeof item === 'object' && item.data) onPick(item.data);
             });
         });
-    });
-
-    inputEl.addEventListener('blur', function() {
-        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
-    });
+    };
+    inputEl.addEventListener('input', inputEl.__filterHandler);
 }
 
 function openFilterModal() {
@@ -569,67 +586,47 @@ function openFilterModal() {
 }
 
 function setupFilterInputs() {
-    // Collect persone used as locatori
-    var locatori = [];
-    var seenLoc = {};
-    appData.contratti.forEach(function(c) {
-        getLocatoriByContratto(c.id).forEach(function(p) {
-            if (!seenLoc[p.id]) { seenLoc[p.id] = true; locatori.push(p); }
-        });
-    });
-    // Collect persone used as conduttori
-    var conduttori = [];
-    var seenCond = {};
-    appData.contratti.forEach(function(c) {
-        getConduttoriByContratto(c.id).forEach(function(p) {
-            if (!seenCond[p.id]) { seenCond[p.id] = true; conduttori.push(p); }
-        });
-    });
-    // Collect immobili used in contracts
-    var immUsed = [];
-    var seenImm = {};
-    appData.contratti.forEach(function(c) {
-        var imm = getImmobile(c.immobile_id);
-        if (imm && !seenImm[imm.id]) { seenImm[imm.id] = true; immUsed.push(imm); }
-    });
+    // The suggestions draw from the FULL tables, not only the people/immobili
+    // already attached to a contract. This way any record present in the
+    // anagrafica / immobili is always suggested, even if it is not yet used
+    // by a contract.
+    var persone = appData.persone;
+    var immobili = appData.immobili;
+    var contratti = appData.contratti;
+
+    // Person field factories (used for both locatore and conduttore)
+    function nomi()     { return persone.map(function(p) { return { label: p.nome }; }); }
+    function cognomi()  { return persone.map(function(p) { return { label: p.cognome }; }); }
+    function cfList()   { return persone.map(function(p) { return p.codice_fiscale ? { label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }
+    function rsList()   { return persone.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { label: p.ragione_sociale }; }); }
 
     // Locatore
-    setupFilterAutocomplete(document.getElementById('ffLocNome'),
-        function() { return locatori.map(function(p) { return { id: p.id, label: p.nome }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffLocCognome'),
-        function() { return locatori.map(function(p) { return { id: p.id, label: p.cognome }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffLocCF'),
-        function() { return locatori.map(function(p) { return p.codice_fiscale ? { id: p.id, label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffLocRS'),
-        function() { return locatori.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { id: p.id, label: p.ragione_sociale }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffLocNome'), nomi, null);
+    setupFilterAutocomplete(document.getElementById('ffLocCognome'), cognomi, null);
+    setupFilterAutocomplete(document.getElementById('ffLocCF'), cfList, null);
+    setupFilterAutocomplete(document.getElementById('ffLocRS'), rsList, null);
 
     // Conduttore
-    setupFilterAutocomplete(document.getElementById('ffConNome'),
-        function() { return conduttori.map(function(p) { return { id: p.id, label: p.nome }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffConCognome'),
-        function() { return conduttori.map(function(p) { return { id: p.id, label: p.cognome }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffConCF'),
-        function() { return conduttori.map(function(p) { return p.codice_fiscale ? { id: p.id, label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffConRS'),
-        function() { return conduttori.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { id: p.id, label: p.ragione_sociale }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffConNome'), nomi, null);
+    setupFilterAutocomplete(document.getElementById('ffConCognome'), cognomi, null);
+    setupFilterAutocomplete(document.getElementById('ffConCF'), cfList, null);
+    setupFilterAutocomplete(document.getElementById('ffConRS'), rsList, null);
 
     // Immobile
     setupFilterAutocomplete(document.getElementById('ffIndirizzo'),
-        function() { return immUsed.map(function(i) { return { id: i.id, label: i.indirizzo, sub: i.citta }; }); }, null);
+        function() { return immobili.map(function(i) { return { label: i.indirizzo, sub: i.citta }; }); }, null);
     setupFilterAutocomplete(document.getElementById('ffCitta'),
-        function() { return immUsed.map(function(i) { return { id: i.id, label: i.citta }; }); }, null);
+        function() { return immobili.map(function(i) { return { label: i.citta }; }); }, null);
+    setupFilterAutocomplete(document.getElementById('ffFoglio'),
+        function() { return immobili.map(function(i) { return i.foglio ? { label: i.foglio, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffParticella'),
+        function() { return immobili.map(function(i) { return i.particella ? { label: i.particella, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+    setupFilterAutocomplete(document.getElementById('ffSub'),
+        function() { return immobili.map(function(i) { return i.sub ? { label: i.sub, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
 
     // Identificativo
     setupFilterAutocomplete(document.getElementById('ffIdentificativo'),
-        function() { return appData.contratti.map(function(c) { return { id: c.id, label: c.identificativo }; }); }, null);
-
-    // Immobile - Foglio, Particella, Sub
-    setupFilterAutocomplete(document.getElementById('ffFoglio'),
-        function() { return immUsed.map(function(i) { return i.foglio ? { id: i.id, label: i.foglio, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffParticella'),
-        function() { return immUsed.map(function(i) { return i.particella ? { id: i.id, label: i.particella, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffSub'),
-        function() { return immUsed.map(function(i) { return i.sub ? { id: i.id, label: i.sub, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+        function() { return contratti.map(function(c) { return { label: c.identificativo }; }); }, null);
 }
 
 function resetFilterModal() {
@@ -1104,7 +1101,8 @@ async function saveContratto(editId) {
         var importo = parseFloat(row.querySelector('.canone-importo').value) || 0;
         var dataInizio = row.querySelector('.canone-data-inizio').value || null;
         var dataFine = row.querySelector('.canone-data-fine').value || null;
-        var noteCanone = row.querySelector('.canone-note').value.trim() || null;
+        var noteEl = row.querySelector('.canone-note');
+        var noteCanone = noteEl ? (noteEl.value.trim() || null) : null;
         newCanoni.push({
             contratto_id: targetId,
             importo: importo,
