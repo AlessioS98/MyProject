@@ -44,9 +44,11 @@ CREATE TABLE IF NOT EXISTS contratti (
 CREATE TABLE IF NOT EXISTS scadenze (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
-  data date NOT NULL,
+  data_decorrenza date NOT NULL,
   prossima_scadenza date,
-  urgenza text DEFAULT 'media',
+  prossima_decorrenza date,
+  priorita text DEFAULT 'media' CHECK (priorita IN ('alta', 'media', 'bassa')),
+  importo numeric DEFAULT 0,
   stato text DEFAULT 'in-attesa',
   created_at timestamptz DEFAULT now()
 );
@@ -66,7 +68,62 @@ CREATE TABLE IF NOT EXISTS canoni_annuali (
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS prossima_scadenza date;
+-- Colonna importo (importo da pagare) per le scadenze
+ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS importo numeric DEFAULT 0;
+
+-- Rinomina urgenza in priorita (Alta / Media / Bassa) se esiste ancora
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'scadenze' AND column_name = 'urgenza') THEN
+    ALTER TABLE scadenze RENAME COLUMN urgenza TO priorita;
+  END IF;
+END $$;
+
+-- Vincolo sui valori di priorita (Postgres non supporta IF NOT EXISTS su ADD CONSTRAINT)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'scadenze_priorita_check') THEN
+    ALTER TABLE scadenze ADD CONSTRAINT scadenze_priorita_check
+      CHECK (priorita IN ('alta', 'media', 'bassa'));
+  END IF;
+END $$;
+
+-- Rinomina data in data_decorrenza (decorrenza del contratto) se esiste ancora
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'scadenze' AND column_name = 'data') THEN
+    ALTER TABLE scadenze RENAME COLUMN data TO data_decorrenza;
+  END IF;
+END $$;
+
+-- Colonna prossima_decorrenza: nuova decorrenza a cui farà riferimento il contratto
+ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS prossima_decorrenza date;
+
+-- Calcolo automatico:
+--   prossima_scadenza    = data_decorrenza + 1 anno + 30 giorni
+--   prossima_decorrenza  = prossima_scadenza + 1 giorno
+CREATE OR REPLACE FUNCTION calc_scadenze_dates()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.data_decorrenza IS NOT NULL THEN
+    NEW.prossima_scadenza := (NEW.data_decorrenza + INTERVAL '1 year' + INTERVAL '30 days')::date;
+    NEW.prossima_decorrenza := (NEW.prossima_scadenza + INTERVAL '1 day')::date;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_scadenze_calc_dates ON scadenze;
+CREATE TRIGGER trg_scadenze_calc_dates
+  BEFORE INSERT OR UPDATE OF data_decorrenza ON scadenze
+  FOR EACH ROW
+  EXECUTE FUNCTION calc_scadenze_dates();
+
+-- Ricalcola le date per le righe esistenti che non le hanno ancora
+UPDATE scadenze SET data_decorrenza = data_decorrenza
+WHERE prossima_scadenza IS NULL OR prossima_decorrenza IS NULL;
 
 ALTER TABLE canoni_annuali DISABLE ROW LEVEL SECURITY;
 
@@ -152,9 +209,10 @@ INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUE
 (8, 6000, '2025-08-01', '2026-07-31'),
 (9, 4800, '2024-06-01', '2025-05-31');
 
-INSERT INTO scadenze (contratto_id, data, prossima_scadenza, urgenza, stato) VALUES
-(1, '2026-02-14', '2027-03-17', 'media', 'completata'),
-(2, '2025-06-01', '2026-07-01', 'alta', 'in-attesa');
+-- prossima_scadenza e prossima_decorrenza vengono calcolate automaticamente dal trigger
+INSERT INTO scadenze (contratto_id, data_decorrenza, priorita, importo, stato) VALUES
+(1, '2025-01-15', 'media', 7500, 'completata'),
+(2, '2025-06-01', 'alta', 24000, 'in-attesa');
 
 -- Dati di esempio per tabelle ponte (locatori/conduttori multipli)
 INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES
