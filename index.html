@@ -73,7 +73,10 @@
         <div class="notification-panel" id="notifPanel">
             <div class="notif-header">
                 <h3>Notifiche</h3>
-                <button class="notif-clear" id="notifClear">Segna tutte come lette</button>
+                <div style="display:flex;gap:8px">
+                    <button class="notif-clear" onclick="openModal('notifSettings')"><i class="fas fa-cog"></i> Impostazioni</button>
+                    <button class="notif-clear" id="notifClear">Segna tutte come lette</button>
+                </div>
             </div>
             <div class="notif-list" id="notifList">
                 <!-- Populated by JS -->

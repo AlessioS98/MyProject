@@ -220,3 +220,18 @@ INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES
 
 INSERT INTO contratto_conduttori (contratto_id, persona_id) VALUES
 (1, 2), (2, 3), (3, 7), (4, 8), (5, 9), (6, 10), (7, 3), (8, 2), (9, 7);
+
+-- 9. Impostazioni notifiche
+CREATE TABLE IF NOT EXISTS impostazioni_notifiche (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  scadenze_anticipo integer DEFAULT 7,
+  scadenze_ripeti integer DEFAULT 1,
+  contratti_anticipo integer DEFAULT 30,
+  contratti_ripeti integer DEFAULT 1,
+  updated_at timestamptz DEFAULT now()
+);
+
+INSERT INTO impostazioni_notifiche (scadenze_anticipo)
+SELECT 7 WHERE NOT EXISTS (SELECT 1 FROM impostazioni_notifiche);
+
+ALTER TABLE impostazioni_notifiche DISABLE ROW LEVEL SECURITY;

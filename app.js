@@ -8,7 +8,9 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], impostazioniNotifiche: null };
+// Notifiche già mostrate in questa sessione (ricominciano le ripetizioni a ogni ricarica)
+var notificationShownWith = new Set();
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -414,14 +416,15 @@ function toLocalDateStr(d) {
 // --- Data Loading ---
 async function loadAllData() {
     try {
-        var [persone, immobili, contratti, scadenze, canoni, locRel, condRel] = await Promise.all([
+        var [persone, immobili, contratti, scadenze, canoni, locRel, condRel, impost] = await Promise.all([
             db.from('anagrafica_persona').select('*'),
             db.from('immobili').select('*'),
             db.from('contratti').select('*'),
             db.from('scadenze').select('*'),
             db.from('canoni_annuali').select('*'),
             db.from('contratto_locatori').select('*'),
-            db.from('contratto_conduttori').select('*')
+            db.from('contratto_conduttori').select('*'),
+            db.from('impostazioni_notifiche').select('*').limit(1)
         ]);
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
@@ -430,6 +433,7 @@ async function loadAllData() {
         appData.canoni_annuali = canoni.data || [];
         appData.contratto_locatori = locRel.data || [];
         appData.contratto_conduttori = condRel.data || [];
+        appData.impostazioniNotifiche = (impost.data && impost.data.length > 0) ? impost.data[0] : null;
     } catch (e) {
         console.error('Errore caricamento dati:', e);
         showToast('Errore nel caricamento dei dati', 'error');
@@ -503,6 +507,12 @@ document.getElementById('themeToggle').addEventListener('click', function() {
 document.getElementById('notifBtn').addEventListener('click', function(e) {
     e.stopPropagation();
     document.getElementById('notifPanel').classList.toggle('show');
+});
+document.getElementById('notifClear').addEventListener('click', function() {
+    var now = Date.now();
+    appData.scadenze.forEach(function(s) { localStorage.setItem('notifSeen_scadenza_' + s.id, String(now)); });
+    appData.contratti.forEach(function(c) { localStorage.setItem('notifSeen_contratto_' + c.id, String(now)); });
+    renderNotifications();
 });
 document.addEventListener('click', function() {
     document.getElementById('notifPanel').classList.remove('show');
@@ -916,6 +926,19 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'notifSettings') {
+        title.textContent = 'Impostazioni Notifiche';
+        var st = getNotifSettings();
+        html = '<form id="notifSettingsForm" class="form-grid">';
+        html += '<div class="form-section-title full"><i class="fas fa-hourglass-half"></i> Scadenze di Pagamento</div>';
+        html += '<div class="form-group"><label>Avvisami quando mancano (giorni)</label><input type="number" id="ns_scadenze_anticipo" min="1" max="365" value="' + st.scadenzeAnticipo + '"></div>';
+        html += '<div class="form-group"><label>Ripeti la notifica ogni (giorni)</label><input type="number" id="ns_scadenze_ripeti" min="1" max="365" value="' + st.scadenzeRipeti + '"></div>';
+        html += '<div class="form-section-title full"><i class="fas fa-file-contract"></i> Contratti in Scadenza</div>';
+        html += '<div class="form-group"><label>Avvisami quando mancano (giorni)</label><input type="number" id="ns_contratti_anticipo" min="1" max="365" value="' + st.contrattiAnticipo + '"></div>';
+        html += '<div class="form-group"><label>Ripeti la notifica ogni (giorni)</label><input type="number" id="ns_contratti_ripeti" min="1" max="365" value="' + st.contrattiRipeti + '"></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</form>';
+
     }
 
     body.innerHTML = html;
@@ -956,6 +979,9 @@ function openModal(type, id) {
     }
     var iqf = document.getElementById('inquilinoForm');
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
+
+    var nsf = document.getElementById('notifSettingsForm');
+    if (nsf) nsf.addEventListener('submit', function(e) { e.preventDefault(); saveNotifSettings(); });
 
 
     // Delete confirmation modal
@@ -1229,9 +1255,8 @@ async function renderDashboard() {
 
     document.getElementById('statContratti').textContent = attivi.length;
 
-    // Notifications (empty)
-    document.getElementById('notifBadge').textContent = '';
-    document.getElementById('notifList').innerHTML = '<div class="notif-item"><div class="notif-content"><p>Nessuna notifica</p></div></div>';
+    // Notifications (scadenze entro 7 giorni dalla prossima scadenza)
+    renderNotifications();
 
     renderCharts();
     renderScadenzeChart();
@@ -1331,6 +1356,135 @@ function renderContrattiList(list) {
 
 
 
+// --- Urgenza scadenze: notifica entro 7 giorni dalla prossima scadenza ---
+function getScadenzaUrgenza(s) {
+    if (s.stato === 'completata' || s.stato === 'completato') return null;
+    if (!s.prossima_scadenza) return null;
+    var c = getContrattoById(s.contratto_id);
+    if (!c || !c.tassazione_cedolare_secca) return null;
+    var gg = daysUntil(s.prossima_scadenza);
+    if (gg <= 0) return { type: 'scaduta', label: 'Scaduta', days: gg };
+    if (gg <= getNotifSettings().scadenzeAnticipo) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
+    return null;
+}
+function getNotifSettings() {
+    var s = appData.impostazioniNotifiche || {};
+    return {
+        scadenzeAnticipo: parseInt(s.scadenze_anticipo, 10) || 7,
+        scadenzeRipeti: parseInt(s.scadenze_ripeti, 10) || 1,
+        contrattiAnticipo: parseInt(s.contratti_anticipo, 10) || 30,
+        contrattiRipeti: parseInt(s.contratti_ripeti, 10) || 1
+    };
+}
+function renderNotifications() {
+    var sett = getNotifSettings();
+    var items = [];
+
+    // Scadenze di pagamento entro l'anticipo configurato (solo contratti con cedolare secca)
+    appData.scadenze.filter(function(s) { return getScadenzaUrgenza(s); }).forEach(function(s) {
+        var c = getContrattoById(s.contratto_id);
+        var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
+        var urg = getScadenzaUrgenza(s);
+        var isScaduta = urg.type === 'scaduta';
+        items.push({
+            key: 'scadenza_' + s.id,
+            ripeti: sett.scadenzeRipeti,
+            date: s.prossima_scadenza,
+            icon: isScaduta ? 'fa-exclamation-circle' : 'fa-hourglass-half',
+            cls: isScaduta ? 'danger' : 'warning',
+            txt: isScaduta ? 'Scadenza passata · ' + cod : (urg.days === 1 ? 'Scadenza domani · ' + cod : 'Scadenza tra ' + urg.days + ' giorni · ' + cod),
+            meta: formatDate(s.prossima_scadenza) + ' · ' + formatCurrency(s.importo)
+        });
+    });
+
+    // Contratti in scadenza entro l'anticipo configurato
+    appData.contratti.forEach(function(c) {
+        if (c.data_chiusura || !c.data_scadenza) return;
+        var gg = daysUntil(c.data_scadenza);
+        if (gg <= 0 || gg > sett.contrattiAnticipo) return;
+        items.push({
+            key: 'contratto_' + c.id,
+            ripeti: sett.contrattiRipeti,
+            date: c.data_scadenza,
+            icon: 'fa-file-contract',
+            cls: 'info',
+            txt: gg === 1 ? 'Contratto ' + c.identificativo + ' scade domani' : 'Contratto ' + c.identificativo + ' scade tra ' + gg + ' giorni',
+            meta: formatDate(c.data_scadenza)
+        });
+    });
+
+    // Snooze: mostra solo le notifiche la cui ripetizione è "scaduta" e non eliminate
+    var now = Date.now();
+    var daMostrare = [];
+    items.forEach(function(it) {
+        if (isNotificationDismissed(it.key)) return false;
+        var last = parseInt(localStorage.getItem('notifSeen_' + it.key) || '0', 10);
+        if ((now - last) < (it.ripeti * 86400000)) return false;
+        daMostrare.push(it);
+        // Avanza la ripetizione SOLO se in questa sessione non era già mostrata:
+        // così ri-renderizzare (es. segnare come letta una singola notifica)
+        // non sopprime anche le altre.
+        if (!notificationShownWith.has(it.key)) {
+            notificationShownWith.add(it.key);
+            localStorage.setItem('notifSeen_' + it.key, String(now));
+        }
+    });
+
+    daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
+
+    var badge = document.getElementById('notifBadge');
+    var list = document.getElementById('notifList');
+    badge.textContent = daMostrare.length > 0 ? daMostrare.length : '';
+    if (daMostrare.length === 0) {
+        list.innerHTML = '<div class="notif-item"><div class="notif-content"><p>Nessuna notifica</p></div></div>';
+        return;
+    }
+    list.innerHTML = daMostrare.map(function(it) {
+        return '<div class="notif-item unread">' +
+            '<div class="notif-icon ' + it.cls + '"><i class="fas ' + it.icon + '"></i></div>' +
+            '<div class="notif-content"><p>' + it.txt + '</p>' +
+            '<div class="notif-time">' + it.meta + '</div></div>' +
+            '<div class="notif-actions">' +
+            '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\')"><i class="fas fa-check"></i></button>' +
+            '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\')"><i class="fas fa-times"></i></button>' +
+            '</div></div>';
+    }).join('');
+}
+
+// Segna una singola notifica come letta (non verrà più mostrata fino alla prossima ripetizione)
+function markNotificationRead(key) {
+    localStorage.setItem('notifSeen_' + key, String(Date.now()));
+    renderNotifications();
+}
+
+// Elimina definitivamente una notifica (non verrà mai più mostrata)
+function deleteNotification(key) {
+    localStorage.removeItem('notifSeen_' + key);
+    localStorage.setItem('notifDismissed_' + key, '1');
+    renderNotifications();
+}
+
+function isNotificationDismissed(key) {
+    return localStorage.getItem('notifDismissed_' + key) === '1';
+}
+async function saveNotifSettings() {
+    var dati = {
+        scadenze_anticipo: parseInt(document.getElementById('ns_scadenze_anticipo').value, 10) || 7,
+        scadenze_ripeti: parseInt(document.getElementById('ns_scadenze_ripeti').value, 10) || 1,
+        contratti_anticipo: parseInt(document.getElementById('ns_contratti_anticipo').value, 10) || 30,
+        contratti_ripeti: parseInt(document.getElementById('ns_contratti_ripeti').value, 10) || 1
+    };
+    var target = appData.impostazioniNotifiche;
+    var res = (target && target.id)
+        ? await db.from('impostazioni_notifiche').update(dati).eq('id', target.id).select().single()
+        : await db.from('impostazioni_notifiche').insert(dati).select().single();
+    if (res.error) { console.error('Errore salvataggio impostazioni:', res.error); showToast('Errore salvataggio impostazioni', 'error'); return; }
+    appData.impostazioniNotifiche = res.data;
+    closeModal();
+    showToast('Impostazioni notifiche salvate!', 'success');
+    renderNotifications();
+}
+
 // --- Render Scadenze ---
 function getContrattoById(id) {
     return appData.contratti.find(function(c) { return c.id === id; }) || null;
@@ -1364,14 +1518,17 @@ async function renderScadenze() {
             var prio = (s.priorita || 'media').toLowerCase();
             var locLabel = c ? getLocatoriLabel(c.id) : 'N/A';
             var condLabel = c ? getConduttoriLabel(c.id) : 'N/A';
-            return '<div class="contract-card">' +
+            var urg = getScadenzaUrgenza(s);
+            var proxHtml = formatDate(s.prossima_scadenza);
+            if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
+            return '<div class="contract-card' + (urg ? ' alert-' + urg.type : '') + '">' +
                 '<div class="contract-top"><span class="contract-code">' + cod + '</span><span class="status-badge priority-' + prio + '">' + getPrioritaLabel(prio) + '</span></div>' +
                 '<div class="contract-title"><i class="fas fa-user-tie"></i> ' + locLabel + ' → <i class="fas fa-user"></i> ' + condLabel + '</div>' +
                 '<div class="contract-details">' +
                 '<div class="contract-detail"><label>Decorrenza</label><span>' + formatDate(s.data_decorrenza) + '</span></div>' +
                 '<div class="contract-detail"><label>Importo</label><span>' + formatCurrency(s.importo) + '</span></div>' +
                 '<div class="contract-detail"><label>Stato</label><span><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></span></div>' +
-                '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + formatDate(s.prossima_scadenza) + '</span></div>' +
+                '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + proxHtml + '</span></div>' +
                 '<div class="contract-detail"><label>Prossima Decorrenza</label><span>' + formatDate(s.prossima_decorrenza) + '</span></div>' +
                 '</div></div>';
         }).join('');
@@ -1379,13 +1536,16 @@ async function renderScadenze() {
             var c = getContrattoById(s.contratto_id);
             var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
             var prio = (s.priorita || 'media').toLowerCase();
-            return '<tr>' +
+            var urg = getScadenzaUrgenza(s);
+            var proxHtml = formatDate(s.prossima_scadenza);
+            if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
+            return '<tr' + (urg ? ' class="alert-' + urg.type + '"' : '') + '>' +
                 '<td><strong>' + cod + '</strong></td>' +
                 '<td>' + formatDate(s.data_decorrenza) + '</td>' +
                 '<td><span class="status-badge priority-' + prio + '">' + getPrioritaLabel(prio) + '</span></td>' +
                 '<td>' + formatCurrency(s.importo) + '</td>' +
                 '<td><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></td>' +
-                '<td>' + formatDate(s.prossima_scadenza) + '</td>' +
+                '<td>' + proxHtml + '</td>' +
                 '<td>' + formatDate(s.prossima_decorrenza) + '</td>' +
                 '</tr>';
         }).join('');
