@@ -535,6 +535,38 @@ input, select, textarea { font-family: inherit; }
     color: #fff;
 }
 
+.btn-success:hover {
+    background: #059669;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* Bottone V verde: segna la scadenza come pagata */
+.scadenza-done-btn {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.scadenza-done-btn:hover:not(:disabled) {
+    background: #059669;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    transform: translateY(-1px);
+}
+
+.scadenza-done-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+    transform: none;
+    box-shadow: none;
+}
+
 /* ---------- Stats Grid ---------- */
 .stats-grid {
     display: grid;
@@ -1061,6 +1093,13 @@ input, select, textarea { font-family: inherit; }
 }
 
 .contract-actions .btn { flex: 1; justify-content: center; }
+
+.contract-actions .scadenza-done-btn {
+    flex: 0 0 32px;
+    margin: 0 auto;
+}
+
+#scadenzeTable .data-table td:last-child { text-align: center; }
 
 /* ---------- Table ---------- */
 .table-container {

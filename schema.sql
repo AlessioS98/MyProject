@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS contratti (
   identificativo text NOT NULL,
   data_decorrenza date,
   data_scadenza date,
+  data_scadenza_rinnovo date,
   data_chiusura date,
   tassazione_cedolare_secca boolean DEFAULT false,
   locatore_id bigint REFERENCES anagrafica_persona(id) ON DELETE SET NULL,
@@ -56,6 +57,9 @@ CREATE TABLE IF NOT EXISTS scadenze (
 -- 6. Aggiunta colonne percentuale e valore_assoluto
 ALTER TABLE contratti ADD COLUMN IF NOT EXISTS percentuale numeric DEFAULT 0;
 ALTER TABLE contratti ADD COLUMN IF NOT EXISTS valore_assoluto numeric DEFAULT 0;
+
+-- 6b. Data scadenza rinnovo: nuova scadenza impostata al rinnovo del contratto (solo in modifica)
+ALTER TABLE contratti ADD COLUMN IF NOT EXISTS data_scadenza_rinnovo date;
 
 -- 7. Tabella Canoni Annuali (legata ai contratti)
 CREATE TABLE IF NOT EXISTS canoni_annuali (
