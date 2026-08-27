@@ -11,6 +11,8 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], impostazioniNotifiche: null };
 // Notifiche già mostrate in questa sessione (ricominciano le ripetizioni a ogni ricarica)
 var notificationShownWith = new Set();
+// Notifiche segnate come lette in questa sessione (schiarite, non eliminate)
+var notificationReadThisSession = new Set();
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -512,6 +514,8 @@ document.getElementById('notifClear').addEventListener('click', function() {
     var now = Date.now();
     appData.scadenze.forEach(function(s) { localStorage.setItem('notifSeen_scadenza_' + s.id, String(now)); });
     appData.contratti.forEach(function(c) { localStorage.setItem('notifSeen_contratto_' + c.id, String(now)); });
+    notificationShownWith.clear();
+    notificationReadThisSession.clear();
     renderNotifications();
 });
 document.addEventListener('click', function() {
@@ -1413,21 +1417,24 @@ function renderNotifications() {
         });
     });
 
-    // Snooze: mostra solo le notifiche la cui ripetizione è "scaduta" e non eliminate
+    // Snooze: mostra solo le notifiche non eliminate
     var now = Date.now();
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
+        // Se la notifica è già stata mostrata in questa sessione,
+        // visualizzala sempre: solo markNotificationRead può rimuoverla
+        // (rimuovendola da notificationShownWith).
+        if (notificationShownWith.has(it.key)) {
+            daMostrare.push(it);
+            return;
+        }
+        // Notifica nuova: applica lo snooze
         var last = parseInt(localStorage.getItem('notifSeen_' + it.key) || '0', 10);
         if ((now - last) < (it.ripeti * 86400000)) return false;
         daMostrare.push(it);
-        // Avanza la ripetizione SOLO se in questa sessione non era già mostrata:
-        // così ri-renderizzare (es. segnare come letta una singola notifica)
-        // non sopprime anche le altre.
-        if (!notificationShownWith.has(it.key)) {
-            notificationShownWith.add(it.key);
-            localStorage.setItem('notifSeen_' + it.key, String(now));
-        }
+        notificationShownWith.add(it.key);
+        localStorage.setItem('notifSeen_' + it.key, String(now));
     });
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
@@ -1440,7 +1447,9 @@ function renderNotifications() {
         return;
     }
     list.innerHTML = daMostrare.map(function(it) {
-        return '<div class="notif-item unread">' +
+        var isRead = notificationReadThisSession.has(it.key);
+        var itemClass = isRead ? 'notif-item notif-read' : 'notif-item unread';
+        return '<div class="' + itemClass + '">' +
             '<div class="notif-icon ' + it.cls + '"><i class="fas ' + it.icon + '"></i></div>' +
             '<div class="notif-content"><p>' + it.txt + '</p>' +
             '<div class="notif-time">' + it.meta + '</div></div>' +
@@ -1453,6 +1462,7 @@ function renderNotifications() {
 
 // Segna una singola notifica come letta (non verrà più mostrata fino alla prossima ripetizione)
 function markNotificationRead(key) {
+    notificationReadThisSession.add(key);
     localStorage.setItem('notifSeen_' + key, String(Date.now()));
     renderNotifications();
 }

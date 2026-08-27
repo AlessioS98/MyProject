@@ -389,6 +389,8 @@ input, select, textarea { font-family: inherit; }
 
 .notif-item.unread { background: var(--primary-bg); }
 
+.notif-item.notif-read { opacity: 0.45; }
+
 .notif-icon {
     width: 36px;
     height: 36px;
