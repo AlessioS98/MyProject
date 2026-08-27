@@ -483,6 +483,7 @@ document.addEventListener('click', function(e) {
 
         case 'new-inquilino': openModal('newInquilino'); break;
         case 'complete-scadenza': completeScadenza(id); break;
+        case 'generate-f24': generateF24Pdf(id); break;
 
         case 'close-modal': closeModal(); break;
     }
@@ -1535,6 +1536,14 @@ function scadenzaDoneBtn(s) {
         ' data-action="complete-scadenza" data-id="' + s.id + '" title="' + (isDone ? 'Già pagata' : 'Segna come pagata') + '"><i class="fas fa-check"></i></button>';
 }
 
+// --- Bottone Modello F24: genera il PDF del versamento ---
+function scadenzaF24Btn(s) {
+    var isDone = (s.stato === 'completata' || s.stato === 'completato');
+    return '<button class="btn btn-sm btn-outline scadenza-f24-btn"' +
+        (isDone ? ' disabled' : '') +
+        ' data-action="generate-f24" data-id="' + s.id + '" title="' + (isDone ? 'Scadenza già completata' : 'Genera PDF Modello F24') + '"><i class="fas fa-file-alt"></i> Modello F24</button>';
+}
+
 async function completeScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
@@ -1548,6 +1557,181 @@ async function completeScadenza(id) {
     showToast('Scadenza segnata come pagata', 'success');
     renderScadenze();
     renderNotifications();
+}
+
+// --- Generazione PDF Modello F24 ---
+function getCanonePerScadenza(contrattoId, dataDecorrenza) {
+    var canoni = getCanoniByContratto(contrattoId);
+    if (canoni.length === 0) return null;
+    if (dataDecorrenza) {
+        var match = canoni.find(function(ca) {
+            return (!ca.data_inizio || ca.data_inizio <= dataDecorrenza) &&
+                   (!ca.data_fine || ca.data_fine >= dataDecorrenza);
+        });
+        if (match) return match;
+    }
+    return getCanoneAttuale(contrattoId) || canoni[canoni.length - 1];
+}
+
+function getPersonaF24Nome(p) {
+    if (!p) return 'N/A';
+    if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
+    return ((p.cognome || '') + ' ' + (p.nome || '')).trim() || 'N/A';
+}
+
+function getPersonaF24TipoLabel(p) {
+    return (p && p.ragione_sociale && !p.nome && !p.cognome) ? 'Ragione Sociale' : 'Cognome / Nome';
+}
+
+function generateF24Pdf(scadenzaId) {
+    if (typeof jspdf === 'undefined') { showToast('Libreria PDF non disponibile, ricarica la pagina', 'error'); return; }
+    var s = appData.scadenze.find(function(x) { return x.id === scadenzaId; });
+    if (!s) return;
+    var c = getContrattoById(s.contratto_id);
+    if (!c) { showToast('Contratto non trovato', 'error'); return; }
+
+    var locs = getLocatoriByContratto(c.id);
+    var conds = getConduttoriByContratto(c.id);
+    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+
+    // Importo: se il contratto ha una percentuale, = percentuale sul canone annuo
+    var percentuale = parseFloat(c.percentuale) || 0;
+    var importo;
+    if (percentuale > 0 && canone) {
+        importo = Math.round((percentuale / 100) * (parseFloat(canone.importo) || 0) * 100) / 100;
+    } else if (parseFloat(c.valore_assoluto) > 0) {
+        importo = parseFloat(c.valore_assoluto);
+    } else {
+        importo = parseFloat(s.importo) || 0;
+    }
+
+    var annoVersamento = new Date().getFullYear();
+    var doc = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    var W = doc.internal.pageSize.getWidth();
+    var M = 42;
+    var y = 0;
+    var DARK = [15, 23, 42], GRAY = [100, 116, 139], LIGHT = [241, 245, 249];
+
+    function ensureSpace(h) { if (y + h > 800) { doc.addPage(); y = 64; } }
+
+    function sectionTitle(title) {
+        ensureSpace(46);
+        y += 12;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(M, y - 11, 5, 13, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11.5);
+        doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+        doc.text(title, M + 12, y);
+        y += 8;
+    }
+
+    function field(label, value) {
+        ensureSpace(46);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+        doc.text(String(label).toUpperCase(), M, y);
+        doc.setFillColor(LIGHT[0], LIGHT[1], LIGHT[2]);
+        doc.roundedRect(M, y + 4, W - 2 * M, 26, 3, 3, 'F');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+        doc.text(String(value), M + 8, y + 21);
+        y += 42;
+    }
+
+    // Header
+    doc.setFillColor(DARK[0], DARK[1], DARK[2]);
+    doc.rect(0, 0, W, 96, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(25);
+    doc.text('MODELLO F24', M, 48);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(203, 213, 225);
+    doc.text('Versamento Imposta di Registro - Contratti di Locazione', M, 68);
+    doc.text('Scadenza: ' + formatDate(s.data_decorrenza) + '  -  Contratto: ' + (c.identificativo || '#' + c.id), M, 84);
+    y = 120;
+
+    // Locatore
+    sectionTitle('LOCATORE');
+    if (locs.length === 0) {
+        field('Cognome / Nome', 'N/A');
+    } else {
+        locs.forEach(function(p, i) {
+            if (i > 0) y += 8;
+            field(getPersonaF24TipoLabel(p), getPersonaF24Nome(p));
+            field('Codice Fiscale', p.codice_fiscale || 'N/A');
+        });
+    }
+
+    // Conduttore
+    sectionTitle('CONDUTTORE');
+    if (conds.length === 0) {
+        field('Cognome / Nome', 'N/A');
+    } else {
+        conds.forEach(function(p, i) {
+            if (i > 0) y += 8;
+            field(getPersonaF24TipoLabel(p), getPersonaF24Nome(p));
+            field('Codice Fiscale', p.codice_fiscale || 'N/A');
+        });
+    }
+
+    // Dati versamento (griglia stile F24)
+    sectionTitle('DATI VERSAMENTO');
+    var boxW = (W - 2 * M - 14) / 2;
+    var boxH = 54;
+    var boxY = y;
+    function f24box(label, value, x) {
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(1);
+        doc.roundedRect(x, boxY, boxW, boxH, 3, 3, 'S');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+        doc.text(String(label).toUpperCase(), x + 9, boxY + 15);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+        doc.text(String(value), x + 9, boxY + boxH - 15);
+    }
+    ensureSpace(2 * boxH + 24);
+    f24box('Controparte', '63', M);
+    f24box('Contratto', c.identificativo || '#' + c.id, M + boxW + 14);
+    boxY += boxH + 10;
+    f24box('Anno di versamento', annoVersamento, M);
+    f24box('Importo a debito', formatCurrency(importo), M + boxW + 14);
+    y = boxY + boxH + 18;
+
+    // Dettaglio calcolo
+    if (canone) {
+        var annoCanone = canone.data_inizio ? new Date(canone.data_inizio).getFullYear() : '';
+        var periodo = (canone.data_inizio ? formatDate(canone.data_inizio) : '-') + ' / ' + (canone.data_fine ? formatDate(canone.data_fine) : '-');
+        sectionTitle('DETTAGLIO CALCOLO');
+        field('Canone annuo di riferimento' + (annoCanone ? ' - Anno ' + annoCanone : ''), formatCurrency(canone.importo) + '   (' + periodo + ')');
+        if (percentuale > 0) {
+            field('Percentuale applicata sul canone', percentuale + '%  =  ' + formatCurrency(importo));
+        } else {
+            field('Importo versamento', formatCurrency(importo));
+        }
+    }
+
+    // Footer
+    ensureSpace(40);
+    y += 10;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+    doc.text('Documento generato automaticamente il ' + formatDate(new Date().toISOString().slice(0, 10)) + ' - Studio Santantonio', M, y);
+
+    // Nel nome file includiamo l'anno del canone di riferimento così scadenze
+    // diverse dello stesso contratto generano file distinti
+    var annoRif = canone && canone.data_inizio ? new Date(canone.data_inizio).getFullYear() : (s.data_decorrenza ? new Date(s.data_decorrenza).getFullYear() : '');
+    var nomeFile = 'F24_' + (c.identificativo || 'contratto-' + c.id).replace(/[^a-zA-Z0-9_-]+/g, '-') + (annoRif ? '_' + annoRif : '') + '.pdf';
+    doc.save(nomeFile);
+    showToast('PDF Modello F24 generato', 'success');
 }
 
 // --- Render Scadenze ---
@@ -1596,7 +1780,7 @@ async function renderScadenze() {
                 '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + proxHtml + '</span></div>' +
                 '<div class="contract-detail"><label>Prossima Decorrenza</label><span>' + formatDate(s.prossima_decorrenza) + '</span></div>' +
                 '</div>' +
-                '<div class="contract-actions">' + scadenzaDoneBtn(s) + '</div></div>';
+                '<div class="contract-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></div>';
         }).join('');
         tbody.innerHTML = list.map(function(s) {
             var c = getContrattoById(s.contratto_id);
@@ -1613,7 +1797,7 @@ async function renderScadenze() {
                 '<td><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></td>' +
                 '<td>' + proxHtml + '</td>' +
                 '<td>' + formatDate(s.prossima_decorrenza) + '</td>' +
-                '<td>' + scadenzaDoneBtn(s) + '</td>' +
+                '<td><div class="scadenza-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></td>' +
                 '</tr>';
         }).join('');
     }

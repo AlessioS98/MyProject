@@ -303,6 +303,30 @@ input, select, textarea { font-family: inherit; }
     margin-left: auto;
 }
 
+/* Titolo app nella topbar: centrato e in gradiente verde */
+.topbar-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+}
+
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .topbar-title {
+        background: linear-gradient(135deg, #059669 0%, #34d399 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+}
+
 .topbar-btn {
     width: 40px;
     height: 40px;
@@ -461,16 +485,41 @@ input, select, textarea { font-family: inherit; }
 }
 
 .page-header h1 {
-    font-size: 1.75rem;
+    font-size: 2rem;
     font-weight: 800;
     color: var(--text);
     letter-spacing: -0.02em;
+    line-height: 1.15;
+}
+
+/* Gradiente sul titolo (con fallback colore pieno per i browser che non supportano background-clip) */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .page-header h1 {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+}
+
+/* Sottolineatura decorativa in gradiente sotto il titolo */
+.page-header h1::after {
+    content: '';
+    display: block;
+    width: 64px;
+    height: 4px;
+    margin: 10px 0 0;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
 }
 
 .page-subtitle {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     margin-top: 4px;
+    max-width: 600px;
+    line-height: 1.5;
 }
 
 .header-actions {
@@ -1099,6 +1148,51 @@ input, select, textarea { font-family: inherit; }
     margin: 0 auto;
 }
 
+/* Azioni scadenza (tabella) */
+.scadenza-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+/* Bottone Modello F24 */
+.scadenza-f24-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 0 10px;
+    height: 32px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.scadenza-f24-btn:hover {
+    background: var(--primary-bg);
+    color: var(--primary);
+}
+
+.scadenza-f24-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-color: var(--border);
+    color: var(--text-muted);
+    background: var(--surface);
+}
+
+.scadenza-f24-btn:disabled:hover {
+    background: var(--surface);
+    color: var(--text-muted);
+}
+
 #scadenzeTable .data-table td:last-child { text-align: center; }
 
 /* ---------- Table ---------- */
@@ -1583,7 +1677,9 @@ input, select, textarea { font-family: inherit; }
 
     .page-header { flex-direction: column; }
 
-    .page-header h1 { font-size: 1.35rem; }
+    .page-header h1 { font-size: 1.45rem; }
+
+    .topbar-title { font-size: 0.95rem; }
 
     .payment-summary { grid-template-columns: 1fr; }
 
