@@ -189,8 +189,36 @@ input, select, textarea { font-family: inherit; }
 }
 
 .sidebar-footer {
-    padding: 16px 20px;
+    padding: 14px 20px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Scorciatoie circolari sopra l'utente (anagrafiche / immobili) */
+.sidebar-shortcuts {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.shortcut-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: var(--sidebar-text);
+    font-size: 0.95rem;
+    transition: all var(--transition);
+}
+
+.shortcut-btn:hover {
+    background: var(--sidebar-active);
+    border-color: var(--sidebar-active);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
 }
 
 .user-info {
@@ -236,6 +264,7 @@ input, select, textarea { font-family: inherit; }
     flex: 1;
     margin-left: var(--sidebar-width);
     min-height: 100vh;
+    min-width: 0;
     transition: margin-left var(--transition-slow);
 }
 
@@ -398,6 +427,7 @@ input, select, textarea { font-family: inherit; }
 .notif-list {
     max-height: 380px;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .notif-item {
@@ -864,6 +894,7 @@ input, select, textarea { font-family: inherit; }
     flex: 1;
     overflow-y: auto;
     padding: 20px 24px;
+    overscroll-behavior: contain;
 }
 
 .filter-section {
@@ -1072,6 +1103,7 @@ input, select, textarea { font-family: inherit; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+    white-space: nowrap;
 }
 
 .status-badge.attivo { background: var(--success-bg); color: var(--success); }
@@ -1206,12 +1238,19 @@ input, select, textarea { font-family: inherit; }
 
 .data-table {
     width: 100%;
-    min-width: 800px;
+    min-width: 900px;
     border-collapse: collapse;
 }
 
+/* Colonna "Prossima Scadenza": il badge (es. "In scadenza · 4 gg") non viene più troncato */
+#scadenzeTable .data-table td:nth-child(6) {
+    white-space: normal;
+    max-width: none;
+    min-width: 200px;
+}
+
 .data-table th {
-    padding: 8px 10px;
+    padding: 8px 8px;
     text-align: left;
     font-size: 0.68rem;
     font-weight: 600;
@@ -1227,13 +1266,22 @@ input, select, textarea { font-family: inherit; }
 }
 
 .data-table td {
-    padding: 7px 10px;
-    font-size: 0.78rem;
+    padding: 6px 7px;
+    font-size: 0.75rem;
     border-bottom: 1px solid var(--border-light);
     max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Tabella contratti: locatore/conduttore/immobile possono andare a capo
+   invece di essere troncati, così la tabella rientra nello schermo */
+#contractsTable .data-table td:nth-child(2),
+#contractsTable .data-table td:nth-child(3),
+#contractsTable .data-table td:nth-child(4) {
+    white-space: normal;
+    max-width: 220px;
 }
 
 .data-table tbody tr {
@@ -1271,7 +1319,42 @@ input, select, textarea { font-family: inherit; }
     color: var(--danger);
 }
 
+/* ---------- Tabelle liste (anagrafiche / immobili) nelle modali ---------- */
+.list-table {
+    width: 100%;
+    border-collapse: collapse;
+}
 
+.list-table th {
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.list-table td {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+}
+
+.list-table tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+/* Badge tipo anagrafica */
+.status-badge.tipo-fisica { background: var(--info-bg); color: var(--info); }
+.status-badge.tipo-azienda { background: var(--primary-bg); color: var(--primary); }
 
 /* ---------- Inquilini Grid ---------- */
 .inquilini-grid {

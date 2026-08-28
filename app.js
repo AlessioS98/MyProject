@@ -184,6 +184,30 @@ function getPersonaLabelShort(p) {
     return label.trim();
 }
 
+// --- Dedup anagrafiche: le stesse persone/immobili non vanno ripetute nelle liste ---
+function dedupPersone(list) {
+    var seen = {};
+    return list.filter(function(p) {
+        var key = ((p.codice_fiscale || '').trim().toUpperCase()) ||
+                  getPersonaDisplayLabel(p).trim().toUpperCase();
+        if (!key || seen[key]) return false;
+        seen[key] = true;
+        return true;
+    });
+}
+function dedupImmobili(list) {
+    var seen = {};
+    return list.filter(function(i) {
+        // Chiave catastale (foglio/particella/sub) se presente, altrimenti indirizzo+città
+        var key = '';
+        if (i.foglio && i.particella) key = 'C:' + i.foglio + '|' + i.particella + '|' + (i.sub || '');
+        if (!key) key = 'A:' + (i.indirizzo + '|' + i.citta).trim().toLowerCase();
+        if (!key || seen[key]) return false;
+        seen[key] = true;
+        return true;
+    });
+}
+
 // --- Canoni Annuali helpers ---
 function getCanoniByContratto(contrattoId) {
     return appData.canoni_annuali.filter(function(ca) { return ca.contratto_id === contrattoId; });
@@ -532,6 +556,14 @@ document.addEventListener('click', function() {
 });
 document.getElementById('notifPanel').addEventListener('click', function(e) {
     e.stopPropagation();
+});
+
+// --- Sidebar Shortcuts: Anagrafiche & Immobili ---
+document.getElementById('btnAnagrafiche').addEventListener('click', function() {
+    openModal('listaPersone');
+});
+document.getElementById('btnImmobili').addEventListener('click', function() {
+    openModal('listaImmobili');
 });
 
 // --- Filter Modal ---
@@ -959,6 +991,52 @@ function openModal(type, id) {
         html += '<div class="form-group"><label>Ripeti la notifica ogni (giorni)</label><input type="number" id="ns_contratti_ripeti" min="1" max="365" value="' + st.contrattiRipeti + '"></div>';
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
+
+    } else if (type === 'listaPersone') {
+        var personeList = dedupPersone(appData.persone).slice().sort(function(a, b) {
+            var ka = getPersonaDisplayLabel(a).toLowerCase();
+            var kb = getPersonaDisplayLabel(b).toLowerCase();
+            return ka < kb ? -1 : ka > kb ? 1 : 0;
+        });
+        title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
+        if (personeList.length === 0) {
+            html = '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
+        } else {
+            html = '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
+            html += '<table class="list-table"><thead><tr><th>Nome / Ragione Sociale</th><th>Codice Fiscale</th><th>Tipo</th></tr></thead><tbody>';
+            personeList.forEach(function(p) {
+                var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
+                html += '<tr><td><strong>' + getPersonaLabelShort(p) + '</strong></td>' +
+                    '<td>' + (p.codice_fiscale || '-') + '</td>' +
+                    '<td><span class="status-badge ' + (isAzienda ? 'tipo-azienda' : 'tipo-fisica') + '">' + (isAzienda ? 'Azienda' : 'Persona Fisica') + '</span></td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'listaImmobili') {
+        var immobiliList = dedupImmobili(appData.immobili).slice().sort(function(a, b) {
+            var ka = (a.citta + ' ' + a.indirizzo).toLowerCase();
+            var kb = (b.citta + ' ' + b.indirizzo).toLowerCase();
+            return ka < kb ? -1 : ka > kb ? 1 : 0;
+        });
+        title.textContent = 'Immobili (' + immobiliList.length + ')';
+        if (immobiliList.length === 0) {
+            html = '<div class="empty-state"><i class="fas fa-building"></i><p>Nessun immobile presente</p></div>';
+        } else {
+            html = '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
+            html += '<table class="list-table"><thead><tr><th>Indirizzo</th><th>Città</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>APE</th></tr></thead><tbody>';
+            immobiliList.forEach(function(i) {
+                html += '<tr><td><strong>' + i.indirizzo + '</strong></td>' +
+                    '<td>' + i.citta + '</td>' +
+                    '<td>' + (i.foglio || '-') + '</td>' +
+                    '<td>' + (i.particella || '-') + '</td>' +
+                    '<td>' + (i.sub || '-') + '</td>' +
+                    '<td>' + (i.ape ? '<span class="status-badge attivo">SI</span>' : '<span class="status-badge chiuso">NO</span>') + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
 
     }
 
