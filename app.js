@@ -76,16 +76,30 @@ function toggleLocatoreType(tipo, rowEl) {
 function toggleCedolarePercentuale() {
     var cedolareSi = document.getElementById('cf_cedolare_si');
     var percentuale = document.getElementById('cf_percentuale');
-    if (!cedolareSi || !percentuale) return;
+    var valoreAssoluto = document.getElementById('cf_valore_assoluto');
+    if (!cedolareSi) return;
     if (cedolareSi.checked) {
-        // Cedolare secca ATTIVA → percentuale NON compilabile
-        percentuale.disabled = true;
-        percentuale.closest('.form-group').style.opacity = '0.4';
-        percentuale.value = '';
+        // Cedolare secca ATTIVA → percentuale e valore assoluto NON compilabili
+        if (percentuale) {
+            percentuale.disabled = true;
+            percentuale.closest('.form-group').style.opacity = '0.4';
+            percentuale.value = '';
+        }
+        if (valoreAssoluto) {
+            valoreAssoluto.disabled = true;
+            valoreAssoluto.closest('.form-group').style.opacity = '0.4';
+            valoreAssoluto.value = '';
+        }
     } else {
-        // Cedolare secca NON attiva → percentuale compilabile
-        percentuale.disabled = false;
-        percentuale.closest('.form-group').style.opacity = '1';
+        // Cedolare secca NON attiva → campi compilabili
+        if (percentuale) {
+            percentuale.disabled = false;
+            percentuale.closest('.form-group').style.opacity = '1';
+        }
+        if (valoreAssoluto) {
+            valoreAssoluto.disabled = false;
+            valoreAssoluto.closest('.form-group').style.opacity = '1';
+        }
     }
 }
 
