@@ -209,6 +209,9 @@
             <!-- Filters -->
             <div class="filters-bar">
                 <div class="filter-group">
+                    <select id="filterScadenzaFinoA" class="filter-select" onchange="renderScadenze()">
+                        <option value="all">Tutte le scadenze</option>
+                    </select>
                     <select id="filterScadenzaStato" class="filter-select" onchange="renderScadenze()">
                         <option value="all">Tutti gli stati</option>
                         <option value="in-attesa">In attesa</option>

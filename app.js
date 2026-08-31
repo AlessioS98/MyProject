@@ -2237,10 +2237,23 @@ function getContrattoById(id) {
 }
 async function renderScadenze() {
     var filtroStato = document.getElementById('filterScadenzaStato').value;
+    var filtroFinoA = document.getElementById('filterScadenzaFinoA').value;
+
+    // Ripopola il dropdown con tutte le date di scadenza (prossima_scadenza) presenti
+    var scadSelect = document.getElementById('filterScadenzaFinoA');
+    var scadDates = appData.scadenze
+        .map(function(s) { return s.prossima_scadenza; })
+        .filter(function(d) { return !!d; })
+        .filter(function(d, i, arr) { return arr.indexOf(d) === i; })
+        .sort();
+    scadSelect.innerHTML = '<option value="all">Tutte le scadenze</option>' +
+        scadDates.map(function(d) { return '<option value="' + d + '">' + formatDate(d) + '</option>'; }).join('');
+    scadSelect.value = filtroFinoA;
 
     var list = appData.scadenze.slice().sort(function(a, b) {
         return (a.data_decorrenza || '').localeCompare(b.data_decorrenza || '');
     });
+    if (filtroFinoA !== 'all') list = list.filter(function(s) { return s.prossima_scadenza && s.prossima_scadenza <= filtroFinoA; });
     if (filtroStato !== 'all') list = list.filter(function(s) { return s.stato === filtroStato; });
 
     // Stats
