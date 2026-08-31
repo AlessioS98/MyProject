@@ -930,6 +930,24 @@ input, select, textarea { font-family: inherit; }
     gap: 12px;
 }
 
+.filter-grid-catastali {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.filter-field.filter-field-sm {
+    flex: 1;
+    min-width: 0;
+    max-width: 110px;
+}
+
+.filter-field-sm input[type="text"] {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+}
+
 .filter-range {
     display: flex;
     align-items: flex-end;
@@ -1007,6 +1025,27 @@ input, select, textarea { font-family: inherit; }
     gap: 10px;
     padding: 16px 24px;
     border-top: 1px solid var(--border);
+}
+
+.filter-modal.decorrenza-modal {
+    max-width: 380px;
+}
+
+/* Toglie le freccette dall'input numerico della modale Per Decorrenza */
+#decorrenzaDays {
+    -moz-appearance: textfield;
+    appearance: textfield;
+    text-align: center;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-radius: var(--radius-lg);
+}
+#decorrenzaDays::-webkit-outer-spin-button,
+#decorrenzaDays::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 @media (max-width: 600px) {

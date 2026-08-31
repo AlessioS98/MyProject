@@ -163,6 +163,22 @@ function getConduttoriLabel(contrattoId) {
     if (conds.length === 0) return 'N/A';
     return conds.map(function(p) { return getPersonaDisplayLabel(p); }).join(', ');
 }
+// Etichetta con COGNOME prima del NOME (usata nella lista contratti)
+function getPersonaCognomeNomeLabel(p) {
+    if (!p) return 'N/A';
+    if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
+    return (p.cognome || '') + ' ' + (p.nome || '');
+}
+function getLocatoriCognomeNomeLabel(contrattoId) {
+    var locs = getLocatoriByContratto(contrattoId);
+    if (locs.length === 0) return 'N/A';
+    return locs.map(function(p) { return getPersonaCognomeNomeLabel(p); }).join(', ');
+}
+function getConduttoriCognomeNomeLabel(contrattoId) {
+    var conds = getConduttoriByContratto(contrattoId);
+    if (conds.length === 0) return 'N/A';
+    return conds.map(function(p) { return getPersonaCognomeNomeLabel(p); }).join(', ');
+}
 function getPersonaLabelShort(p) {
     if (!p) return 'N/A';
     if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
@@ -1401,6 +1417,42 @@ function setView(view) {
 }
 
 
+// --- Decorrenza filter (range da oggi a oggi+N giorni) ---
+function openDecorrenzaModal() {
+    document.getElementById('decorrenzaDays').value = '';
+    renderContratti(); // torna alla lista completa
+    document.getElementById('decorrenzaModalOverlay').classList.add('active');
+    setTimeout(function() { document.getElementById('decorrenzaDays').focus(); }, 50);
+}
+function closeDecorrenzaModal() {
+    document.getElementById('decorrenzaModalOverlay').classList.remove('active');
+}
+function applyDecorrenzaFilter() {
+    var days = parseInt(document.getElementById('decorrenzaDays').value, 10);
+    if (!days || days < 1) {
+        showToast('Inserisci un numero di giorni valido (almeno 1)', 'error');
+        return;
+    }
+    var oggi = new Date();
+    function toISO(d) {
+        var y = d.getFullYear();
+        var m = String(d.getMonth() + 1).padStart(2, '0');
+        var g = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + g;
+    }
+    var da = toISO(oggi);
+    var fine = new Date(oggi);
+    fine.setDate(fine.getDate() + days);
+    var a = toISO(fine);
+
+    var filtered = appData.contratti.filter(function(c) {
+        if (!c.data_decorrenza) return false;
+        return c.data_decorrenza >= da && c.data_decorrenza <= a;
+    });
+    closeDecorrenzaModal();
+    renderContrattiList(filtered);
+}
+
 // ============================================
 // RENDERING
 // ============================================
@@ -1454,12 +1506,7 @@ function renderScadenzeChart() {
 
 // --- Render Contratti ---
 async function renderContratti() {
-    var filtroStato = document.getElementById('filterContrattoStato').value;
-    var list = appData.contratti;
-    if (filtroStato !== 'all') {
-        list = list.filter(function(c) { return calcContrattoStato(c) === filtroStato; });
-    }
-    renderContrattiList(list);
+    renderContrattiList(appData.contratti);
 }
 function renderContrattiList(list) {
     var filtered = list.slice().sort(function(a, b) {
@@ -1471,27 +1518,17 @@ function renderContrattiList(list) {
         cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div>';
     } else {
         cardsEl.innerHTML = filtered.map(function(c) {
-            var stato = calcContrattoStato(c);
             var scadC = getContrattoScadenzaEffettiva(c);
             var d = daysUntil(scadC);
             var dt = d > 0 ? d + ' gg' : 'Scaduto';
             var ds = d <= 30 ? 'color:var(--danger)' : '';
-            var locLabel = getLocatoriLabel(c.id);
-            var condLabel = getConduttoriLabel(c.id);
+            var locLabel = getLocatoriCognomeNomeLabel(c.id);
+            var condLabel = getConduttoriCognomeNomeLabel(c.id);
             var immLabel = getImmobileLabel(c.immobile_id);
             var h = '<div class="contract-card">';
-            h += '<div class="contract-top"><span class="contract-code">' + c.identificativo + '</span><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></div>';
             h += '<div class="contract-title"><i class="fas fa-user-tie"></i> ' + locLabel + ' → <i class="fas fa-user"></i> ' + condLabel + '</div>';
             h += '<div class="contract-address"><i class="fas fa-map-marker-alt"></i> ' + immLabel + '</div>';
             h += '<div class="contract-details">';
-            if (c.data_scadenza_rinnovo) {
-                h += '<div class="contract-detail"><label>Scadenza Rinnovo</label><span style="' + ds + '">' + formatDate(c.data_scadenza_rinnovo) + '</span></div>';
-                h += '<div class="contract-detail"><label>Scadenza Originale</label><span>' + formatDate(c.data_scadenza) + '</span></div>';
-            } else {
-                h += '<div class="contract-detail"><label>Scadenza</label><span style="' + ds + '">' + formatDate(c.data_scadenza) + '</span></div>';
-            }
-            var caAtt = getCanoneAttuale(c.id);
-            h += '<div class="contract-detail"><label>Canone Anno</label><span>' + (caAtt ? formatCurrency(caAtt.importo) : '-') + '</span></div>';
             h += '<div class="contract-detail"><label>Rimanenza</label><span style="' + ds + '">' + dt + '</span></div>';
             h += '</div>';
             h += '<div class="contract-actions">';
@@ -1506,9 +1543,7 @@ function renderContrattiList(list) {
     // Table view
     var tbody = document.getElementById('contractsTableBody');
     tbody.innerHTML = filtered.map(function(c) {
-        var stato = calcContrattoStato(c);
-        var caTab = getCanoneAttuale(c.id);
-        return '<tr><td><strong>' + c.identificativo + '</strong></td><td>' + getLocatoriLabel(c.id) + '</td><td>' + getConduttoriLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td>' + (caTab ? formatCurrency(caTab.importo) : '-') + '</td><td>' + formatDate(c.data_decorrenza) + '</td><td>' + formatDate(c.data_scadenza) + '</td><td>' + (c.data_scadenza_rinnovo ? formatDate(c.data_scadenza_rinnovo) : '-') + '</td><td><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+        return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
     }).join('');
 }
 
