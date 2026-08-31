@@ -419,14 +419,30 @@ function setupPersonFieldAutocomplete(inputEl, fieldKey) {
 }
 
 var locatoreRowCounter = 0;
-function addLocatoreRow(persona, isEdit) {
+function addLocatoreRow(persona, isEdit, rel) {
     locatoreRowCounter++;
     var container = document.getElementById('locatoriRowsContainer');
     if (!container) return;
     var idx = locatoreRowCounter;
     var p = persona || {};
+    rel = rel || {};
     var locTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
     var cfReadonly = isEdit ? 'readonly style="background:var(--border-light);cursor:not-allowed"' : '';
+    // Date del legame locatore-contratto:
+    // - in modifica si usano i valori salvati (se presenti)
+    // - in creazione si precompilano con le date del contratto (modificabili)
+    var rowDeco = '', rowChius = '', decoUserSet = '', chiusUserSet = '';
+    if (isEdit) {
+        rowDeco = rel.data_decorrenza || '';
+        rowChius = rel.data_chiusura || '';
+        if (rowDeco) decoUserSet = ' data-user-set="1"';
+        if (rowChius) chiusUserSet = ' data-user-set="1"';
+    } else {
+        var cfd = document.getElementById('cf_decorrenza');
+        var cfc = document.getElementById('cf_chiusura');
+        rowDeco = cfd ? cfd.value : '';
+        rowChius = cfc ? cfc.value : '';
+    }
     var row = document.createElement('div');
     row.className = 'locatore-row';
     row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
@@ -443,10 +459,18 @@ function addLocatoreRow(persona, isEdit) {
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}"></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}"></div>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Decorrenza</label><input type="date" class="loc-data-decorrenza" value="${rowDeco}"${decoUserSet}></div>
+        <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Chiusura</label><input type="date" class="loc-data-chiusura" value="${rowChius}"${chiusUserSet}></div>
+        </div>
     `;
     container.appendChild(row);
     // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
     toggleLocatoreType(locTipo, row);
+    // Una data compilata manualmente dall'utente non viene più sovrascritta
+    row.querySelectorAll('input[type="date"]').forEach(function(el) {
+        el.addEventListener('input', function() { el.dataset.userSet = '1'; });
+    });
     var cfInput = row.querySelector('.loc-cf');
     if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
     // Suggerimenti campo-per-campo (stessa logica della finestra Cerca Contratto)
@@ -457,14 +481,28 @@ function addLocatoreRow(persona, isEdit) {
 
 
 var conduttoreRowCounter = 0;
-function addConduttoreRow(persona, isEdit) {
+function addConduttoreRow(persona, isEdit, rel) {
     conduttoreRowCounter++;
     var container = document.getElementById('conduttoriRowsContainer');
     if (!container) return;
     var idx = conduttoreRowCounter;
     var p = persona || {};
+    rel = rel || {};
     var condTipo = (p.ragione_sociale && !p.nome) ? 'azienda' : 'pf';
     var cfReadonly = isEdit ? 'readonly style="background:var(--border-light);cursor:not-allowed"' : '';
+    // Date del legame conduttore-contratto (stessa logica dei locatori)
+    var rowDeco = '', rowChius = '', decoUserSet = '', chiusUserSet = '';
+    if (isEdit) {
+        rowDeco = rel.data_decorrenza || '';
+        rowChius = rel.data_chiusura || '';
+        if (rowDeco) decoUserSet = ' data-user-set="1"';
+        if (rowChius) chiusUserSet = ' data-user-set="1"';
+    } else {
+        var cfd = document.getElementById('cf_decorrenza');
+        var cfc = document.getElementById('cf_chiusura');
+        rowDeco = cfd ? cfd.value : '';
+        rowChius = cfc ? cfc.value : '';
+    }
     var row = document.createElement('div');
     row.className = 'conduttore-row';
     row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
@@ -481,16 +519,39 @@ function addConduttoreRow(persona, isEdit) {
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}"></div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}"></div>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Decorrenza</label><input type="date" class="cond-data-decorrenza" value="${rowDeco}"${decoUserSet}></div>
+        <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Chiusura</label><input type="date" class="cond-data-chiusura" value="${rowChius}"${chiusUserSet}></div>
+        </div>
     `;
     container.appendChild(row);
     // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
     toggleConduttoreType(condTipo, row);
+    // Una data compilata manualmente dall'utente non viene più sovrascritta
+    row.querySelectorAll('input[type="date"]').forEach(function(el) {
+        el.addEventListener('input', function() { el.dataset.userSet = '1'; });
+    });
     var cfInput = row.querySelector('.cond-cf');
     if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
     // Suggerimenti campo-per-campo (stessa logica della finestra Cerca Contratto)
     setupPersonFieldAutocomplete(row.querySelector('.cond-nome'), 'nome');
     setupPersonFieldAutocomplete(row.querySelector('.cond-cognome'), 'cognome');
     setupPersonFieldAutocomplete(row.querySelector('.cond-rs'), 'ragione_sociale');
+}
+
+// --- Sincronizza le date di locatori/conduttori con quelle del contratto ---
+// La decorrenza e la chiusura di ogni riga vengono riempite in automatico con
+// quelle del contratto, ma restano modificabili: se l'utente compila il campo
+// a mano (data-user-set), il suo valore non viene sovrascritto.
+function syncPersonaDateFields() {
+    var decoVal = document.getElementById('cf_decorrenza') ? document.getElementById('cf_decorrenza').value : '';
+    var chiusVal = document.getElementById('cf_chiusura') ? document.getElementById('cf_chiusura').value : '';
+    document.querySelectorAll('.loc-data-decorrenza, .cond-data-decorrenza').forEach(function(el) {
+        if (!el.dataset.userSet) el.value = decoVal;
+    });
+    document.querySelectorAll('.loc-data-chiusura, .cond-data-chiusura').forEach(function(el) {
+        if (!el.dataset.userSet) el.value = chiusVal;
+    });
 }
 
 // --- Scadenza effettiva del contratto ---
@@ -1120,12 +1181,18 @@ function openModal(type, id) {
             existingCanoni.forEach(function(ca) {
                 addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '', ca.tassazione_cedolare_secca, ca.percentuale, ca.valore_assoluto);
             });
-            // Populate existing locatori
-            var existingLocs = getLocatoriByContratto(id);
-            existingLocs.forEach(function(p) { addLocatoreRow(p, true); });
-            // Populate existing conduttori
-            var existingConds = getConduttoriByContratto(id);
-            existingConds.forEach(function(p) { addConduttoreRow(p, true); });
+            // Populate existing locatori (con le date salvate nel legame)
+            var existingLocRels = appData.contratto_locatori.filter(function(r) { return r.contratto_id === id; });
+            getLocatoriByContratto(id).forEach(function(p) {
+                var rel = existingLocRels.find(function(r) { return r.persona_id === p.id; }) || null;
+                addLocatoreRow(p, true, rel);
+            });
+            // Populate existing conduttori (con le date salvate nel legame)
+            var existingCondRels = appData.contratto_conduttori.filter(function(r) { return r.contratto_id === id; });
+            getConduttoriByContratto(id).forEach(function(p) {
+                var rel = existingCondRels.find(function(r) { return r.persona_id === p.id; }) || null;
+                addConduttoreRow(p, true, rel);
+            });
         }
         // If new contract, add one empty row for each section
         if (type === 'newContratto') {
@@ -1133,6 +1200,12 @@ function openModal(type, id) {
             addLocatoreRow();
             addConduttoreRow();
         }
+        // Le date di locatori/conduttori seguono quelle del contratto in tempo reale
+        var decoInput = document.getElementById('cf_decorrenza');
+        var chiusInput = document.getElementById('cf_chiusura');
+        if (decoInput) decoInput.addEventListener('input', syncPersonaDateFields);
+        if (chiusInput) chiusInput.addEventListener('input', syncPersonaDateFields);
+        syncPersonaDateFields();
         // Setup immobile field autocomplete
         var foglioEl = document.getElementById('cf_imm_foglio');
         var particellaEl = document.getElementById('cf_imm_particella');
@@ -1210,9 +1283,9 @@ async function upsertImmobile(dati) {
 
 // --- Save/Update Contratto ---
 async function saveContratto(editId) {
-    // Collect all locatori from dynamic rows
+    // Collect all locatori from dynamic rows (con le date del legame)
     var locRows = document.querySelectorAll('#locatoriRowsContainer .locatore-row');
-    var locIds = [];
+    var locData = [];
     for (var i = 0; i < locRows.length; i++) {
         var row = locRows[i];
         var locTipo = (row.querySelector('input[type="radio"]:checked') || {}).value || 'pf';
@@ -1222,12 +1295,19 @@ async function saveContratto(editId) {
             codice_fiscale: (row.querySelector('.loc-cf') || {}).value.trim(),
             ragione_sociale: locTipo === 'pf' ? '' : (row.querySelector('.loc-rs') || {}).value.trim()
         });
-        if (locId) locIds.push(locId);
+        if (locId) {
+            locData.push({
+                persona_id: locId,
+                data_decorrenza: (row.querySelector('.loc-data-decorrenza') || {}).value || null,
+                data_chiusura: (row.querySelector('.loc-data-chiusura') || {}).value || null
+            });
+        }
     }
+    var locIds = locData.map(function(d) { return d.persona_id; });
 
-    // Collect all conduttori from dynamic rows
+    // Collect all conduttori from dynamic rows (con le date del legame)
     var condRows = document.querySelectorAll('#conduttoriRowsContainer .conduttore-row');
-    var condIds = [];
+    var condData = [];
     for (var j = 0; j < condRows.length; j++) {
         var crow = condRows[j];
         var condTipo = (crow.querySelector('input[type="radio"]:checked') || {}).value || 'pf';
@@ -1237,8 +1317,15 @@ async function saveContratto(editId) {
             codice_fiscale: (crow.querySelector('.cond-cf') || {}).value.trim(),
             ragione_sociale: condTipo === 'pf' ? '' : (crow.querySelector('.cond-rs') || {}).value.trim()
         });
-        if (condId) condIds.push(condId);
+        if (condId) {
+            condData.push({
+                persona_id: condId,
+                data_decorrenza: (crow.querySelector('.cond-data-decorrenza') || {}).value || null,
+                data_chiusura: (crow.querySelector('.cond-data-chiusura') || {}).value || null
+            });
+        }
     }
+    var condIds = condData.map(function(d) { return d.persona_id; });
 
     var immId = await upsertImmobile({
         indirizzo: document.getElementById('cf_imm_indirizzo').value.trim(),
@@ -1351,14 +1438,18 @@ async function saveContratto(editId) {
         await db.from('contratto_conduttori').delete().in('id', oldCondIds);
         appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.contratto_id !== targetId; });
     }
-    // Insert new relations
-    if (locIds.length > 0) {
-        var locInserts = locIds.map(function(lid) { return { contratto_id: targetId, persona_id: lid }; });
+    // Insert new relations (con le date di decorrenza/chiusura del legame)
+    if (locData.length > 0) {
+        var locInserts = locData.map(function(d) {
+            return { contratto_id: targetId, persona_id: d.persona_id, data_decorrenza: d.data_decorrenza, data_chiusura: d.data_chiusura };
+        });
         var { data: insLoc, error: errLoc } = await db.from('contratto_locatori').insert(locInserts).select();
         if (!errLoc && insLoc) appData.contratto_locatori = appData.contratto_locatori.concat(insLoc);
     }
-    if (condIds.length > 0) {
-        var condInserts = condIds.map(function(cid) { return { contratto_id: targetId, persona_id: cid }; });
+    if (condData.length > 0) {
+        var condInserts = condData.map(function(d) {
+            return { contratto_id: targetId, persona_id: d.persona_id, data_decorrenza: d.data_decorrenza, data_chiusura: d.data_chiusura };
+        });
         var { data: insCond, error: errCond } = await db.from('contratto_conduttori').insert(condInserts).select();
         if (!errCond && insCond) appData.contratto_conduttori = appData.contratto_conduttori.concat(insCond);
     }

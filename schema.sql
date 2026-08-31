@@ -260,6 +260,27 @@ INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES
 INSERT INTO contratto_conduttori (contratto_id, persona_id) VALUES
 (1, 2), (2, 3), (3, 7), (4, 8), (5, 9), (6, 10), (7, 3), (8, 2), (9, 7);
 
+-- 8b. Date decorrenza / chiusura per locatori e conduttori
+-- In fase di creazione contratto vengono precompilate automaticamente con
+-- quelle del contratto (restano modificabili).
+ALTER TABLE contratto_locatori ADD COLUMN IF NOT EXISTS data_decorrenza date;
+ALTER TABLE contratto_locatori ADD COLUMN IF NOT EXISTS data_chiusura date;
+ALTER TABLE contratto_conduttori ADD COLUMN IF NOT EXISTS data_decorrenza date;
+ALTER TABLE contratto_conduttori ADD COLUMN IF NOT EXISTS data_chiusura date;
+
+-- Backfill: i record esistenti ereditano le date del proprio contratto
+UPDATE contratto_locatori cl
+SET data_decorrenza = COALESCE(cl.data_decorrenza, ct.data_decorrenza),
+    data_chiusura  = COALESCE(cl.data_chiusura,  ct.data_chiusura)
+FROM contratti ct
+WHERE ct.id = cl.contratto_id;
+
+UPDATE contratto_conduttori cc
+SET data_decorrenza = COALESCE(cc.data_decorrenza, ct.data_decorrenza),
+    data_chiusura  = COALESCE(cc.data_chiusura,  ct.data_chiusura)
+FROM contratti ct
+WHERE ct.id = cc.contratto_id;
+
 -- 9. Impostazioni notifiche
 CREATE TABLE IF NOT EXISTS impostazioni_notifiche (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
