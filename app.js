@@ -639,7 +639,7 @@ document.addEventListener('click', function(e) {
         case 'view-contratto': openModal('viewContratto', id); break;
 
         case 'new-inquilino': openModal('newInquilino'); break;
-        case 'complete-scadenza': completeScadenza(id); break;
+        case 'complete-scadenza': openModal('completaScadenza', id); break;
         case 'generate-f24': generateF24Pdf(id); break;
 
         case 'new-persona': openModal('newPersona'); break;
@@ -1258,6 +1258,20 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-immobile" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'completaScadenza') {
+        var sc = appData.scadenze.find(function(x) { return x.id === id; });
+        if (!sc) return;
+        var scC = getContrattoById(sc.contratto_id);
+        title.textContent = 'Completa Scadenza';
+        html = '<form id="completaScadenzaForm" class="form-grid">';
+        html += '<div style="grid-column:1/-1;padding:14px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:4px">';
+        html += '<div class="contract-detail"><label>Contratto</label><span><strong>' + (scC ? scC.identificativo : 'Contratto #' + sc.contratto_id) + '</strong></span></div>';
+        html += '<div class="contract-detail" style="margin-top:8px"><label>Importo</label><span><strong>' + formatCurrency(sc.importo) + '</strong></span></div>';
+        html += '</div>';
+        html += '<div class="form-group full"><label>Data di completamento</label><input type="date" id="scadDataCompletamento" value="' + toLocalDateStr(new Date()) + '" required></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Conferma Completamento</button></div>';
+        html += '</form>';
+
     }
 
     body.innerHTML = html;
@@ -1320,6 +1334,9 @@ function openModal(type, id) {
 
     var immf = document.getElementById('immobileForm');
     if (immf) immf.addEventListener('submit', function(e) { e.preventDefault(); saveImmobile(id); });
+
+    var csf = document.getElementById('completaScadenzaForm');
+    if (csf) csf.addEventListener('submit', function(e) { e.preventDefault(); salvaCompletamentoScadenza(id); });
 
 
     // Delete confirmation modal
@@ -1987,12 +2004,14 @@ async function saveNotifSettings() {
     renderNotifications();
 }
 
-// --- Bottone V verde: segna una scadenza come pagata ---
+// --- Bottone Completa: apre una finestra per inserire la data di completamento ---
 function scadenzaDoneBtn(s) {
     var isDone = (s.stato === 'completata' || s.stato === 'completato');
-    return '<button class="btn btn-sm btn-success scadenza-done-btn"' +
-        (isDone ? ' disabled' : '') +
-        ' data-action="complete-scadenza" data-id="' + s.id + '" title="' + (isDone ? 'Già pagata' : 'Segna come pagata') + '"><i class="fas fa-check"></i></button>';
+    if (isDone) {
+        return '<span class="status-badge attivo"><i class="fas fa-check"></i> ' + (s.data_completamento ? formatDate(s.data_completamento) : 'Completata') + '</span>';
+    }
+    return '<button class="btn btn-sm btn-success scadenza-completa-btn"' +
+        ' data-action="complete-scadenza" data-id="' + s.id + '" title="Inserisci data di completamento"><i class="fas fa-check"></i> Completa</button>';
 }
 
 // --- Bottone Modello F24: genera il PDF del versamento ---
@@ -2003,17 +2022,25 @@ function scadenzaF24Btn(s) {
         ' data-action="generate-f24" data-id="' + s.id + '" title="' + (isDone ? 'Scadenza già completata' : 'Genera PDF Modello F24') + '"><i class="fas fa-file-alt"></i> Modello F24</button>';
 }
 
-async function completeScadenza(id) {
+// Completa la scadenza salvando la data di completamento scelta dall'utente
+async function salvaCompletamentoScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
-    var { error } = await db.from('scadenze').update({ stato: 'completata' }).eq('id', id);
+    var data = document.getElementById('scadDataCompletamento').value;
+    if (!data) {
+        showToast('Inserisci la data di completamento', 'error');
+        return;
+    }
+    var { error } = await db.from('scadenze').update({ stato: 'completata', data_completamento: data }).eq('id', id);
     if (error) {
         console.error('Errore aggiornamento scadenza:', error);
         showToast('Errore aggiornamento stato', 'error');
         return;
     }
     s.stato = 'completata';
-    showToast('Scadenza segnata come pagata', 'success');
+    s.data_completamento = data;
+    closeModal();
+    showToast('Scadenza completata per il ' + formatDate(data), 'success');
     renderScadenze();
     renderNotifications();
 }
@@ -2042,6 +2069,16 @@ function getPersonaF24TipoLabel(p) {
     return (p && p.ragione_sociale && !p.nome && !p.cognome) ? 'Ragione Sociale' : 'Cognome / Nome';
 }
 
+// Data di chiusura del legame persona-contratto (tabelle ponte);
+// fallback alla data di chiusura del contratto se non ci sono legami specifici.
+function getPersonaRelDataChiusura(contrattoId, personaId, tipo) {
+    var rels = tipo === 'loc' ? appData.contratto_locatori : appData.contratto_conduttori;
+    var rel = rels.find(function(r) { return r.contratto_id === contrattoId && r.persona_id === personaId; });
+    if (rel && rel.data_chiusura) return rel.data_chiusura;
+    var c = getContrattoById(contrattoId);
+    return c ? c.data_chiusura : null;
+}
+
 function generateF24Pdf(scadenzaId) {
     if (typeof jspdf === 'undefined') { showToast('Libreria PDF non disponibile, ricarica la pagina', 'error'); return; }
     var s = appData.scadenze.find(function(x) { return x.id === scadenzaId; });
@@ -2049,8 +2086,9 @@ function generateF24Pdf(scadenzaId) {
     var c = getContrattoById(s.contratto_id);
     if (!c) { showToast('Contratto non trovato', 'error'); return; }
 
-    var locs = getLocatoriByContratto(c.id);
-    var conds = getConduttoriByContratto(c.id);
+    // Nel Modello F24 vanno elencati solo locatori/conduttori ancora attivi (senza data di chiusura)
+    var locs = getLocatoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'loc'); });
+    var conds = getConduttoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'cond'); });
     var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
 
     // Importo: se il canone ha una percentuale, = percentuale sul canone annuo

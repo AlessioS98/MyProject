@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS scadenze (
   prossima_decorrenza date,
   importo numeric DEFAULT 0,
   stato text DEFAULT 'in-attesa',
+  data_completamento date,
   created_at timestamptz DEFAULT now()
 );
 
@@ -77,6 +78,9 @@ ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS importo numeric DEFAULT 0;
 -- Rimozione colonna priorita (e della legacy urgenza): la priorita non e' piu' usata
 ALTER TABLE scadenze DROP COLUMN IF EXISTS priorita;
 ALTER TABLE scadenze DROP COLUMN IF EXISTS urgenza;
+
+-- Colonna data_completamento: data effettiva di completamento/pagamento della scadenza
+ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS data_completamento date;
 
 
 -- Rinomina data in data_decorrenza (decorrenza del contratto) se esiste ancora

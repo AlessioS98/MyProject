@@ -646,6 +646,24 @@ input, select, textarea { font-family: inherit; }
     box-shadow: none;
 }
 
+/* Bottone Completa scadenza (con etichetta, apri la modale per la data) */
+.scadenza-completa-btn {
+    padding: 0 12px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.scadenza-completa-btn:hover {
+    background: #059669;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    transform: translateY(-1px);
+}
+
 /* ---------- Stats Grid ---------- */
 .stats-grid {
     display: grid;
