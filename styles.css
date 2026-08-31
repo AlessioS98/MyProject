@@ -1151,10 +1151,7 @@ input, select, textarea { font-family: inherit; }
 .status-badge.chiuso { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 .status-badge.sospeso { background: var(--bg); color: var(--text-muted); }
 
-/* Badge priorità scadenze */
-.status-badge.priority-alta { background: var(--danger-bg); color: var(--danger); }
-.status-badge.priority-media { background: var(--warning-bg); color: var(--warning); }
-.status-badge.priority-bassa { background: var(--success-bg); color: var(--success); }
+/* Badge scadenza scaduta */
 .status-badge.scaduta { background: var(--danger-bg); color: var(--danger); }
 
 /* Avvisi scadenze in arrivo (≤ 7 giorni dalla prossima scadenza) */
@@ -1331,12 +1328,15 @@ input, select, textarea { font-family: inherit; }
     background: var(--surface-hover);
 }
 
-.data-table .td-actions {
+.data-table .td-actions,
+.list-table .td-actions {
     display: flex;
-    gap: 6px;
+    align-items: center;
+    gap: 10px;
 }
 
-.data-table .td-actions button {
+.data-table .td-actions button,
+.list-table .td-actions button {
     width: 28px;
     height: 28px;
     border-radius: var(--radius-sm);
@@ -1348,12 +1348,14 @@ input, select, textarea { font-family: inherit; }
     transition: all var(--transition);
 }
 
-.data-table .td-actions button:hover {
+.data-table .td-actions button:hover,
+.list-table .td-actions button:hover {
     background: var(--primary-bg);
     color: var(--primary);
 }
 
-.data-table .td-actions button.danger:hover {
+.data-table .td-actions button.danger:hover,
+.list-table .td-actions button.danger:hover {
     background: var(--danger-bg);
     color: var(--danger);
 }

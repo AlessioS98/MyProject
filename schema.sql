@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS scadenze (
   data_decorrenza date NOT NULL,
   prossima_scadenza date,
   prossima_decorrenza date,
-  priorita text DEFAULT 'media' CHECK (priorita IN ('alta', 'media', 'bassa')),
   importo numeric DEFAULT 0,
   stato text DEFAULT 'in-attesa',
   created_at timestamptz DEFAULT now()
@@ -75,23 +74,10 @@ CREATE TABLE IF NOT EXISTS canoni_annuali (
 -- Colonna importo (importo da pagare) per le scadenze
 ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS importo numeric DEFAULT 0;
 
--- Rinomina urgenza in priorita (Alta / Media / Bassa) se esiste ancora
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'scadenze' AND column_name = 'urgenza') THEN
-    ALTER TABLE scadenze RENAME COLUMN urgenza TO priorita;
-  END IF;
-END $$;
+-- Rimozione colonna priorita (e della legacy urgenza): la priorita non e' piu' usata
+ALTER TABLE scadenze DROP COLUMN IF EXISTS priorita;
+ALTER TABLE scadenze DROP COLUMN IF EXISTS urgenza;
 
--- Vincolo sui valori di priorita (Postgres non supporta IF NOT EXISTS su ADD CONSTRAINT)
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'scadenze_priorita_check') THEN
-    ALTER TABLE scadenze ADD CONSTRAINT scadenze_priorita_check
-      CHECK (priorita IN ('alta', 'media', 'bassa'));
-  END IF;
-END $$;
 
 -- Rinomina data in data_decorrenza (decorrenza del contratto) se esiste ancora
 DO $$
@@ -249,9 +235,9 @@ ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuale;
 ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuo;
 
 -- prossima_scadenza e prossima_decorrenza vengono calcolate automaticamente dal trigger
-INSERT INTO scadenze (contratto_id, data_decorrenza, priorita, importo, stato) VALUES
-(1, '2025-01-15', 'media', 7500, 'completata'),
-(2, '2025-06-01', 'alta', 24000, 'in-attesa');
+INSERT INTO scadenze (contratto_id, data_decorrenza, importo, stato) VALUES
+(1, '2025-01-15', 7500, 'completata'),
+(2, '2025-06-01', 24000, 'in-attesa');
 
 -- Dati di esempio per tabelle ponte (locatori/conduttori multipli)
 INSERT INTO contratto_locatori (contratto_id, persona_id) VALUES

@@ -642,6 +642,15 @@ document.addEventListener('click', function(e) {
         case 'complete-scadenza': completeScadenza(id); break;
         case 'generate-f24': generateF24Pdf(id); break;
 
+        case 'new-persona': openModal('newPersona'); break;
+        case 'edit-persona': openModal('editPersona', id); break;
+        case 'delete-persona': openModal('deletePersonaConfirm', id); break;
+        case 'confirm-delete-persona': deletePersona(id); break;
+        case 'new-immobile': openModal('newImmobile'); break;
+        case 'edit-immobile': openModal('editImmobile', id); break;
+        case 'delete-immobile': openModal('deleteImmobileConfirm', id); break;
+        case 'confirm-delete-immobile': deleteImmobile(id); break;
+
         case 'close-modal': closeModal(); break;
     }
 });
@@ -944,6 +953,7 @@ function openModal(type, id) {
     var overlay = document.getElementById('modalOverlay');
     var title = document.getElementById('modalTitle');
     var body = document.getElementById('modalBody');
+    var modal = document.getElementById('modal');
     var html = '';
 
     if (type === 'newContratto' || type === 'editContratto') {
@@ -1122,25 +1132,59 @@ function openModal(type, id) {
 
     } else if (type === 'listaPersone') {
         var personeList = dedupPersone(appData.persone).slice().sort(function(a, b) {
-            var ka = getPersonaDisplayLabel(a).toLowerCase();
-            var kb = getPersonaDisplayLabel(b).toLowerCase();
+            // Cognome prima del nome
+            var ka = (getPersonaCognomeNomeLabel(a)).toLowerCase();
+            var kb = (getPersonaCognomeNomeLabel(b)).toLowerCase();
             return ka < kb ? -1 : ka > kb ? 1 : 0;
         });
         title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
+        html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
+        html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-persona"><i class="fas fa-plus"></i> Nuova Persona</button></div>';
         if (personeList.length === 0) {
-            html = '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
+            html += '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
         } else {
-            html = '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
-            html += '<table class="list-table"><thead><tr><th>Nome / Ragione Sociale</th><th>Codice Fiscale</th><th>Tipo</th></tr></thead><tbody>';
+            html += '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
+            html += '<table class="list-table"><thead><tr><th>Cognome / Ragione Sociale</th><th>Nome</th><th>Codice Fiscale</th><th>Tipo</th><th>Azioni</th></tr></thead><tbody>';
             personeList.forEach(function(p) {
                 var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
-                html += '<tr><td><strong>' + getPersonaLabelShort(p) + '</strong></td>' +
+                html += '<tr><td><strong>' + getPersonaCognomeNomeLabel(p) + '</strong></td>' +
+                    '<td>' + (isAzienda ? '-' : (p.nome || '-')) + '</td>' +
                     '<td>' + (p.codice_fiscale || '-') + '</td>' +
-                    '<td><span class="status-badge ' + (isAzienda ? 'tipo-azienda' : 'tipo-fisica') + '">' + (isAzienda ? 'Azienda' : 'Persona Fisica') + '</span></td></tr>';
+                    '<td><span class="status-badge ' + (isAzienda ? 'tipo-azienda' : 'tipo-fisica') + '">' + (isAzienda ? 'Azienda' : 'Persona Fisica') + '</span></td>' +
+                    '<td><div class="td-actions">' +
+                    '<button type="button" data-action="edit-persona" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+                    '<button type="button" class="danger" data-action="delete-persona" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+                    '</div></td></tr>';
             });
             html += '</tbody></table></div>';
         }
         html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'newPersona' || type === 'editPersona') {
+        var pe = type === 'editPersona' ? appData.persone.find(function(x) { return x.id === id; }) : null;
+        // Azienda = ragione sociale presente senza nome/cognome; altrimenti persona fisica.
+        // In MODIFICA il tipo è fisso: una persona fisica resta tale, un'azienda resta tale.
+        var torrePersona = pe ? (pe.ragione_sociale && !pe.nome && !pe.cognome) : false;
+        title.textContent = pe ? 'Modifica Persona' : 'Nuova Persona';
+        html = '<form id="personaForm" class="form-grid">';
+        if (type === 'newPersona') {
+            html += '<div class="form-section-title full"><i class="fas fa-user-tag"></i> Tipo Anagrafica</div>';
+            html += '<div class="form-group full"><div class="radio-group" style="display:flex;gap:16px">';
+            html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="pf_tipo" value="pf" onchange="togglePersonaType()"' + (!torrePersona ? ' checked' : '') + '> Persona Fisica</label>';
+            html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="pf_tipo" value="azienda" onchange="togglePersonaType()"' + (torrePersona ? ' checked' : '') + '> Azienda</label>';
+            html += '</div></div>';
+        } else {
+            // Campo nascosto: memorizza il tipo esistente (da non modificare)
+            html += '<input type="hidden" id="pf_tipo" value="' + (torrePersona ? 'azienda' : 'pf') + '">';
+            html += '<div class="form-section-title full"><i class="fas fa-user-tag"></i> Tipo: ' + (torrePersona ? 'Azienda' : 'Persona Fisica') + '</div>';
+        }
+        html += '<div class="form-group" id="pfGrpCognome"><label>Cognome</label><input type="text" id="pf_cognome" value="' + (pe ? (pe.cognome || '') : '') + '"></div>';
+        html += '<div class="form-group" id="pfGrpNome"><label>Nome</label><input type="text" id="pf_nome" value="' + (pe ? (pe.nome || '') : '') + '"></div>';
+        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="pf_cf" value="' + (pe ? (pe.codice_fiscale || '') : '') + '"></div>';
+        html += '<div class="form-group" id="pfGrpRs"><label>Ragione Sociale</label><input type="text" id="pf_rs" value="' + (pe ? (pe.ragione_sociale || '') : '') + '"></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</form>';
+        modal._returnToList = 'listaPersone';
 
     } else if (type === 'listaImmobili') {
         var immobiliList = dedupImmobili(appData.immobili).slice().sort(function(a, b) {
@@ -1149,22 +1193,70 @@ function openModal(type, id) {
             return ka < kb ? -1 : ka > kb ? 1 : 0;
         });
         title.textContent = 'Immobili (' + immobiliList.length + ')';
+        html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
+        html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-immobile"><i class="fas fa-plus"></i> Nuovo Immobile</button></div>';
         if (immobiliList.length === 0) {
-            html = '<div class="empty-state"><i class="fas fa-building"></i><p>Nessun immobile presente</p></div>';
+            html += '<div class="empty-state"><i class="fas fa-building"></i><p>Nessun immobile presente</p></div>';
         } else {
-            html = '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
-            html += '<table class="list-table"><thead><tr><th>Indirizzo</th><th>Città</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>APE</th></tr></thead><tbody>';
+            html += '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
+            html += '<table class="list-table"><thead><tr><th>Indirizzo</th><th>Città</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>APE</th><th>Azioni</th></tr></thead><tbody>';
             immobiliList.forEach(function(i) {
                 html += '<tr><td><strong>' + i.indirizzo + '</strong></td>' +
                     '<td>' + i.citta + '</td>' +
                     '<td>' + (i.foglio || '-') + '</td>' +
                     '<td>' + (i.particella || '-') + '</td>' +
                     '<td>' + (i.sub || '-') + '</td>' +
-                    '<td>' + (i.ape ? '<span class="status-badge attivo">SI</span>' : '<span class="status-badge chiuso">NO</span>') + '</td></tr>';
+                    '<td>' + (i.ape ? '<span class="status-badge attivo">SI</span>' : '<span class="status-badge chiuso">NO</span>') + '</td>' +
+                    '<td><div class="td-actions">' +
+                    '<button type="button" data-action="edit-immobile" data-id="' + i.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+                    '<button type="button" class="danger" data-action="delete-immobile" data-id="' + i.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+                    '</div></td></tr>';
             });
             html += '</tbody></table></div>';
         }
         html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'newImmobile' || type === 'editImmobile') {
+        var ie = type === 'editImmobile' ? appData.immobili.find(function(x) { return x.id === id; }) : null;
+        title.textContent = ie ? 'Modifica Immobile' : 'Nuovo Immobile';
+        html = '<form id="immobileForm" class="form-grid">';
+        html += '<div class="form-group"><label>Indirizzo</label><input type="text" id="if_indirizzo" value="' + (ie ? (ie.indirizzo || '') : '') + '" required></div>';
+        html += '<div class="form-group"><label>Città</label><input type="text" id="if_citta" value="' + (ie ? (ie.citta || '') : '') + '" required></div>';
+        html += '<div class="form-group"><label>Foglio</label><input type="text" id="if_foglio" value="' + (ie ? (ie.foglio || '') : '') + '"></div>';
+        html += '<div class="form-group"><label>Particella</label><input type="text" id="if_particella" value="' + (ie ? (ie.particella || '') : '') + '"></div>';
+        html += '<div class="form-group"><label>Sub</label><input type="text" id="if_sub" value="' + (ie ? (ie.sub || '') : '') + '"></div>';
+        html += '<div class="form-group"><label>APE</label><div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
+        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="if_ape" value="true"' + (!(ie && ie.ape) ? ' checked' : '') + '> Sì</label>';
+        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="if_ape" value="false"' + ((ie && ie.ape) ? ' checked' : '') + '> No</label></div></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</form>';
+        modal._returnToList = 'listaImmobili';
+
+    } else if (type === 'deletePersonaConfirm') {
+        var pd = appData.persone.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Persona';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare la persona <strong>' + (pd ? getPersonaCognomeNomeLabel(pd) : 'N/A') + '</strong>.</span><br>';
+        html += '<small>Verrà rimossa anche dai contratti in cui compare.</small>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-persona" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
+    } else if (type === 'deleteImmobileConfirm') {
+        var idel = appData.immobili.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Immobile';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare l\'immobile <strong>' + (idel ? idel.indirizzo + ', ' + idel.citta : 'N/A') + '</strong>.</span><br>';
+        html += '<small>Verrà rimosso anche dai contratti in cui è associato.</small>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-immobile" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
 
     }
 
@@ -1219,6 +1311,15 @@ function openModal(type, id) {
 
     var nsf = document.getElementById('notifSettingsForm');
     if (nsf) nsf.addEventListener('submit', function(e) { e.preventDefault(); saveNotifSettings(); });
+
+    var perf = document.getElementById('personaForm');
+    if (perf) {
+        perf.addEventListener('submit', function(e) { e.preventDefault(); savePersona(id); });
+        togglePersonaType();
+    }
+
+    var immf = document.getElementById('immobileForm');
+    if (immf) immf.addEventListener('submit', function(e) { e.preventDefault(); saveImmobile(id); });
 
 
     // Delete confirmation modal
@@ -1413,7 +1514,6 @@ async function saveContratto(editId) {
             contratto_id: targetId,
             data_decorrenza: contrattoData.data_decorrenza,
             importo: primoCanone ? (primoCanone.importo || 0) : 0,
-            priorita: 'media',
             stato: 'in-attesa'
         }).select();
         if (errScad) {
@@ -1477,7 +1577,107 @@ async function saveInquilino() {
     showToast('Inquilino salvato!', 'success');
 }
 
+// Mostra/nasconde i campi in base al tipo di anagrafica selezionato
+// Legge il tipo dell'anagrafica (radio in creazione, campo nascosto in modifica)
+function getPersonaFormType() {
+    var radio = document.querySelector('input[name="pf_tipo"]:checked');
+    if (radio) return radio.value;
+    var hidden = document.getElementById('pf_tipo');
+    if (hidden) return hidden.value;
+    return 'pf';
+}
+
+function togglePersonaType() {
+    var isAzienda = getPersonaFormType() === 'azienda';
+    var grpCog = document.getElementById('pfGrpCognome');
+    var grpNom = document.getElementById('pfGrpNome');
+    var grpRs = document.getElementById('pfGrpRs');
+    if (grpCog) grpCog.style.display = isAzienda ? 'none' : '';
+    if (grpNom) grpNom.style.display = isAzienda ? 'none' : '';
+    if (grpRs) grpRs.style.display = isAzienda ? '' : 'none';
+}
+
+// --- Save/Update Persona (dalla lista anagrafiche) ---
+async function savePersona(id) {
+    var isAzienda = getPersonaFormType() === 'azienda';
+    var d;
+    if (isAzienda) {
+        d = {
+            nome: '',
+            cognome: '',
+            codice_fiscale: document.getElementById('pf_cf').value.trim() || null,
+            ragione_sociale: document.getElementById('pf_rs').value.trim() || null
+        };
+    } else {
+        d = {
+            nome: document.getElementById('pf_nome').value.trim(),
+            cognome: document.getElementById('pf_cognome').value.trim(),
+            codice_fiscale: document.getElementById('pf_cf').value.trim() || null,
+            ragione_sociale: null
+        };
+    }
+
+    if (id) {
+        var { error } = await db.from('anagrafica_persona').update(d).eq('id', id);
+        if (error) { console.error('Errore update persona:', error); showToast('Errore salvataggio', 'error'); return; }
+        var idx = appData.persone.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.persone[idx], d);
+    } else {
+        var { data, error } = await db.from('anagrafica_persona').insert(d).select('id').single();
+        if (error) { console.error('Errore insert persona:', error); showToast('Errore salvataggio', 'error'); return; }
+        appData.persone.push({ id: data.id, ...d });
+    }
+    closeModal();
+    openModal(document.getElementById('modal')._returnToList || 'listaPersone');
+    showToast('Persona salvata!', 'success');
+}
+
+// --- Save/Update Immobile (dalla lista immobili) ---
+async function saveImmobile(id) {
+    var d = {
+        indirizzo: document.getElementById('if_indirizzo').value.trim(),
+        citta: document.getElementById('if_citta').value.trim(),
+        foglio: document.getElementById('if_foglio').value.trim() || null,
+        particella: document.getElementById('if_particella').value.trim() || null,
+        sub: document.getElementById('if_sub').value.trim() || null,
+        ape: document.querySelector('input[name="if_ape"]:checked').value === 'true'
+    };
+    if (id) {
+        var { error } = await db.from('immobili').update(d).eq('id', id);
+        if (error) { console.error('Errore update immobile:', error); showToast('Errore salvataggio', 'error'); return; }
+        var idx = appData.immobili.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.immobili[idx], d);
+    } else {
+        var { data, error } = await db.from('immobili').insert(d).select('id').single();
+        if (error) { console.error('Errore insert immobile:', error); showToast('Errore salvataggio', 'error'); return; }
+        appData.immobili.push({ id: data.id, ...d });
+    }
+    closeModal();
+    openModal(document.getElementById('modal')._returnToList || 'listaImmobili');
+    showToast('Immobile salvato!', 'success');
+}
+
 // --- Delete Operations ---
+async function deletePersona(id) {
+    var { error } = await db.from('anagrafica_persona').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.persone = appData.persone.filter(function(p) { return p.id !== id; });
+    appData.contratto_locatori = appData.contratto_locatori.filter(function(r) { return r.persona_id !== id; });
+    appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.persona_id !== id; });
+    closeModal();
+    openModal('listaPersone');
+    showToast('Persona eliminata', 'info');
+}
+
+async function deleteImmobile(id) {
+    var { error } = await db.from('immobili').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.immobili = appData.immobili.filter(function(i) { return i.id !== id; });
+    closeModal();
+    openModal('listaImmobili');
+    showToast('Immobile eliminato', 'info');
+}
+
 async function deleteContratto(id) {
     // 1. Elimina prima i record collegati nelle tabelle figlie
     await db.from('contratto_locatori').delete().eq('contratto_id', id);
@@ -1997,17 +2197,12 @@ function generateF24Pdf(scadenzaId) {
 function getContrattoById(id) {
     return appData.contratti.find(function(c) { return c.id === id; }) || null;
 }
-function getPrioritaLabel(p) {
-    return { alta: 'Alta', media: 'Media', bassa: 'Bassa' }[p] || 'Media';
-}
 async function renderScadenze() {
-    var filtroPriorita = document.getElementById('filterScadenzaPriorita').value;
     var filtroStato = document.getElementById('filterScadenzaStato').value;
 
     var list = appData.scadenze.slice().sort(function(a, b) {
         return (a.data_decorrenza || '').localeCompare(b.data_decorrenza || '');
     });
-    if (filtroPriorita !== 'all') list = list.filter(function(s) { return s.priorita === filtroPriorita; });
     if (filtroStato !== 'all') list = list.filter(function(s) { return s.stato === filtroStato; });
 
     // Stats
@@ -2018,19 +2213,18 @@ async function renderScadenze() {
     var tbody = document.getElementById('scadenzeTableBody');
     if (list.length === 0) {
         cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div>';
-        tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         cardsEl.innerHTML = list.map(function(s) {
             var c = getContrattoById(s.contratto_id);
             var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
-            var prio = (s.priorita || 'media').toLowerCase();
             var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
             var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
             var urg = getScadenzaUrgenza(s);
             var proxHtml = formatDate(s.prossima_scadenza);
             if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
             return '<div class="contract-card' + (urg ? ' alert-' + urg.type : '') + '">' +
-                '<div class="contract-top"><span class="contract-code">' + cod + '</span><span class="status-badge priority-' + prio + '">' + getPrioritaLabel(prio) + '</span></div>' +
+                '<div class="contract-top"><span class="contract-code">' + cod + '</span></div>' +
                 '<div class="contract-title"><i class="fas fa-user-tie"></i> ' + locLabel + ' → <i class="fas fa-user"></i> ' + condLabel + '</div>' +
                 '<div class="contract-details">' +
                 '<div class="contract-detail"><label>Decorrenza</label><span>' + formatDate(s.data_decorrenza) + '</span></div>' +
@@ -2044,14 +2238,12 @@ async function renderScadenze() {
         tbody.innerHTML = list.map(function(s) {
             var c = getContrattoById(s.contratto_id);
             var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
-            var prio = (s.priorita || 'media').toLowerCase();
             var urg = getScadenzaUrgenza(s);
             var proxHtml = formatDate(s.prossima_scadenza);
             if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
             return '<tr' + (urg ? ' class="alert-' + urg.type + '"' : '') + '>' +
                 '<td><strong>' + cod + '</strong></td>' +
                 '<td>' + formatDate(s.data_decorrenza) + '</td>' +
-                '<td><span class="status-badge priority-' + prio + '">' + getPrioritaLabel(prio) + '</span></td>' +
                 '<td>' + formatCurrency(s.importo) + '</td>' +
                 '<td><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></td>' +
                 '<td>' + proxHtml + '</td>' +
