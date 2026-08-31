@@ -1933,8 +1933,8 @@ async function renderScadenze() {
             var c = getContrattoById(s.contratto_id);
             var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
             var prio = (s.priorita || 'media').toLowerCase();
-            var locLabel = c ? getLocatoriLabel(c.id) : 'N/A';
-            var condLabel = c ? getConduttoriLabel(c.id) : 'N/A';
+            var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
+            var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
             var urg = getScadenzaUrgenza(s);
             var proxHtml = formatDate(s.prossima_scadenza);
             if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
