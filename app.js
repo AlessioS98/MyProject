@@ -73,35 +73,8 @@ function toggleLocatoreType(tipo, rowEl) {
     }
 }
 
-function toggleCedolarePercentuale() {
-    var cedolareSi = document.getElementById('cf_cedolare_si');
-    var percentuale = document.getElementById('cf_percentuale');
-    var valoreAssoluto = document.getElementById('cf_valore_assoluto');
-    if (!cedolareSi) return;
-    if (cedolareSi.checked) {
-        // Cedolare secca ATTIVA → percentuale e valore assoluto NON compilabili
-        if (percentuale) {
-            percentuale.disabled = true;
-            percentuale.closest('.form-group').style.opacity = '0.4';
-            percentuale.value = '';
-        }
-        if (valoreAssoluto) {
-            valoreAssoluto.disabled = true;
-            valoreAssoluto.closest('.form-group').style.opacity = '0.4';
-            valoreAssoluto.value = '';
-        }
-    } else {
-        // Cedolare secca NON attiva → campi compilabili
-        if (percentuale) {
-            percentuale.disabled = false;
-            percentuale.closest('.form-group').style.opacity = '1';
-        }
-        if (valoreAssoluto) {
-            valoreAssoluto.disabled = false;
-            valoreAssoluto.closest('.form-group').style.opacity = '1';
-        }
-    }
-}
+
+
 
 function toggleConduttoreType(tipo, rowEl) {
     var container = rowEl || document;
@@ -237,20 +210,58 @@ function getTotaleCanoniAnnui(contrattoId) {
     return getCanoniByContratto(contrattoId).reduce(function(s, ca) { return s + (ca.importo || 0); }, 0);
 }
 var canoneRowCounter = 0;
-function addCanoneRow(importo, dataInizio, dataFine, note) {
+function toggleCanoneCedolare(el) {
+    if (!el) return;
+    var row = el.closest('.canone-row');
+    // Legge sempre lo stato della radio "Sì" della riga, indipendentemente da
+    // quale radio (Sì o No) ha scatenato l'evento.
+    var siEl = row.querySelector('.canone-cedolare-si');
+    var active = !!(siEl && siEl.checked);
+    var percentuale = row.querySelector('.canone-percentuale');
+    var valoreAssoluto = row.querySelector('.canone-valore-assoluto');
+    [percentuale, valoreAssoluto].forEach(function(field) {
+        if (!field) return;
+        var group = field.closest('.form-group');
+        if (active) {
+            // Cedolare secca ATTIVA → percentuale e valore assoluto NON compilabili
+            field.disabled = true;
+            field.value = '';
+            if (group) group.style.opacity = '0.4';
+        } else {
+            // Cedolare secca NON attiva → campi compilabili
+            field.disabled = false;
+            if (group) group.style.opacity = '1';
+        }
+    });
+}
+function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale, valoreAssoluto) {
     canoneRowCounter++;
     var container = document.getElementById('canoniRowsContainer');
     if (!container) return;
     var row = document.createElement('div');
     row.className = 'canone-row';
-    row.style.cssText = 'display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;';
+    var cedChecked = cedolare ? ' checked' : '';
+    var cedNoChecked = cedolare ? '' : ' checked';
     row.innerHTML = `
+        <div class="canone-header">
+            <span class="canone-label"><i class="fas fa-euro-sign"></i> Canone ${canoneRowCounter}</span>
+            <button type="button" class="btn btn-sm btn-outline canone-remove" onclick="this.closest('.canone-row').remove()"><i class="fas fa-trash"></i></button>
+        </div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Importo (EUR)</label><input type="number" class="canone-importo" value="${importo || ''}" min="0" step="0.01" required></div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Inizio</label><input type="date" class="canone-data-inizio" value="${dataInizio || ''}" required></div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Fine</label><input type="date" class="canone-data-fine" value="${dataFine || ''}" required></div>
-        <button type="button" class="btn btn-sm btn-outline" style="color:var(--danger);margin-bottom:4px" onclick="this.closest('.canone-row').remove()"><i class="fas fa-trash"></i></button>
+        <div class="form-group" style="flex:1;min-width:100%;margin:0"><label>Cedolare Secca</label>
+            <div class="radio-group" style="display:flex;gap:16px;margin-top:6px">
+                <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" class="canone-cedolare-si" name="canone_cedolare_${canoneRowCounter}" value="true"${cedChecked} onchange="toggleCanoneCedolare(this)"> Sì</label>
+                <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" class="canone-cedolare-no" name="canone_cedolare_${canoneRowCounter}" value="false"${cedNoChecked} onchange="toggleCanoneCedolare(this)"> No</label>
+            </div>
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Imposta di Registro (%)</label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01"></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Valore Assoluto (EUR)</label><input type="number" class="canone-valore-assoluto" value="${valoreAssoluto || ''}" min="0" step="0.01"></div>
     `;
     container.appendChild(row);
+    // Applica il toggle iniziale in base alla cedolare secca scelta
+    toggleCanoneCedolare(row.querySelector('.canone-cedolare-si'));
 }
 
 // --- CF Autocomplete ---
@@ -373,6 +384,24 @@ function setupImmobileFieldAutocomplete(inputEl, fieldType) {
 }
 
 // --- Locatore / Conduttore Row Helpers ---
+// Suggerimenti campo-per-campo (stessa logica usata nella finestra Cerca Contratto):
+// digitando in Nome/Cognome/Ragione Sociale appaiono i valori presenti nell'anagrafica.
+function setupPersonFieldAutocomplete(inputEl, fieldKey) {
+    if (!inputEl) return;
+    inputEl.parentNode.style.position = 'relative';
+    setupFilterAutocomplete(inputEl, function() {
+        var seen = {};
+        var out = [];
+        appData.persone.forEach(function(p) {
+            var v = p[fieldKey];
+            if (!v) return;
+            var label = String(v).trim();
+            if (label && !seen[label]) { seen[label] = true; out.push(label); }
+        });
+        return out;
+    }, null);
+}
+
 var locatoreRowCounter = 0;
 function addLocatoreRow(persona, isEdit) {
     locatoreRowCounter++;
@@ -394,13 +423,20 @@ function addLocatoreRow(persona, isEdit) {
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
-        <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(locTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}" ${(locTipo==='pf')?'disabled':''}></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(locTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}" ${(locTipo==='azienda')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale</label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}"></div>
         </div>
-    `;    container.appendChild(row);
+    `;
+    container.appendChild(row);
+    // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
+    toggleLocatoreType(locTipo, row);
     var cfInput = row.querySelector('.loc-cf');
     if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
+    // Suggerimenti campo-per-campo (stessa logica della finestra Cerca Contratto)
+    setupPersonFieldAutocomplete(row.querySelector('.loc-nome'), 'nome');
+    setupPersonFieldAutocomplete(row.querySelector('.loc-cognome'), 'cognome');
+    setupPersonFieldAutocomplete(row.querySelector('.loc-rs'), 'ragione_sociale');
 }
 
 
@@ -425,14 +461,20 @@ function addConduttoreRow(persona, isEdit) {
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
-        <div class="form-group" style="flex:1;min-width:140px;margin:0" ${(condTipo==='pf')?'style="opacity:0.4"':''}><label>Ragione Sociale</label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}" ${(condTipo==='pf')?'disabled':''}></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0" ${(condTipo==='azienda')?'style="opacity:0.4"':''}><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}" ${(condTipo==='azienda')?'disabled':''}></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale</label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}"></div>
         </div>
     `;
     container.appendChild(row);
+    // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
+    toggleConduttoreType(condTipo, row);
     var cfInput = row.querySelector('.cond-cf');
     if (cfInput && !isEdit) setupCfAutocomplete(cfInput, row);
+    // Suggerimenti campo-per-campo (stessa logica della finestra Cerca Contratto)
+    setupPersonFieldAutocomplete(row.querySelector('.cond-nome'), 'nome');
+    setupPersonFieldAutocomplete(row.querySelector('.cond-cognome'), 'cognome');
+    setupPersonFieldAutocomplete(row.querySelector('.cond-rs'), 'ragione_sociale');
 }
 
 // --- Scadenza effettiva del contratto ---
@@ -806,7 +848,7 @@ function exportData(type) {
         appData.contratti.forEach(function(c) {
             var stato = calcContrattoStato(c);
             var caExp = getCanoneAttuale(c.id);
-            csv += '"' + c.identificativo + '","' + getLocatoriLabel(c.id) + '","' + getConduttoriLabel(c.id) + '","' + getImmobileLabel(c.immobile_id) + '",' + (caExp ? caExp.importo : 0) + ',"' + (c.data_decorrenza||'') + '","' + (getContrattoScadenzaEffettiva(c)||'') + '","' + getStatusLabel(stato) + '",' + (c.tassazione_cedolare_secca ? 'SI' : 'NO') + '\n';
+            csv += '"' + c.identificativo + '","' + getLocatoriLabel(c.id) + '","' + getConduttoriLabel(c.id) + '","' + getImmobileLabel(c.immobile_id) + '",' + (caExp ? caExp.importo : 0) + ',"' + (c.data_decorrenza||'') + '","' + (getContrattoScadenzaEffettiva(c)||'') + '","' + getStatusLabel(stato) + '",' + (caExp && caExp.tassazione_cedolare_secca ? 'SI' : 'NO') + '\n';
         });
     }
     var blob = new Blob([csv], { type: 'text/csv' });
@@ -839,12 +881,6 @@ function openModal(type, id) {
         // --- SEZIONE CONTRATTO ---
         html += '<div class="form-section-title full"><i class="fas fa-file-contract"></i> Dati Contratto</div>';
         html += '<div class="form-group"><label>Identificativo</label><input type="text" id="cf_identificativo" value="' + (c ? c.identificativo : '') + '" required></div>';
-        var cedChecked = c && c.tassazione_cedolare_secca;
-        html += '<div class="form-group"><label>Tassazione Cedolare Secca</label>';
-        html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cedolare" id="cf_cedolare_si" value="true"' + (!cedChecked ? ' checked' : '') + ' onchange="toggleCedolarePercentuale()"> Sì</label>';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cedolare" id="cf_cedolare_no" value="false"' + (cedChecked ? ' checked' : '') + ' onchange="toggleCedolarePercentuale()"> No</label>';
-        html += '</div></div>';
         html += '<div class="form-group"><label>Data Decorrenza</label><input type="date" id="cf_decorrenza" value="' + (c ? c.data_decorrenza : '') + '" required></div>';
         html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="cf_scadenza" value="' + (c ? c.data_scadenza : '') + '" required></div>';
         // Data Scadenza Rinnovo: inseribile solo in fase di modifica del contratto
@@ -856,11 +892,6 @@ function openModal(type, id) {
         html += '<div class="form-section-title full"><i class="fas fa-euro-sign"></i> Canoni Annuali</div>';
         html += '<div class="form-group full"><div id="canoniRowsContainer"></div>';
         html += '<button type="button" class="btn btn-sm btn-outline" onclick="addCanoneRow()"><i class="fas fa-plus"></i> Aggiungi Canone</button></div>';
-        html += '<div class="form-group-box full"><div class="form-group-box-title"><i class="fas fa-file-invoice"></i> Imposta di Registro</div>';
-        html += '<div style="display:flex;gap:16px;flex-wrap:wrap">';
-        html += '<div class="form-group" style="flex:1;min-width:140px"><label>Percentuale (%)</label><input type="number" id="cf_percentuale" value="' + (c ? c.percentuale : '') + '" min="0" max="100" step="0.01"></div>';
-        html += '<div class="form-group" style="flex:1;min-width:140px"><label>Valore Assoluto (EUR)</label><input type="number" id="cf_valore_assoluto" value="' + (c ? c.valore_assoluto : '') + '" min="0" step="0.01"></div>';
-        html += '</div></div>';
         html += '<div class="form-group full"><label>Note</label><textarea id="cf_note">' + (c ? (c.note || '') : '') + '</textarea></div>';
 
         // --- SEZIONE LOCATORI ---
@@ -927,19 +958,25 @@ function openModal(type, id) {
         var canoniCv = getCanoniByContratto(cv.id);
         if (canoniCv.length > 0) {
             canoniCv.forEach(function(ca) {
+                var caTax;
+                if (ca.tassazione_cedolare_secca) {
+                    caTax = 'Cedolare Secca';
+                } else if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
+                    caTax = 'Imposta di Registro ' + (parseFloat(ca.percentuale) || 0) + '%' + (parseFloat(ca.valore_assoluto) > 0 ? ' + ' + formatCurrency(ca.valore_assoluto) : '');
+                } else {
+                    caTax = 'Ordinaria';
+                }
                 html += '<div class="contract-detail"><label>Canone ' + formatDate(ca.data_inizio) + ' → ' + formatDate(ca.data_fine) + '</label><span>' + formatCurrency(ca.importo) + '</span></div>';
+                html += '<div class="contract-detail"><label>Tassazione</label><span>' + caTax + '</span></div>';
             });
         } else {
             html += '<div class="contract-detail"><label>Canone Annuale</label><span>-</span></div>';
         }
-        html += '<div class="contract-detail"><label>Percentuale</label><span>' + (cv.percentuale || 0) + '%</span></div>';
-        html += '<div class="contract-detail"><label>Valore Assoluto</label><span>' + formatCurrency(cv.valore_assoluto) + '</span></div>';
         html += '<div class="contract-detail"><label>Decorrenza</label><span>' + formatDate(cv.data_decorrenza) + '</span></div>';
         var dcColor = dc ? 'color:var(--danger)' : '';
         html += '<div class="contract-detail"><label>Scadenza</label><span style="' + (!cv.data_scadenza_rinnovo ? dcColor : '') + '">' + formatDate(cv.data_scadenza) + '</span></div>';
         html += '<div class="contract-detail"><label>Scadenza Rinnovo</label><span style="' + (cv.data_scadenza_rinnovo ? dcColor : '') + '">' + (cv.data_scadenza_rinnovo ? formatDate(cv.data_scadenza_rinnovo) : '–') + '</span></div>';
         html += '<div class="contract-detail"><label>Chiusura</label><span>' + (cv.data_chiusura ? formatDate(cv.data_chiusura) : '-') + '</span></div>';
-        html += '<div class="contract-detail"><label>Cedolare Secca</label><span>' + (cv.tassazione_cedolare_secca ? 'SI' : 'NO') + '</span></div>';
         html += '<div class="contract-detail"><label>Rimanenza</label><span class="' + dc + '">' + dl + '</span></div>';
         html += '</div>';
 
@@ -1061,13 +1098,11 @@ function openModal(type, id) {
     var cf = document.getElementById('contrattoForm');
     if (cf) {
         cf.addEventListener('submit', function(e) { e.preventDefault(); saveContratto(id); });
-        // Apply initial cedolare percentuale toggle
-        toggleCedolarePercentuale();
         // Populate existing canoni annuali for edit mode
         if (type === 'editContratto' && id) {
             var existingCanoni = getCanoniByContratto(id);
             existingCanoni.forEach(function(ca) {
-                addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '');
+                addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '', ca.tassazione_cedolare_secca, ca.percentuale, ca.valore_assoluto);
             });
             // Populate existing locatori
             var existingLocs = getLocatoriByContratto(id);
@@ -1206,12 +1241,9 @@ async function saveContratto(editId) {
         data_scadenza: document.getElementById('cf_scadenza').value || null,
         data_scadenza_rinnovo: scadRinnovoEl ? (scadRinnovoEl.value || null) : null,
         data_chiusura: document.getElementById('cf_chiusura').value || null,
-        tassazione_cedolare_secca: document.querySelector('input[name="cf_cedolare"]:checked').value === 'true',
         locatore_id: locIds.length > 0 ? locIds[0] : null,
         conduttore_id: condIds.length > 0 ? condIds[0] : null,
         immobile_id: immId,
-        percentuale: parseFloat(document.getElementById('cf_percentuale').value) || 0,
-        valore_assoluto: parseFloat(document.getElementById('cf_valore_assoluto').value) || 0,
         note: document.getElementById('cf_note').value.trim()
     };
 
@@ -1246,12 +1278,19 @@ async function saveContratto(editId) {
         var dataFine = row.querySelector('.canone-data-fine').value || null;
         var noteEl = row.querySelector('.canone-note');
         var noteCanone = noteEl ? (noteEl.value.trim() || null) : null;
+        var cedolareSi = row.querySelector('.canone-cedolare-si');
+        var taxCedolare = cedolareSi ? cedolareSi.checked : false;
+        var taxPercentuale = parseFloat(row.querySelector('.canone-percentuale').value) || 0;
+        var taxValoreAssoluto = parseFloat(row.querySelector('.canone-valore-assoluto').value) || 0;
         newCanoni.push({
             contratto_id: targetId,
             importo: importo,
             data_inizio: dataInizio,
             data_fine: dataFine,
-            note: noteCanone
+            note: noteCanone,
+            tassazione_cedolare_secca: taxCedolare,
+            percentuale: taxPercentuale,
+            valore_assoluto: taxValoreAssoluto
         });
     });
     // Insert new canoni
@@ -1483,7 +1522,9 @@ function getScadenzaUrgenza(s) {
     if (s.stato === 'completata' || s.stato === 'completato') return null;
     if (!s.prossima_scadenza) return null;
     var c = getContrattoById(s.contratto_id);
-    if (!c || !c.tassazione_cedolare_secca) return null;
+    if (!c) return null;
+    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+    if (!canone || !canone.tassazione_cedolare_secca) return null;
     var gg = daysUntil(s.prossima_scadenza);
     if (gg <= 0) return { type: 'scaduta', label: 'Scaduta', days: gg };
     if (gg <= getNotifSettings().scadenzeAnticipo) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
@@ -1686,13 +1727,13 @@ function generateF24Pdf(scadenzaId) {
     var conds = getConduttoriByContratto(c.id);
     var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
 
-    // Importo: se il contratto ha una percentuale, = percentuale sul canone annuo
-    var percentuale = parseFloat(c.percentuale) || 0;
+    // Importo: se il canone ha una percentuale, = percentuale sul canone annuo
+    var percentuale = canone ? (parseFloat(canone.percentuale) || 0) : 0;
     var importo;
     if (percentuale > 0 && canone) {
         importo = Math.round((percentuale / 100) * (parseFloat(canone.importo) || 0) * 100) / 100;
-    } else if (parseFloat(c.valore_assoluto) > 0) {
-        importo = parseFloat(c.valore_assoluto);
+    } else if (canone && parseFloat(canone.valore_assoluto) > 0) {
+        importo = parseFloat(canone.valore_assoluto);
     } else {
         importo = parseFloat(s.importo) || 0;
     }

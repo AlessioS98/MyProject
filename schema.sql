@@ -129,6 +129,31 @@ CREATE TRIGGER trg_scadenze_calc_dates
 UPDATE scadenze SET data_decorrenza = data_decorrenza
 WHERE prossima_scadenza IS NULL OR prossima_decorrenza IS NULL;
 
+-- 7b. Tassazione per canone annuale: cedolare secca e imposta di registro
+-- vengono decise per OGNI singolo canone annuale (non piu' a livello di contratto)
+ALTER TABLE canoni_annuali ADD COLUMN IF NOT EXISTS tassazione_cedolare_secca boolean DEFAULT false;
+ALTER TABLE canoni_annuali ADD COLUMN IF NOT EXISTS percentuale numeric DEFAULT 0;
+ALTER TABLE canoni_annuali ADD COLUMN IF NOT EXISTS valore_assoluto numeric DEFAULT 0;
+
+-- Backfill: SOLO se la tabella contratti ha ancora le vecchie colonne di tassazione,
+-- la tassazione dei canoni esistenti viene ereditata dal proprio contratto.
+-- Se le colonne non esistono (es. gia' rimosse) non fa nulla.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'contratti' AND column_name = 'tassazione_cedolare_secca') THEN
+    EXECUTE '
+      UPDATE canoni_annuali ca
+      SET tassazione_cedolare_secca = COALESCE(ct.tassazione_cedolare_secca, false),
+          percentuale = COALESCE(ct.percentuale, 0),
+          valore_assoluto = COALESCE(ct.valore_assoluto, 0)
+      FROM contratti ct
+      WHERE ct.id = ca.contratto_id
+        AND ca.tassazione_cedolare_secca IS NULL
+    ';
+  END IF;
+END $$;
+
 ALTER TABLE canoni_annuali DISABLE ROW LEVEL SECURITY;
 
 -- 8. Tabelle ponte per Locatori e Conduttori multipli
@@ -181,37 +206,47 @@ INSERT INTO immobili (indirizzo, citta, foglio, particella, sub, ape) VALUES
 ('Via Garibaldi 78', 'Roma', '123', '458', '2', false),
 ('Largo Augusto 9', 'Torino', '088', '033', '4', false);
 
-INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, tassazione_cedolare_secca, locatore_id, conduttore_id, immobile_id, percentuale, valore_assoluto, note) VALUES
-('AFF-2025-001', '2025-01-15', '2027-01-14', NULL, false, 1, 2, 1, 10, 750, 'Trilocale ristrutturato, piano 3 - via Torino'),
-('AFF-2025-002', '2025-06-01', '2028-05-31', NULL, true, 4, 3, 2, 0, 0, 'Locale commerciale angolare, Corso Vittorio Emanuele'),
-('AFF-2024-003', '2024-03-01', '2026-02-28', NULL, false, 5, 7, 3, 15, 420, 'Bilocale arredato, Via Garibaldi'),
-('AFF-2025-004', '2025-09-01', '2027-08-31', NULL, false, 6, 8, 4, 12, 300, 'Magazzino 200mq con rampa, Via Mazzini'),
-('AFF-2025-005', '2025-11-01', '2028-10-31', NULL, true, 6, 9, 5, 0, 0, 'Monolocale centro storico, Piazza Maggiore'),
-('AFF-2024-006', '2024-01-01', '2025-12-31', '2025-12-31', false, 1, 10, 6, 8, 180, 'Box auto coperto, Via Dante'),
-('AFF-2025-007', '2025-03-01', '2027-02-28', NULL, false, 1, 3, 7, 15, 1125, 'Trilocale con giardino, Corso Italia - attivo'),
-('AFF-2025-008', '2025-08-01', '2026-07-31', NULL, false, 5, 2, 8, 10, 600, 'Secondo appartamento Via Garibaldi'),
-('AFF-2024-009', '2024-06-01', '2025-05-31', NULL, false, 4, 7, 9, 12, 480, 'Attico Largo Augusto - scaduto');
+INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiusura, locatore_id, conduttore_id, immobile_id, note) VALUES
+('AFF-2025-001', '2025-01-15', '2027-01-14', NULL, 1, 2, 1, 'Trilocale ristrutturato, piano 3 - via Torino'),
+('AFF-2025-002', '2025-06-01', '2028-05-31', NULL, 4, 3, 2, 'Locale commerciale angolare, Corso Vittorio Emanuele'),
+('AFF-2024-003', '2024-03-01', '2026-02-28', NULL, 5, 7, 3, 'Bilocale arredato, Via Garibaldi'),
+('AFF-2025-004', '2025-09-01', '2027-08-31', NULL, 6, 8, 4, 'Magazzino 200mq con rampa, Via Mazzini'),
+('AFF-2025-005', '2025-11-01', '2028-10-31', NULL, 6, 9, 5, 'Monolocale centro storico, Piazza Maggiore'),
+('AFF-2024-006', '2024-01-01', '2025-12-31', '2025-12-31', 1, 10, 6, 'Box auto coperto, Via Dante'),
+('AFF-2025-007', '2025-03-01', '2027-02-28', NULL, 1, 3, 7, 'Trilocale con giardino, Corso Italia - attivo'),
+('AFF-2025-008', '2025-08-01', '2026-07-31', NULL, 5, 2, 8, 'Secondo appartamento Via Garibaldi'),
+('AFF-2024-009', '2024-06-01', '2025-05-31', NULL, 4, 7, 9, 'Attico Largo Augusto - scaduto');
 
 -- Canoni annuali
-INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine) VALUES
-(1, 7500, '2025-01-15', '2026-01-14'),
-(1, 7875, '2026-01-15', '2027-01-14'),
-(2, 24000, '2025-06-01', '2026-05-31'),
-(2, 25200, '2026-06-01', '2027-05-31'),
-(2, 26460, '2027-06-01', '2028-05-31'),
-(3, 4200, '2024-03-01', '2025-02-28'),
-(3, 4410, '2025-03-01', '2026-02-28'),
-(4, 3600, '2025-09-01', '2026-08-31'),
-(4, 3780, '2026-09-01', '2027-08-31'),
-(5, 14400, '2025-11-01', '2026-10-31'),
-(5, 15120, '2026-11-01', '2027-10-31'),
-(5, 15876, '2027-11-01', '2028-10-31'),
-(6, 2160, '2024-01-01', '2024-12-31'),
-(6, 2200, '2025-01-01', '2025-12-31'),
-(7, 11250, '2025-03-01', '2026-02-28'),
-(7, 11812, '2026-03-01', '2027-02-28'),
-(8, 6000, '2025-08-01', '2026-07-31'),
-(9, 4800, '2024-06-01', '2025-05-31');
+INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine, tassazione_cedolare_secca, percentuale, valore_assoluto) VALUES
+(1, 7500, '2025-01-15', '2026-01-14', false, 10, 750),
+(1, 7875, '2026-01-15', '2027-01-14', true, 0, 0),
+(2, 24000, '2025-06-01', '2026-05-31', true, 0, 0),
+(2, 25200, '2026-06-01', '2027-05-31', true, 0, 0),
+(2, 26460, '2027-06-01', '2028-05-31', true, 0, 0),
+(3, 4200, '2024-03-01', '2025-02-28', false, 15, 420),
+(3, 4410, '2025-03-01', '2026-02-28', false, 15, 420),
+(4, 3600, '2025-09-01', '2026-08-31', false, 12, 300),
+(4, 3780, '2026-09-01', '2027-08-31', false, 12, 300),
+(5, 14400, '2025-11-01', '2026-10-31', true, 0, 0),
+(5, 15120, '2026-11-01', '2027-10-31', true, 0, 0),
+(5, 15876, '2027-11-01', '2028-10-31', true, 0, 0),
+(6, 2160, '2024-01-01', '2024-12-31', false, 8, 180),
+(6, 2200, '2025-01-01', '2025-12-31', false, 8, 180),
+(7, 11250, '2025-03-01', '2026-02-28', false, 15, 1125),
+(7, 11812, '2026-03-01', '2027-02-28', false, 15, 1125),
+(8, 6000, '2025-08-01', '2026-07-31', false, 10, 600),
+(9, 4800, '2024-06-01', '2025-05-31', false, 12, 480);
+
+-- 7c. Colonne ridondanti a livello di contratto: ora la tassazione vive in
+--     canoni_annuali e il canone è calcolato dalla tabella canoni_annuali.
+--     Le rimuoviamo da contratti SOLO DOPO il backfill (7b) e dopo gli INSERT
+--     di esempio, che le usano ancora come sorgente/colonna.
+ALTER TABLE contratti DROP COLUMN IF EXISTS tassazione_cedolare_secca;
+ALTER TABLE contratti DROP COLUMN IF EXISTS percentuale;
+ALTER TABLE contratti DROP COLUMN IF EXISTS valore_assoluto;
+ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuale;
+ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuo;
 
 -- prossima_scadenza e prossima_decorrenza vengono calcolate automaticamente dal trigger
 INSERT INTO scadenze (contratto_id, data_decorrenza, priorita, importo, stato) VALUES

@@ -1636,6 +1636,43 @@ input, select, textarea { font-family: inherit; }
     margin-top: 4px;
 }
 
+/* Canoni annuali: ogni canone è un riquadro separato per ordine visivo */
+.canone-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    padding: 12px 14px 10px;
+    margin-bottom: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.canone-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.canone-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.canone-remove {
+    color: var(--danger);
+    margin-bottom: 0;
+}
+
 .checkbox-label {
     display: flex;
     align-items: center;
