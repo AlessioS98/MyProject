@@ -2200,8 +2200,10 @@ function scadenzaF24Btn(s) {
 
 // Completa la scadenza salvando la data di completamento scelta dall'utente.
 // Al completamento genera automaticamente la scadenza successiva: la nuova
-// decorrenza parte dal giorno dopo la prossima_scadenza appena completata e il
-// trigger del DB ricalcola la nuova prossima_scadenza (decorrenza + 1 anno + 30 gg).
+// decorrenza viene fissata 30 giorni prima della prossima_scadenza appena
+// completata, così il trigger del DB (decorrenza + 1 anno + 30 gg) produce una
+// nuova prossima_scadenza esattamente 1 anno dopo la precedente. La prima
+// scadenza resta comunque a 1 anno + 30 gg dalla decorrenza del contratto.
 // La generazione si ferma quando la nuova decorrenza supera il termine del
 // contratto: la data di chiusura se presente, altrimenti la data di scadenza
 // (o la data di rinnovo, se impostata).
@@ -2223,7 +2225,7 @@ async function salvaCompletamentoScadenza(id) {
     s.data_completamento = data;
 
     // --- Creazione automatica della scadenza successiva ---
-    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, 1) : null;
+    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, -30) : null;
     var nextScad = null;
     if (nextDeco) {
         var c = getContrattoById(s.contratto_id);
