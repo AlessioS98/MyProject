@@ -377,7 +377,9 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
         pctInput.addEventListener('input', function() { syncCanoneValoreAssoluto(pctInput); });
     }
     if (importoInput) {
+        // Formattazione live con separatore delle migliaia (es. 1500 -> 1.500)
         importoInput.addEventListener('input', function() {
+            formatImportoOnInput(importoInput);
             if (pctInput && parseFloat(pctInput.value) > 0) syncCanoneValoreAssoluto(pctInput);
         });
         // All'uscita dal campo l'importo viene formattato con ,00
@@ -385,6 +387,7 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
     }
     var valAssBlur = row.querySelector('.canone-valore-assoluto');
     if (valAssBlur) {
+        valAssBlur.addEventListener('input', function() { formatImportoOnInput(valAssBlur); });
         valAssBlur.addEventListener('blur', function() { formatImportoOnBlur(valAssBlur); });
     }
 }
@@ -404,14 +407,20 @@ function syncCanoneValoreAssoluto(pctInput) {
     valAssEl.value = formatImportoInput(Math.round((pct / 100) * importo * 100) / 100);
 }
 
-// --- Importi: parsing e formattazione italiana (virgola decimale) ---
+// --- Importi: parsing e formattazione italiana (virgola decimale, punto migliaia) ---
 function parseImporto(str) {
     if (str == null) return 0;
     if (typeof str === 'number') return str;
     var s = String(str).trim();
     if (s === '') return 0;
     if (s.indexOf(',') !== -1) {
+        // Virgola decimale: i punti sono separatori delle migliaia
         s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+        // Senza virgola un punto può essere separatore migliaia (1.500) oppure
+        // decimale (2.5, es. campo percentuale): lo rimuovo solo se seguito
+        // esattamente da 3 cifre finali.
+        s = s.replace(/\.(?=\d{3}(?!\d))/g, '');
     }
     var n = parseFloat(s);
     return isNaN(n) ? 0 : n;
@@ -419,12 +428,54 @@ function parseImporto(str) {
 function formatImportoInput(n, keepZero) {
     if (n == null || isNaN(n)) return '';
     if (n === 0 && !keepZero) return '';
-    return n.toFixed(2).replace('.', ',');
+    var s = n.toFixed(2);
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return parts.join(',');
 }
 function formatImportoOnBlur(el) {
     if (!el) return;
     if (el.value.trim() === '') return;
     el.value = formatImportoInput(parseImporto(el.value), true);
+}
+
+// Formattazione live mentre si digita: inserisce i punti come separatori
+// delle migliaia (es. 1500 -> 1.500, 1500000 -> 1.500.000) mantenendo la
+// posizione del cursore. La virgola resta il separatore decimale (max 2 cifre).
+function formatImportoOnInput(el) {
+    if (!el) return;
+    var val = el.value;
+    var caret = el.selectionStart;
+
+    // Cifre presenti prima del cursore nel valore originale
+    var digitsBefore = 0;
+    for (var i = 0; i < caret && i < val.length; i++) {
+        if (/\d/.test(val[i])) digitsBefore++;
+    }
+    var cursoreDopoVirgola = caret > 0 && val[caret - 1] === ',';
+
+    // Normalizza: solo cifre e una sola virgola
+    var raw = val.replace(/[^\d,]/g, '');
+    var commaIdx = raw.indexOf(',');
+    var intRaw = commaIdx === -1 ? raw : raw.slice(0, commaIdx);
+    var decRaw = commaIdx === -1 ? '' : raw.slice(commaIdx + 1).replace(/[^\d]/g, '').slice(0, 2);
+
+    var intFmt = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    var formatted = commaIdx === -1 ? intFmt : intFmt + ',' + decRaw;
+    el.value = formatted;
+
+    // Ripristina il cursore dopo lo stesso numero di cifre
+    var newCaret = 0, seen = 0;
+    while (newCaret < formatted.length && seen < digitsBefore) {
+        if (/\d/.test(formatted[newCaret])) seen++;
+        newCaret++;
+    }
+    if (digitsBefore >= intRaw.length + decRaw.length) {
+        newCaret = formatted.length;
+    } else if (cursoreDopoVirgola) {
+        newCaret = formatted.indexOf(',') + 1;
+    }
+    try { el.setSelectionRange(newCaret, newCaret); } catch (e) {}
 }
 
 // --- CF Autocomplete ---
@@ -822,7 +873,6 @@ function navigateTo(page) {
 }
 async function refreshPage(page) {
     switch (page) {
-        case 'dashboard': await renderDashboard(); break;
         case 'contratti': await renderContratti(); break;
         case 'scadenze': await renderScadenze(); break;
 
@@ -1956,53 +2006,6 @@ function applyDecorrenzaFilter() {
 // RENDERING
 // ============================================
 
-async function renderDashboard() {
-    var attivi = appData.contratti.filter(function(c) { return calcContrattoStato(c) === 'attivo'; });
-
-    document.getElementById('statContratti').textContent = attivi.length;
-
-    // Notifications (scadenze entro 7 giorni dalla prossima scadenza)
-    renderNotifications();
-
-    renderCharts();
-    renderScadenzeChart();
-}
-
-// --- Charts ---
-var chartTipologie = null;
-var chartScadenze = null;
-function renderCharts() {
-    var tipoCounts = {};
-    appData.contratti.forEach(function(c) {
-        var s = calcContrattoStato(c);
-        var l = getStatusLabel(s);
-        tipoCounts[l] = (tipoCounts[l] || 0) + 1;
-    });
-    var colorMapContratti = { 'Attivo': '#10b981', 'Scaduto': '#ef4444', 'Chiuso': '#d1d5db', 'Sospeso': '#94a3b8' };
-    var colorsContratti = Object.keys(tipoCounts).map(function(l) { return colorMapContratti[l] || '#94a3b8'; });
-    if (chartTipologie) chartTipologie.destroy();
-    chartTipologie = new Chart(document.getElementById('chartTipologie').getContext('2d'), {
-        type: 'doughnut', data: { labels: Object.keys(tipoCounts), datasets: [{ data: Object.values(tipoCounts), backgroundColor: colorsContratti, borderWidth: 0 }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-    });
-}
-
-// --- Chart Scadenze (in attesa / completate) ---
-function renderScadenzeChart() {
-    var statoCounts = {};
-    appData.scadenze.forEach(function(s) {
-        var l = getStatusLabel(s.stato);
-        statoCounts[l] = (statoCounts[l] || 0) + 1;
-    });
-    var colorMapScadenze = { 'In Attesa': '#f59e0b', 'Completata': '#10b981', 'Completato': '#10b981' };
-    var colorsScadenze = Object.keys(statoCounts).map(function(l) { return colorMapScadenze[l] || '#94a3b8'; });
-    if (chartScadenze) chartScadenze.destroy();
-    chartScadenze = new Chart(document.getElementById('chartScadenze').getContext('2d'), {
-        type: 'doughnut', data: { labels: Object.keys(statoCounts), datasets: [{ data: Object.values(statoCounts), backgroundColor: colorsScadenze, borderWidth: 0 }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-    });
-}
-
 // --- Render Contratti ---
 async function renderContratti() {
     renderContrattiList(appData.contratti);
@@ -2788,7 +2791,6 @@ async function renderScadenze() {
 // ============================================
 document.addEventListener('DOMContentLoaded', async function() {
     await loadAllData();
-    try { await renderDashboard(); } catch(e) { console.error('Dashboard error:', e); }
+    renderNotifications();
     try { renderContratti(); } catch(e) { console.error('Contratti error:', e); }
-
 });

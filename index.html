@@ -23,11 +23,7 @@
             </button>
         </div>
         <nav class="sidebar-nav">
-            <a href="#" class="nav-item active" data-page="dashboard">
-                <i class="fas fa-th-large"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="#" class="nav-item" data-page="contratti">
+            <a href="#" class="nav-item active" data-page="contratti">
                 <i class="fas fa-file-contract"></i>
                 <span>Contratti</span>
             </a>
@@ -87,45 +83,8 @@
             </div>
         </div>
 
-        <!-- Page: Dashboard -->
-        <section class="page active" id="page-dashboard">
-            <div class="page-header">
-                <div>
-                    <h1>Dashboard</h1>
-                    <p class="page-subtitle">Panoramica generale dei contratti di affitto</p>
-                </div>
-            </div>
-
-            <!-- Stats Cards -->
-            <div class="stats-grid">
-                <div class="stat-card stat-blue">
-                    <div class="stat-icon"><i class="fas fa-file-contract"></i></div>
-                    <div class="stat-info">
-                        <span class="stat-value" id="statContratti">0</span>
-                        <span class="stat-label">Contratti Attivi</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Charts Row -->
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <h3>Distribuzione Contratti</h3>
-                    </div>
-                    <canvas id="chartTipologie" height="180"></canvas>
-                </div>
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <h3>Scadenze</h3>
-                    </div>
-                    <canvas id="chartScadenze" height="180"></canvas>
-                </div>
-            </div>
-        </section>
-
         <!-- Page: Contratti -->
-        <section class="page" id="page-contratti">
+        <section class="page active" id="page-contratti">
             <div class="page-header">
                 <div>
                     <h1>Gestione Contratti</h1>
@@ -407,7 +366,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="app.js?v=31"></script>
