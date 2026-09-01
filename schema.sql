@@ -268,17 +268,6 @@ SET data_decorrenza = COALESCE(cc.data_decorrenza, ct.data_decorrenza),
 FROM contratti ct
 WHERE ct.id = cc.contratto_id;
 
--- 9. Impostazioni notifiche
-CREATE TABLE IF NOT EXISTS impostazioni_notifiche (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  scadenze_anticipo integer DEFAULT 7,
-  scadenze_ripeti integer DEFAULT 1,
-  contratti_anticipo integer DEFAULT 30,
-  contratti_ripeti integer DEFAULT 1,
-  updated_at timestamptz DEFAULT now()
-);
-
-INSERT INTO impostazioni_notifiche (scadenze_anticipo)
-SELECT 7 WHERE NOT EXISTS (SELECT 1 FROM impostazioni_notifiche);
-
-ALTER TABLE impostazioni_notifiche DISABLE ROW LEVEL SECURITY;
+-- 9. Impostazioni notifiche (rimossa): il calendario delle notifiche è fisso
+--    (scadenze pagamento: giorno scadenza, +15 gg, ultimi 7 gg; contratti: una sola notifica)
+DROP TABLE IF EXISTS impostazioni_notifiche;

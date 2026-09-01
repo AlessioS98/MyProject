@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], impostazioniNotifiche: null };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
 // Notifiche già mostrate in questa sessione (ricominciano le ripetizioni a ogni ricarica)
 var notificationShownWith = new Set();
 // Notifiche segnate come lette in questa sessione (schiarite, non eliminate)
@@ -582,15 +582,14 @@ function toLocalDateStr(d) {
 // --- Data Loading ---
 async function loadAllData() {
     try {
-        var [persone, immobili, contratti, scadenze, canoni, locRel, condRel, impost] = await Promise.all([
+        var [persone, immobili, contratti, scadenze, canoni, locRel, condRel] = await Promise.all([
             db.from('anagrafica_persona').select('*'),
             db.from('immobili').select('*'),
             db.from('contratti').select('*'),
             db.from('scadenze').select('*'),
             db.from('canoni_annuali').select('*'),
             db.from('contratto_locatori').select('*'),
-            db.from('contratto_conduttori').select('*'),
-            db.from('impostazioni_notifiche').select('*').limit(1)
+            db.from('contratto_conduttori').select('*')
         ]);
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
@@ -599,7 +598,6 @@ async function loadAllData() {
         appData.canoni_annuali = canoni.data || [];
         appData.contratto_locatori = locRel.data || [];
         appData.contratto_conduttori = condRel.data || [];
-        appData.impostazioniNotifiche = (impost.data && impost.data.length > 0) ? impost.data[0] : null;
     } catch (e) {
         console.error('Errore caricamento dati:', e);
         showToast('Errore nel caricamento dei dati', 'error');
@@ -686,9 +684,16 @@ document.getElementById('notifBtn').addEventListener('click', function(e) {
     document.getElementById('notifPanel').classList.toggle('show');
 });
 document.getElementById('notifClear').addEventListener('click', function() {
-    var now = Date.now();
-    appData.scadenze.forEach(function(s) { localStorage.setItem('notifSeen_scadenza_' + s.id, String(now)); });
-    appData.contratti.forEach(function(c) { localStorage.setItem('notifSeen_contratto_' + c.id, String(now)); });
+    appData.scadenze.forEach(function(s) { markNotifSeen('scadenza_' + s.id); });
+    appData.contratti.forEach(function(c) {
+        markNotifSeen('contratto_' + c.id);
+        // I contratti notificano una sola volta: "segna tutte come lette"
+        // vale come notifica già inviata per quelli ormai scaduti
+        var refDate = getContrattoScadenzaEffettiva(c);
+        if (refDate && -daysUntil(refDate) >= 0) {
+            localStorage.setItem('notifOnce_contratto_' + c.id, '1');
+        }
+    });
     notificationShownWith.clear();
     notificationReadThisSession.clear();
     renderNotifications();
@@ -1117,19 +1122,6 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
-    } else if (type === 'notifSettings') {
-        title.textContent = 'Impostazioni Notifiche';
-        var st = getNotifSettings();
-        html = '<form id="notifSettingsForm" class="form-grid">';
-        html += '<div class="form-section-title full"><i class="fas fa-hourglass-half"></i> Scadenze di Pagamento</div>';
-        html += '<div class="form-group"><label>Avvisami quando mancano (giorni)</label><input type="number" id="ns_scadenze_anticipo" min="1" max="365" value="' + st.scadenzeAnticipo + '"></div>';
-        html += '<div class="form-group"><label>Ripeti la notifica ogni (giorni)</label><input type="number" id="ns_scadenze_ripeti" min="1" max="365" value="' + st.scadenzeRipeti + '"></div>';
-        html += '<div class="form-section-title full"><i class="fas fa-file-contract"></i> Contratti in Scadenza</div>';
-        html += '<div class="form-group"><label>Avvisami quando mancano (giorni)</label><input type="number" id="ns_contratti_anticipo" min="1" max="365" value="' + st.contrattiAnticipo + '"></div>';
-        html += '<div class="form-group"><label>Ripeti la notifica ogni (giorni)</label><input type="number" id="ns_contratti_ripeti" min="1" max="365" value="' + st.contrattiRipeti + '"></div>';
-        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
-        html += '</form>';
-
     } else if (type === 'listaPersone') {
         var personeList = dedupPersone(appData.persone).slice().sort(function(a, b) {
             // Cognome prima del nome
@@ -1322,9 +1314,6 @@ function openModal(type, id) {
     }
     var iqf = document.getElementById('inquilinoForm');
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
-
-    var nsf = document.getElementById('notifSettingsForm');
-    if (nsf) nsf.addEventListener('submit', function(e) { e.preventDefault(); saveNotifSettings(); });
 
     var perf = document.getElementById('personaForm');
     if (perf) {
@@ -1860,7 +1849,8 @@ function renderContrattiList(list) {
 
 
 
-// --- Urgenza scadenze: notifica entro 7 giorni dalla prossima scadenza ---
+// --- Urgenza scadenze (usata dalla pagina Scadenze, non dalle notifiche) ---
+// Anticipo fisso: 7 giorni prima della prossima scadenza
 function getScadenzaUrgenza(s) {
     if (s.stato === 'completata' || s.stato === 'completato') return null;
     if (!s.prossima_scadenza) return null;
@@ -1870,64 +1860,92 @@ function getScadenzaUrgenza(s) {
     if (!canone || !canone.tassazione_cedolare_secca) return null;
     var gg = daysUntil(s.prossima_scadenza);
     if (gg <= 0) return { type: 'scaduta', label: 'Scaduta', days: gg };
-    if (gg <= getNotifSettings().scadenzeAnticipo) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
+    if (gg <= 7) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
     return null;
 }
-function getNotifSettings() {
-    var s = appData.impostazioniNotifiche || {};
-    return {
-        scadenzeAnticipo: parseInt(s.scadenze_anticipo, 10) || 7,
-        scadenzeRipeti: parseInt(s.scadenze_ripeti, 10) || 1,
-        contrattiAnticipo: parseInt(s.contratti_anticipo, 10) || 30,
-        contrattiRipeti: parseInt(s.contratti_ripeti, 10) || 1
-    };
+
+// --- Notifiche: scadenze di pagamento ---
+// L'utente ha 30 giorni dalla data di scadenza per pagare.
+// Calendario notifiche: giorno della scadenza, 15 giorni dopo e poi ogni
+// giorno negli ultimi 7 giorni del termine (dal 24° al 30° giorno).
+// Dopo il 30° giorno non vengono più inviate notifiche.
+function getScadenzaNotifica(s) {
+    if (s.stato === 'completata' || s.stato === 'completato') return null;
+    if (!s.prossima_scadenza) return null;
+    var c = getContrattoById(s.contratto_id);
+    if (!c) return null;
+    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+    if (!canone || !canone.tassazione_cedolare_secca) return null;
+    var gg = -daysUntil(s.prossima_scadenza); // giorni trascorsi dalla scadenza
+    if (gg < 0) return null;                  // non ancora scaduta
+    if (gg === 0 || gg === 15 || (gg >= 24 && gg <= 30)) return { days: gg };
+    return null;                              // oltre il 30° giorno: stop
 }
+
+// --- Notifiche: contratti in scadenza ---
+// Una sola notifica, a partire dalla data di scadenza del contratto.
+function getContrattoNotifica(c) {
+    if (c.data_chiusura) return null;
+    var refDate = getContrattoScadenzaEffettiva(c);
+    if (!refDate) return null;
+    if (-daysUntil(refDate) < 0) return null; // non ancora scaduto
+    if (localStorage.getItem('notifOnce_contratto_' + c.id) === '1') return null;
+    return { days: -daysUntil(refDate) };
+}
+
+function markNotifSeen(key) {
+    localStorage.setItem('notifSeen_' + key, toLocalDateStr(new Date()));
+}
+
 function renderNotifications() {
-    var sett = getNotifSettings();
     var items = [];
 
-    // Scadenze di pagamento entro l'anticipo configurato (solo contratti con cedolare secca)
-    appData.scadenze.filter(function(s) { return getScadenzaUrgenza(s); }).forEach(function(s) {
+    // Scadenze di pagamento (solo contratti con cedolare secca)
+    appData.scadenze.forEach(function(s) {
+        var n = getScadenzaNotifica(s);
+        if (!n) return;
         var c = getContrattoById(s.contratto_id);
         var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
-        var urg = getScadenzaUrgenza(s);
-        var isScaduta = urg.type === 'scaduta';
         items.push({
             key: 'scadenza_' + s.id,
-            ripeti: sett.scadenzeRipeti,
             date: s.prossima_scadenza,
-            icon: isScaduta ? 'fa-exclamation-circle' : 'fa-hourglass-half',
-            cls: isScaduta ? 'danger' : 'warning',
-            txt: isScaduta ? 'Scadenza passata · ' + cod : (urg.days === 1 ? 'Scadenza domani · ' + cod : 'Scadenza tra ' + urg.days + ' giorni · ' + cod),
+            icon: n.days === 0 ? 'fa-hourglass-half' : 'fa-exclamation-circle',
+            cls: n.days === 0 ? 'warning' : 'danger',
+            txt: n.days === 0 ? 'Scadenza oggi · ' + cod
+                : n.days === 15 ? 'Scadenza da 15 giorni · ' + cod
+                : 'Scadenza da ' + n.days + ' giorni · ' + cod,
             meta: formatDate(s.prossima_scadenza) + ' · ' + formatCurrency(s.importo)
         });
     });
 
-    // Contratti in scadenza entro l'anticipo configurato.
-    // La data di riferimento è la scadenza effettiva: la data di rinnovo se
-    // impostata (in fase di modifica), altrimenti la data_scadenza originale.
+    // Contratti in scadenza: una sola notifica a partire dalla data di scadenza
     appData.contratti.forEach(function(c) {
-        if (c.data_chiusura) return;
+        var n = getContrattoNotifica(c);
+        if (!n) return;
         var refDate = getContrattoScadenzaEffettiva(c);
-        if (!refDate) return;
-        var gg = daysUntil(refDate);
-        if (gg <= 0 || gg > sett.contrattiAnticipo) return;
         items.push({
             key: 'contratto_' + c.id,
-            ripeti: sett.contrattiRipeti,
+            once: true,
             date: refDate,
             icon: 'fa-file-contract',
             cls: 'info',
-            txt: gg === 1 ? 'Contratto ' + c.identificativo + ' scade domani' : 'Contratto ' + c.identificativo + ' scade tra ' + gg + ' giorni',
+            txt: n.days === 0 ? 'Contratto ' + c.identificativo + ' scade oggi' : 'Contratto ' + c.identificativo + ' scaduto',
             meta: formatDate(refDate)
         });
     });
 
-    // Snooze: mostra solo le notifiche non eliminate
-    var now = Date.now();
+    // Snooze: mostra solo le notifiche non eliminate.
+    // Le notifiche di pagamento si mostrano una volta al giorno; quelle dei
+    // contratti una sola volta in assoluto (flag notifOnce).
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
+        if (it.once) {
+            localStorage.setItem('notifOnce_' + it.key, '1');
+            daMostrare.push(it);
+            notificationShownWith.add(it.key);
+            return;
+        }
         // Se la notifica è già stata mostrata in questa sessione,
         // visualizzala sempre: solo markNotificationRead può rimuoverla
         // (rimuovendola da notificationShownWith).
@@ -1935,15 +1953,11 @@ function renderNotifications() {
             daMostrare.push(it);
             return;
         }
-        // Notifica nuova: applica lo snooze
-        // Nell'ultima settimana di scadenza, notifica ogni giorno
-        var ripeti = it.ripeti;
-        if (it.days != null && it.days <= 7) ripeti = 1;
-        var last = parseInt(localStorage.getItem('notifSeen_' + it.key) || '0', 10);
-        if ((now - last) < (ripeti * 86400000)) return false;
+        // Notifica nuova: applica lo snooze (una volta al giorno)
+        if (localStorage.getItem('notifSeen_' + it.key) === toLocalDateStr(new Date())) return false;
         daMostrare.push(it);
         notificationShownWith.add(it.key);
-        localStorage.setItem('notifSeen_' + it.key, String(now));
+        markNotifSeen(it.key);
     });
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
@@ -1969,10 +1983,10 @@ function renderNotifications() {
     }).join('');
 }
 
-// Segna una singola notifica come letta (non verrà più mostrata fino alla prossima ripetizione)
+// Segna una singola notifica come letta (non verrà più mostrata fino al prossimo giorno di notifica)
 function markNotificationRead(key) {
     notificationReadThisSession.add(key);
-    localStorage.setItem('notifSeen_' + key, String(Date.now()));
+    markNotifSeen(key);
     renderNotifications();
 }
 
@@ -1985,23 +1999,6 @@ function deleteNotification(key) {
 
 function isNotificationDismissed(key) {
     return localStorage.getItem('notifDismissed_' + key) === '1';
-}
-async function saveNotifSettings() {
-    var dati = {
-        scadenze_anticipo: parseInt(document.getElementById('ns_scadenze_anticipo').value, 10) || 7,
-        scadenze_ripeti: parseInt(document.getElementById('ns_scadenze_ripeti').value, 10) || 1,
-        contratti_anticipo: parseInt(document.getElementById('ns_contratti_anticipo').value, 10) || 30,
-        contratti_ripeti: parseInt(document.getElementById('ns_contratti_ripeti').value, 10) || 1
-    };
-    var target = appData.impostazioniNotifiche;
-    var res = (target && target.id)
-        ? await db.from('impostazioni_notifiche').update(dati).eq('id', target.id).select().single()
-        : await db.from('impostazioni_notifiche').insert(dati).select().single();
-    if (res.error) { console.error('Errore salvataggio impostazioni:', res.error); showToast('Errore salvataggio impostazioni', 'error'); return; }
-    appData.impostazioniNotifiche = res.data;
-    closeModal();
-    showToast('Impostazioni notifiche salvate!', 'success');
-    renderNotifications();
 }
 
 // --- Bottone Completa: apre una finestra per inserire la data di completamento ---
@@ -2235,13 +2232,13 @@ function generateF24Pdf(scadenzaId) {
 function getContrattoById(id) {
     return appData.contratti.find(function(c) { return c.id === id; }) || null;
 }
-// Urgenza scadenza di un contratto: scaduto o in scadenza entro l'anticipo configurato
+// Urgenza scadenza di un contratto: scaduto o in scadenza entro 30 giorni (anticipo fisso)
 function getContrattoUrgenza(c) {
     var scad = getContrattoScadenzaEffettiva(c);
     if (!scad || c.data_chiusura) return null;
     var gg = daysUntil(scad);
     if (gg <= 0) return { type: 'scaduta', label: 'Scaduta', days: gg };
-    if (gg <= getNotifSettings().contrattiAnticipo) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
+    if (gg <= 30) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
     return null;
 }
 
