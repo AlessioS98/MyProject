@@ -1632,6 +1632,12 @@ input, select, textarea { font-family: inherit; }
     margin-bottom: 6px;
 }
 
+/* Asterisco campo obbligatorio */
+.req {
+    color: var(--danger);
+    font-weight: 700;
+}
+
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -1666,6 +1672,36 @@ input, select, textarea { font-family: inherit; }
 .form-group textarea {
     resize: vertical;
     min-height: 80px;
+}
+
+/* Pulsante maiuscolo/minuscolo accanto al titolo del modale contratto */
+.case-toggle-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    margin-left: auto;
+    margin-right: 6px;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.case-toggle-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.case-toggle-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
 }
 
 .form-section-title {

@@ -352,17 +352,17 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
             <span class="canone-label"><i class="fas fa-euro-sign"></i> Canone ${canoneRowCounter}</span>
             <button type="button" class="btn btn-sm btn-outline canone-remove" onclick="this.closest('.canone-row').remove()"><i class="fas fa-trash"></i></button>
         </div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Importo (EUR)</label><input type="number" class="canone-importo" value="${importo || ''}" min="0" step="0.01" required></div>
-        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Inizio</label><input type="date" class="canone-data-inizio" value="${dataInizio || ''}" required></div>
-        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Fine</label><input type="date" class="canone-data-fine" value="${dataFine || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Importo (EUR) <span class="req">*</span></label><input type="text" inputmode="decimal" class="canone-importo" value="${formatImportoInput(parseImporto(importo))}" required></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Inizio <span class="req">*</span></label><input type="date" class="canone-data-inizio" value="${dataInizio || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Fine <span class="req">*</span></label><input type="date" class="canone-data-fine" value="${dataFine || ''}" required></div>
         <div class="form-group" style="flex:1;min-width:100%;margin:0"><label>Cedolare Secca</label>
             <div class="radio-group" style="display:flex;gap:16px;margin-top:6px">
                 <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" class="canone-cedolare-si" name="canone_cedolare_${canoneRowCounter}" value="true"${cedChecked} onchange="toggleCanoneCedolare(this)"> Sì</label>
                 <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" class="canone-cedolare-no" name="canone_cedolare_${canoneRowCounter}" value="false"${cedNoChecked} onchange="toggleCanoneCedolare(this)"> No</label>
             </div>
         </div>
-        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Percentuale (%)</label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01"></div>
-        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Valore Assoluto (EUR)</label><input type="number" class="canone-valore-assoluto" value="${valoreAssoluto || ''}" min="0" step="0.01"></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Percentuale (%) <span class="req">*</span></label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01" required></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Valore Assoluto (EUR) <span class="req">*</span></label><input type="text" inputmode="decimal" class="canone-valore-assoluto" value="${formatImportoInput(parseImporto(valoreAssoluto))}" required></div>
     `;
     container.appendChild(row);
     // Applica il toggle iniziale in base alla cedolare secca scelta
@@ -380,6 +380,12 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
         importoInput.addEventListener('input', function() {
             if (pctInput && parseFloat(pctInput.value) > 0) syncCanoneValoreAssoluto(pctInput);
         });
+        // All'uscita dal campo l'importo viene formattato con ,00
+        importoInput.addEventListener('blur', function() { formatImportoOnBlur(importoInput); });
+    }
+    var valAssBlur = row.querySelector('.canone-valore-assoluto');
+    if (valAssBlur) {
+        valAssBlur.addEventListener('blur', function() { formatImportoOnBlur(valAssBlur); });
     }
 }
 
@@ -393,9 +399,32 @@ function syncCanoneValoreAssoluto(pctInput) {
     var valAssEl = row.querySelector('.canone-valore-assoluto');
     if (!importoEl || !valAssEl) return;
     var pct = parseFloat(pctInput.value);
-    var importo = parseFloat(importoEl.value);
-    if (isNaN(pct) || pct <= 0 || isNaN(importo) || importo <= 0) return;
-    valAssEl.value = Math.round((pct / 100) * importo * 100) / 100;
+    var importo = parseImporto(importoEl.value);
+    if (isNaN(pct) || pct <= 0 || importo <= 0) return;
+    valAssEl.value = formatImportoInput(Math.round((pct / 100) * importo * 100) / 100);
+}
+
+// --- Importi: parsing e formattazione italiana (virgola decimale) ---
+function parseImporto(str) {
+    if (str == null) return 0;
+    if (typeof str === 'number') return str;
+    var s = String(str).trim();
+    if (s === '') return 0;
+    if (s.indexOf(',') !== -1) {
+        s = s.replace(/\./g, '').replace(',', '.');
+    }
+    var n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+}
+function formatImportoInput(n, keepZero) {
+    if (n == null || isNaN(n)) return '';
+    if (n === 0 && !keepZero) return '';
+    return n.toFixed(2).replace('.', ',');
+}
+function formatImportoOnBlur(el) {
+    if (!el) return;
+    if (el.value.trim() === '') return;
+    el.value = formatImportoInput(parseImporto(el.value), true);
 }
 
 // --- CF Autocomplete ---
@@ -556,10 +585,10 @@ function addLocatoreRow(persona, isEdit, rel) {
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_loc_tipo_${idx}" value="azienda" ${(locTipo==='azienda')?'checked':''} onchange="toggleLocatoreType(this.value, this.closest('.locatore-row'))"> Azienda</label>
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
-        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale</label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}"></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="loc-cognome" value="${p.cognome || ''}"></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="loc-nome" value="${p.nome || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale <span class="req">*</span></label><input type="text" class="loc-cf" value="${p.codice_fiscale || ''}" ${cfReadonly} required></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale <span class="req">*</span></label><input type="text" class="loc-rs" value="${p.ragione_sociale || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome <span class="req">*</span></label><input type="text" class="loc-cognome" value="${p.cognome || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome <span class="req">*</span></label><input type="text" class="loc-nome" value="${p.nome || ''}" required></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Decorrenza</label><input type="date" class="loc-data-decorrenza" value="${rowDeco}"${decoUserSet}></div>
@@ -567,6 +596,8 @@ function addLocatoreRow(persona, isEdit, rel) {
         </div>
     `;
     container.appendChild(row);
+    // Campi di testo della riga inclusi nel toggle maiuscolo/minuscolo
+    setupContrattoCaseFields(row);
     // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
     toggleLocatoreType(locTipo, row);
     // Una data compilata manualmente dall'utente non viene più sovrascritta
@@ -616,10 +647,10 @@ function addConduttoreRow(persona, isEdit, rel) {
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_cond_tipo_${idx}" value="azienda" ${(condTipo==='azienda')?'checked':''} onchange="toggleConduttoreType(this.value, this.closest('.conduttore-row'))"> Azienda</label>
         </div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale</label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}" ${cfReadonly}></div>
-        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale</label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}"></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome</label><input type="text" class="cond-cognome" value="${p.cognome || ''}"></div>
-        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome</label><input type="text" class="cond-nome" value="${p.nome || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Codice Fiscale <span class="req">*</span></label><input type="text" class="cond-cf" value="${p.codice_fiscale || ''}" ${cfReadonly} required></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Ragione Sociale <span class="req">*</span></label><input type="text" class="cond-rs" value="${p.ragione_sociale || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Cognome <span class="req">*</span></label><input type="text" class="cond-cognome" value="${p.cognome || ''}" required></div>
+        <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Nome <span class="req">*</span></label><input type="text" class="cond-nome" value="${p.nome || ''}" required></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <div class="form-group" style="flex:1;min-width:150px;margin:0"><label>Data Decorrenza</label><input type="date" class="cond-data-decorrenza" value="${rowDeco}"${decoUserSet}></div>
@@ -627,6 +658,8 @@ function addConduttoreRow(persona, isEdit, rel) {
         </div>
     `;
     container.appendChild(row);
+    // Campi di testo della riga inclusi nel toggle maiuscolo/minuscolo
+    setupContrattoCaseFields(row);
     // Applica lo stato (disabled + opacità) in base al tipo selezionato (PF / Azienda)
     toggleConduttoreType(condTipo, row);
     // Una data compilata manualmente dall'utente non viene più sovrascritta
@@ -655,6 +688,60 @@ function syncPersonaDateFields() {
         if (!el.dataset.userSet) el.value = chiusVal;
     });
 }
+
+// --- Toggle globale maiuscolo/minuscolo per il form contratto ---
+// Un solo pulsante accanto al titolo del modale: premuto scrive tutti i campi
+// di testo del contratto in MAIUSCOLO, premuto di nuovo in minuscolo.
+var contrattoCaseMode = 'lower';
+
+function setupContrattoCaseFields(container) {
+    if (!container) return;
+    container.querySelectorAll('input[type="text"], textarea').forEach(function(input) {
+        if (input.dataset.caseFieldDone) return;
+        input.dataset.caseFieldDone = '1';
+        input.classList.add('case-field');
+    });
+}
+
+function updateCaseToggleBtn() {
+    var btn = document.getElementById('caseToggleBtn');
+    if (!btn) return;
+    var label = btn.querySelector('.case-toggle-label') || btn;
+    label.textContent = contrattoCaseMode === 'upper' ? 'A' : 'a';
+    btn.classList.toggle('active', contrattoCaseMode === 'upper');
+    btn.title = contrattoCaseMode === 'upper' ? 'Passa a minuscolo' : 'Passa a maiuscolo';
+}
+
+function applyContrattoCase() {
+    document.querySelectorAll('#modalBody .case-field').forEach(function(input) {
+        input.value = contrattoCaseMode === 'upper' ? input.value.toUpperCase() : input.value.toLowerCase();
+    });
+}
+
+function toggleContrattoCase() {
+    contrattoCaseMode = contrattoCaseMode === 'upper' ? 'lower' : 'upper';
+    updateCaseToggleBtn();
+    applyContrattoCase();
+}
+
+// Collega il pulsante accanto al titolo del modale
+var caseToggleBtnEl = document.getElementById('caseToggleBtn');
+if (caseToggleBtnEl) {
+    caseToggleBtnEl.addEventListener('click', toggleContrattoCase);
+}
+
+// Applica maiuscolo/minuscolo in tempo reale mentre si digita
+document.addEventListener('input', function(e) {
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('case-field')) return;
+    if (contrattoCaseMode !== 'upper' && contrattoCaseMode !== 'lower') return;
+    var start = t.selectionStart, end = t.selectionEnd;
+    var nv = contrattoCaseMode === 'upper' ? t.value.toUpperCase() : t.value.toLowerCase();
+    if (nv !== t.value) {
+        t.value = nv;
+        try { t.setSelectionRange(start, end); } catch (err) {}
+    }
+});
 
 // --- Scadenza effettiva del contratto ---
 // Se è stata impostata una data di rinnovo (in fase di modifica), questa
@@ -1091,9 +1178,9 @@ function openModal(type, id) {
 
         // --- SEZIONE CONTRATTO ---
         html += '<div class="form-section-title full"><i class="fas fa-file-contract"></i> Dati Contratto</div>';
-        html += '<div class="form-group"><label>Identificativo</label><input type="text" id="cf_identificativo" value="' + (c ? c.identificativo : '') + '" required></div>';
-        html += '<div class="form-group"><label>Data Decorrenza</label><input type="date" id="cf_decorrenza" value="' + (c ? c.data_decorrenza : '') + '" required></div>';
-        html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="cf_scadenza" value="' + (c ? c.data_scadenza : '') + '" required></div>';
+        html += '<div class="form-group"><label>Identificativo <span class="req">*</span></label><input type="text" id="cf_identificativo" value="' + (c ? c.identificativo : '') + '" required></div>';
+        html += '<div class="form-group"><label>Data Decorrenza <span class="req">*</span></label><input type="date" id="cf_decorrenza" value="' + (c ? c.data_decorrenza : '') + '" required></div>';
+        html += '<div class="form-group"><label>Data Scadenza <span class="req">*</span></label><input type="date" id="cf_scadenza" value="' + (c ? c.data_scadenza : '') + '" required></div>';
         // Data Scadenza Rinnovo: inseribile solo in fase di modifica del contratto
         if (type === 'editContratto') {
             html += '<div class="form-group"><label>Data Scadenza Rinnovo</label><input type="date" id="cf_scadenza_rinnovo" title="Nuova data di scadenza dopo il rinnovo del contratto" value="' + (c ? (c.data_scadenza_rinnovo || '') : '') + '"></div>';
@@ -1117,8 +1204,8 @@ function openModal(type, id) {
 
         // --- SEZIONE IMMOBILE ---
         html += '<div class="form-section-title full"><i class="fas fa-home"></i> Immobile</div>';
-        html += '<div class="form-group"><label>Indirizzo</label><input type="text" id="cf_imm_indirizzo" value="' + (imm ? imm.indirizzo : '') + '" required></div>';
-        html += '<div class="form-group"><label>Città</label><input type="text" id="cf_imm_citta" value="' + (imm ? imm.citta : '') + '" required></div>';
+        html += '<div class="form-group"><label>Indirizzo <span class="req">*</span></label><input type="text" id="cf_imm_indirizzo" value="' + (imm ? imm.indirizzo : '') + '" required></div>';
+        html += '<div class="form-group"><label>Città <span class="req">*</span></label><input type="text" id="cf_imm_citta" value="' + (imm ? imm.citta : '') + '" required></div>';
         var apeChecked = imm && imm.ape;
         html += '<div class="form-group"><label>APE</label>';
         html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
@@ -1126,9 +1213,9 @@ function openModal(type, id) {
         html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape" value="false"' + (apeChecked ? ' checked' : '') + '> No</label>';
         html += '</div></div>';
         html += '<div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio</label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '" style="max-width:100px"></div>';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella</label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '" style="max-width:100px"></div>';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub</label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '" style="max-width:100px"></div>';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio <span class="req">*</span></label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '" style="max-width:100px" required></div>';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella <span class="req">*</span></label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '" style="max-width:100px" required></div>';
+        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub <span class="req">*</span></label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '" style="max-width:100px" required></div>';
         html += '</div>';
 
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
@@ -1384,6 +1471,17 @@ function openModal(type, id) {
     body.innerHTML = html;
     overlay.classList.add('show');
 
+    // Pulsante maiuscolo/minuscolo: visibile solo nel form contratto,
+    // accanto al titolo del modale
+    var caseBtn = document.getElementById('caseToggleBtn');
+    var isContrattoForm = !!document.getElementById('contrattoForm');
+    if (caseBtn) caseBtn.hidden = !isContrattoForm;
+    if (isContrattoForm) {
+        contrattoCaseMode = 'lower';
+        setupContrattoCaseFields(body);
+        updateCaseToggleBtn();
+    }
+
     // Attach form listeners
     var cf = document.getElementById('contrattoForm');
     if (cf) {
@@ -1600,15 +1698,15 @@ async function saveContratto(editId) {
     var rows = document.querySelectorAll('#canoniRowsContainer .canone-row');
     var newCanoni = [];
     rows.forEach(function(row) {
-        var importo = parseFloat(row.querySelector('.canone-importo').value) || 0;
+        var importo = parseImporto(row.querySelector('.canone-importo').value);
         var dataInizio = row.querySelector('.canone-data-inizio').value || null;
         var dataFine = row.querySelector('.canone-data-fine').value || null;
         var noteEl = row.querySelector('.canone-note');
         var noteCanone = noteEl ? (noteEl.value.trim() || null) : null;
         var cedolareSi = row.querySelector('.canone-cedolare-si');
         var taxCedolare = cedolareSi ? cedolareSi.checked : false;
-        var taxPercentuale = parseFloat(row.querySelector('.canone-percentuale').value) || 0;
-        var taxValoreAssoluto = parseFloat(row.querySelector('.canone-valore-assoluto').value) || 0;
+        var taxPercentuale = parseImporto(row.querySelector('.canone-percentuale').value);
+        var taxValoreAssoluto = parseImporto(row.querySelector('.canone-valore-assoluto').value);
         newCanoni.push({
             contratto_id: targetId,
             importo: importo,
@@ -1814,7 +1912,7 @@ async function deleteContratto(id) {
 
 
 
-// --- Decorrenza filter (range da oggi a oggi+N giorni) ---
+// --- Filtro per scadenza (contratti che scadono esattamente tra N giorni) ---
 function openDecorrenzaModal() {
     document.getElementById('decorrenzaDays').value = '';
     renderContratti(); // torna alla lista completa
@@ -1837,14 +1935,18 @@ function applyDecorrenzaFilter() {
         var g = String(d.getDate()).padStart(2, '0');
         return y + '-' + m + '-' + g;
     }
-    var da = toISO(oggi);
-    var fine = new Date(oggi);
-    fine.setDate(fine.getDate() + days);
-    var a = toISO(fine);
+    // Data di scadenza cercata = oggi + N giorni
+    var target = new Date(oggi);
+    target.setDate(target.getDate() + days);
+    var targetISO = toISO(target);
 
+    // Mostra i contratti (non chiusi) la cui scadenza effettiva
+    // (rinnovo se presente, altrimenti scadenza) coincide con tale data
     var filtered = appData.contratti.filter(function(c) {
-        if (!c.data_decorrenza) return false;
-        return c.data_decorrenza >= da && c.data_decorrenza <= a;
+        if (c.data_chiusura) return false;
+        var scad = getContrattoScadenzaEffettiva(c);
+        if (!scad) return false;
+        return scad === targetISO;
     });
     closeDecorrenzaModal();
     renderContrattiList(filtered);
