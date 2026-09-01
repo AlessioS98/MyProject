@@ -1131,6 +1131,7 @@ input, select, textarea { font-family: inherit; }
 .contract-card.alert-scaduta { border-color: var(--danger); }
 .data-table tr.alert-in-scadenza td { background: var(--warning-bg); }
 .data-table tr.alert-scaduta td { background: var(--danger-bg); }
+.data-table tr.alert-completata td { background: var(--success-bg); }
 
 .contract-title {
     font-size: 1.05rem;

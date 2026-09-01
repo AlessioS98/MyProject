@@ -314,6 +314,30 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
         appData.scadenze = appData.scadenze.concat(insScad);
     }
 }
+
+// --- Auto-completamento scadenze passate ---
+// Le scadenze con prossima_scadenza prima della data odierna vengono marcate
+// automaticamente come completate, così la sezione Scadenze mostra solo le
+// scadenze da oggi in poi (es. contratti inseriti con decorrenza nel passato).
+async function autoCompleteScadenzePassate() {
+    var oggi = toLocalDateStr(new Date());
+    var daCompletare = appData.scadenze.filter(function(s) {
+        return s.stato === 'in-attesa' && s.prossima_scadenza && s.prossima_scadenza < oggi;
+    });
+    if (daCompletare.length === 0) return;
+    for (var i = 0; i < daCompletare.length; i++) {
+        var s = daCompletare[i];
+        var { error } = await db.from('scadenze').update({
+            stato: 'completata',
+            data_completamento: s.prossima_scadenza
+        }).eq('id', s.id);
+        if (!error) {
+            s.stato = 'completata';
+            s.data_completamento = s.prossima_scadenza;
+        }
+    }
+    renderNotifications();
+}
 var canoneRowCounter = 0;
 function toggleCanoneCedolare(el) {
     if (!el) return;
@@ -929,6 +953,9 @@ async function loadAllData() {
             var c = appData.contratti[ci];
             await syncScadenzePerCanoni(c.id, getCanoniByContratto(c.id), c.data_decorrenza);
         }
+        // Le scadenze con data nel passato vengono marcate automaticamente
+        // come completate: la sezione mostra solo le scadenze da oggi in poi.
+        await autoCompleteScadenzePassate();
     } catch (e) {
         console.error('Errore caricamento dati:', e);
         showToast('Errore nel caricamento dei dati', 'error');
@@ -1877,6 +1904,9 @@ async function saveContratto(editId) {
     // trigger del DB calcola prossima_scadenza. In modifica le scadenze
     // mancanti vengono aggiunte senza duplicare quelle già presenti.
     await syncScadenzePerCanoni(targetId, newCanoni, contrattoData.data_decorrenza);
+    // Le scadenze appena create con data nel passato (es. contratto vecchio)
+    // vengono subito marcate come completate.
+    await autoCompleteScadenzePassate();
 
     // --- Gestione Locatori/Conduttori (tabelle ponte) ---
     // Delete old relations
@@ -2774,13 +2804,13 @@ async function renderScadenze() {
     var subEl = document.getElementById('scadenzeSubtitle');
     if (subEl) subEl.textContent = tipo === 'contratti' ? 'Scadenza dei contratti di locazione' : 'Versamento Imposta di Registro 30gg';
 
-    // Filtro di stato: per i pagamenti "Da pagare / Scaduti / Completati",
-    // per i contratti "Non scaduti / Scaduti". Le voci si adattano alla lista.
+    // Filtro di stato: per i pagamenti "Da pagare / Archiviate" (scadute +
+    // completate), per i contratti "Non scaduti / Scaduti". Le voci si adattano.
     var statoSel = document.getElementById('filterScadenzaStato');
     var statoFiltro = statoSel ? statoSel.value : 'tutti';
     if (statoSel) {
         var optStato = tipo === 'pagamenti'
-            ? [{ v: 'tutti', l: 'Da pagare' }, { v: 'scaduti', l: 'Scaduti' }, { v: 'completati', l: 'Completati' }]
+            ? [{ v: 'tutti', l: 'Da pagare' }, { v: 'archiviate', l: 'Archiviate' }]
             : [{ v: 'non-scaduti', l: 'Non scaduti' }, { v: 'scaduti', l: 'Scaduti' }];
         statoSel.innerHTML = optStato.map(function(o) { return '<option value="' + o.v + '">' + o.l + '</option>'; }).join('');
         statoSel.value = optStato.some(function(o) { return o.v === statoFiltro; }) ? statoFiltro : optStato[0].v;
@@ -2813,13 +2843,15 @@ async function renderScadenze() {
     } else {
         var scadenzeFiltro = appData.scadenze.slice();
         // Le scadenze dei canoni con cedolare secca non vengono mai listate
-        if (statoFiltro === 'completati') {
-            scadenzeFiltro = scadenzeFiltro.filter(function(s) { return (s.stato === 'completata' || s.stato === 'completato') && !isScadenzaCedolare(s); });
+        if (statoFiltro === 'archiviate') {
+            // Archiviate = scadute (in attesa con data nel passato) + completate
+            scadenzeFiltro = scadenzeFiltro.filter(function(s) {
+                if (isScadenzaCedolare(s)) return false;
+                if (s.stato === 'completata' || s.stato === 'completato') return true;
+                return s.stato === 'in-attesa' && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
+            });
         } else {
             scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s); });
-            if (statoFiltro === 'scaduti') {
-                scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0; });
-            }
         }
         items = scadenzeFiltro
             .sort(function(a, b) {
@@ -2839,11 +2871,14 @@ async function renderScadenze() {
                             ' · ' + formatCurrency(canone.importo);
                     }
                 }
+                var isCompletata = (s.stato === 'completata' || s.stato === 'completato');
                 return {
                     locLabel: c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A',
                     condLabel: c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A',
                     scadenza: s.prossima_scadenza,
                     urg: getScadenzaUrgenza(s),
+                    completata: isCompletata,
+                    dataCompletamento: s.data_completamento,
                     canoneInfo: canoneInfo,
                     actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s)
                 };
@@ -2857,7 +2892,13 @@ async function renderScadenze() {
 
     function badgeHtml(it) {
         var proxHtml = formatDate(it.scadenza);
-        if (it.urg) proxHtml += ' <span class="status-badge ' + it.urg.type + '">' + it.urg.label + (it.urg.days > 0 ? ' · ' + it.urg.days + ' gg' : '') + '</span>';
+        if (it.completata) {
+            // Scadenza archiviata e completata: badge verde con data di completamento
+            proxHtml += ' <span class="status-badge attivo"><i class="fas fa-check"></i> Completata' +
+                (it.dataCompletamento ? ' · ' + formatDate(it.dataCompletamento) : '') + '</span>';
+        } else if (it.urg) {
+            proxHtml += ' <span class="status-badge ' + it.urg.type + '">' + it.urg.label + (it.urg.days > 0 ? ' · ' + it.urg.days + ' gg' : '') + '</span>';
+        }
         if (it.canoneInfo) proxHtml += '<div class="scadenza-canone">' + it.canoneInfo + '</div>';
         return proxHtml;
     }
@@ -2867,7 +2908,8 @@ async function renderScadenze() {
         tbody.innerHTML = '<tr><td colspan="' + (hasAzioni ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         tbody.innerHTML = items.map(function(it) {
-            return '<tr' + (it.urg ? ' class="alert-' + it.urg.type + '"' : '') + '>' +
+            var rowCls = it.urg ? ' alert-' + it.urg.type : (it.completata ? ' alert-completata' : '');
+            return '<tr' + (rowCls ? ' class="' + rowCls.trim() + '"' : '') + '>' +
                 '<td>' + it.locLabel + '</td>' +
                 '<td>' + it.condLabel + '</td>' +
                 '<td>' + badgeHtml(it) + '</td>' +
