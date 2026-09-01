@@ -1745,6 +1745,19 @@ input, select, textarea { font-family: inherit; }
     margin-bottom: 0;
 }
 
+.canoni-warning {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px 14px;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-md);
+    color: var(--warning);
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
 .checkbox-label {
     display: flex;
     align-items: center;

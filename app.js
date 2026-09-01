@@ -339,6 +339,72 @@ function toggleCanoneCedolare(el) {
         }
     });
 }
+// --- Copertura del periodo del contratto da parte dei canoni ---
+// Restituisce un messaggio di avviso se i canoni non coprono l'intero
+// periodo del contratto (dalla decorrenza alla scadenza): manca il primo
+// canone all'inizio, l'ultimo non arriva alla scadenza, oppure c'è un buco
+// tra due canoni consecutivi. Restituisce null se la copertura è completa.
+// Se è stata inserita la data di scadenza rinnovo, la copertura richiesta
+// arriva fino a quella data (stessa logica di getContrattoScadenzaEffettiva).
+function getCanoniCoverageWarning() {
+    var deco = document.getElementById('cf_decorrenza').value;
+    var scad = document.getElementById('cf_scadenza').value;
+    var scadRinnovoEl = document.getElementById('cf_scadenza_rinnovo');
+    var scadRinnovo = scadRinnovoEl ? scadRinnovoEl.value : '';
+    var scadEffettiva = scadRinnovo || scad;
+    if (!deco || !scadEffettiva) return null; // senza le date del contratto non c'è verifica
+
+    var rows = document.querySelectorAll('#canoniRowsContainer .canone-row');
+    var canoni = [];
+    rows.forEach(function(row) {
+        var inizio = row.querySelector('.canone-data-inizio').value;
+        var fine = row.querySelector('.canone-data-fine').value;
+        if (inizio && fine) canoni.push({ inizio: inizio, fine: fine });
+    });
+    canoni.sort(function(a, b) { return a.inizio.localeCompare(b.inizio); });
+
+    if (canoni.length === 0) {
+        return 'Nessun canone inserito: aggiungi i canoni per coprire l\'intero periodo del contratto.';
+    }
+
+    if (canoni[0].inizio > deco) {
+        return 'Il primo canone inizia il ' + formatDate(canoni[0].inizio) + ', ma la decorrenza del contratto è ' + formatDate(deco) + ': manca la copertura iniziale.';
+    }
+    var last = canoni[canoni.length - 1];
+    if (last.fine < scadEffettiva) {
+        var refLabel = scadRinnovo ? 'la scadenza rinnovo ' : 'la scadenza ';
+        return 'L\'ultimo canone termina il ' + formatDate(last.fine) + ', ma ' + refLabel + 'del contratto è ' + formatDate(scadEffettiva) + ': manca la copertura finale.';
+    }
+    for (var i = 1; i < canoni.length; i++) {
+        var attesa = addDaysToDateStr(canoni[i - 1].fine, 1);
+        if (canoni[i].inizio > attesa) {
+            return 'Manca la copertura tra il ' + formatDate(canoni[i - 1].fine) + ' e il ' + formatDate(canoni[i].inizio) + ': i canoni devono essere consecutivi.';
+        }
+    }
+    return null;
+}
+
+// Mostra/nasconde il banner di avviso sotto la sezione Canoni Annuali
+function updateCanoniCoverageWarning() {
+    var el = document.getElementById('canoniCoverageWarning');
+    if (!el) return;
+    var msg = getCanoniCoverageWarning();
+    if (msg) {
+        el.textContent = msg;
+        el.style.display = '';
+    } else {
+        el.textContent = '';
+        el.style.display = 'none';
+    }
+}
+
+// Rimuove una riga canone e aggiorna l'avviso di copertura
+function removeCanoneRow(btn) {
+    var row = btn.closest('.canone-row');
+    if (row) row.remove();
+    updateCanoniCoverageWarning();
+}
+
 function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale, valoreAssoluto) {
     canoneRowCounter++;
     var container = document.getElementById('canoniRowsContainer');
@@ -350,7 +416,7 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
     row.innerHTML = `
         <div class="canone-header">
             <span class="canone-label"><i class="fas fa-euro-sign"></i> Canone ${canoneRowCounter}</span>
-            <button type="button" class="btn btn-sm btn-outline canone-remove" onclick="this.closest('.canone-row').remove()"><i class="fas fa-trash"></i></button>
+            <button type="button" class="btn btn-sm btn-outline canone-remove" onclick="removeCanoneRow(this)"><i class="fas fa-trash"></i></button>
         </div>
         <div class="form-group" style="flex:1;min-width:120px;margin:0"><label>Importo (EUR) <span class="req">*</span></label><input type="text" inputmode="decimal" class="canone-importo" value="${formatImportoInput(parseImporto(importo))}" required></div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Data Inizio <span class="req">*</span></label><input type="date" class="canone-data-inizio" value="${dataInizio || ''}" required></div>
@@ -390,6 +456,12 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
         valAssBlur.addEventListener('input', function() { formatImportoOnInput(valAssBlur); });
         valAssBlur.addEventListener('blur', function() { formatImportoOnBlur(valAssBlur); });
     }
+    // L'avviso di copertura si aggiorna quando cambiano le date del canone
+    var dataInizioEl = row.querySelector('.canone-data-inizio');
+    var dataFineEl = row.querySelector('.canone-data-fine');
+    if (dataInizioEl) dataInizioEl.addEventListener('input', updateCanoniCoverageWarning);
+    if (dataFineEl) dataFineEl.addEventListener('input', updateCanoniCoverageWarning);
+    updateCanoniCoverageWarning();
 }
 
 // Quando si inserisce la percentuale di un canone, il valore assoluto
@@ -480,6 +552,9 @@ function formatImportoOnInput(el) {
 
 // --- CF Autocomplete ---
 function setupCfAutocomplete(inputEl, rowEl) {
+    // Disabilita i suggerimenti nativi del browser (es. Firefox) che si
+    // sovrappongono a quelli del programma.
+    inputEl.setAttribute('autocomplete', 'off');
     var suggestionsEl = document.createElement('div');
     suggestionsEl.className = 'cf-suggestions';
     inputEl.parentNode.style.position = 'relative';
@@ -976,6 +1051,9 @@ function closeFilterModal() {
 
 // --- Filter Autocomplete ---
 function setupFilterAutocomplete(inputEl, getValues, onPick) {
+    // Disabilita i suggerimenti nativi del browser (es. Firefox) che si
+    // sovrappongono a quelli del programma.
+    inputEl.setAttribute('autocomplete', 'off');
     // Idempotent binding: remove a previously attached handler and the old
     // suggestions container so reopening the modal never stacks listeners.
     if (inputEl.__filterHandler) inputEl.removeEventListener('input', inputEl.__filterHandler);
@@ -1239,7 +1317,8 @@ function openModal(type, id) {
         // --- SEZIONE CANONI ANNUALI ---
         html += '<div class="form-section-title full"><i class="fas fa-euro-sign"></i> Canoni Annuali</div>';
         html += '<div class="form-group full"><div id="canoniRowsContainer"></div>';
-        html += '<button type="button" class="btn btn-sm btn-outline" onclick="addCanoneRow()"><i class="fas fa-plus"></i> Aggiungi Canone</button></div>';
+        html += '<button type="button" class="btn btn-sm btn-outline" onclick="addCanoneRow()"><i class="fas fa-plus"></i> Aggiungi Canone</button>';
+        html += '<div id="canoniCoverageWarning" class="canoni-warning" style="display:none"></div></div>';
         html += '<div class="form-group full"><label>Note</label><textarea id="cf_note">' + (c ? (c.note || '') : '') + '</textarea></div>';
 
         // --- SEZIONE LOCATORI ---
@@ -1571,6 +1650,14 @@ function openModal(type, id) {
         if (decoInput) decoInput.addEventListener('input', syncPersonaDateFields);
         if (chiusInput) chiusInput.addEventListener('input', syncPersonaDateFields);
         syncPersonaDateFields();
+        // Avviso quando i canoni non coprono l'intero periodo del contratto
+        // (fino alla scadenza o, se presente, alla scadenza rinnovo)
+        var scadInput = document.getElementById('cf_scadenza');
+        var scadRinnovoInput = document.getElementById('cf_scadenza_rinnovo');
+        if (decoInput) decoInput.addEventListener('input', updateCanoniCoverageWarning);
+        if (scadInput) scadInput.addEventListener('input', updateCanoniCoverageWarning);
+        if (scadRinnovoInput) scadRinnovoInput.addEventListener('input', updateCanoniCoverageWarning);
+        updateCanoniCoverageWarning();
         // Setup immobile field autocomplete (stessa logica dei campi persona)
         ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(f) {
             var immFieldEl = document.getElementById('cf_imm_' + f);
@@ -1655,6 +1742,14 @@ async function upsertImmobile(dati) {
 
 // --- Save/Update Contratto ---
 async function saveContratto(editId) {
+    // Blocca il salvataggio se i canoni non coprono l'intero periodo del contratto
+    var coverageWarn = getCanoniCoverageWarning();
+    if (coverageWarn) {
+        updateCanoniCoverageWarning();
+        showToast(coverageWarn, 'error');
+        return;
+    }
+
     // Collect all locatori from dynamic rows (con le date del legame)
     var locRows = document.querySelectorAll('#locatoriRowsContainer .locatore-row');
     var locData = [];
