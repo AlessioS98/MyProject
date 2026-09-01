@@ -225,6 +225,60 @@ function getCanoneAttuale(contrattoId) {
 function getTotaleCanoniAnnui(contrattoId) {
     return getCanoniByContratto(contrattoId).reduce(function(s, ca) { return s + (ca.importo || 0); }, 0);
 }
+
+// --- Crea le scadenze di pagamento per ogni canone del contratto ---
+// Una scadenza per canone senza cedolare secca (prima il canone 1, poi il
+// canone 2, ...): la decorrenza è la data di inizio del canone e il trigger
+// del DB calcola prossima_scadenza. Non duplica le scadenze già presenti per
+// lo stesso periodo (controllo su data_decorrenza nel range del canone).
+async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
+    if (!canoni || canoni.length === 0) {
+        // Nessun canone definito: scadenza unica con la decorrenza del contratto
+        if (!decorrenzaFallback) return;
+        var haGia = appData.scadenze.some(function(s) { return s.contratto_id === contrattoId; });
+        if (haGia) return;
+        var { data: insLegacy, error: errLegacy } = await db.from('scadenze').insert({
+            contratto_id: contrattoId,
+            data_decorrenza: decorrenzaFallback,
+            importo: 0,
+            stato: 'in-attesa'
+        }).select();
+        if (errLegacy) {
+            console.error('Errore creazione scadenza:', errLegacy);
+            showToast('Errore nella creazione della scadenza', 'error');
+        } else if (insLegacy) {
+            appData.scadenze = appData.scadenze.concat(insLegacy);
+        }
+        return;
+    }
+    var esistenti = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
+    var daInserire = [];
+    canoni.forEach(function(ca) {
+        if (ca.tassazione_cedolare_secca) return; // cedolare secca: nessun versamento
+        if (!ca.data_inizio) return;
+        var inizio = ca.data_inizio || '0000-01-01';
+        var fine = ca.data_fine || '9999-12-31';
+        var coperto = esistenti.some(function(s) {
+            return s.data_decorrenza && s.data_decorrenza >= inizio && s.data_decorrenza <= fine;
+        });
+        if (!coperto) {
+            daInserire.push({
+                contratto_id: contrattoId,
+                data_decorrenza: ca.data_inizio,
+                importo: ca.importo || 0,
+                stato: 'in-attesa'
+            });
+        }
+    });
+    if (daInserire.length === 0) return;
+    var { data: insScad, error: errScad } = await db.from('scadenze').insert(daInserire).select();
+    if (errScad) {
+        console.error('Errore creazione scadenze:', errScad);
+        showToast('Errore nella creazione delle scadenze', 'error');
+    } else if (insScad) {
+        appData.scadenze = appData.scadenze.concat(insScad);
+    }
+}
 var canoneRowCounter = 0;
 function toggleCanoneCedolare(el) {
     if (!el) return;
@@ -351,51 +405,35 @@ function setupCfAutocomplete(inputEl, rowEl) {
     });
 }
 
-// --- Immobile Field Autocomplete (Foglio / Particella / Sub) ---
-function setupImmobileFieldAutocomplete(inputEl, fieldType) {
-    var suggestionsEl = document.createElement('div');
-    suggestionsEl.className = 'imm-suggestions';
+// --- Immobile Suggestions nel form contratto (stessa logica dei campi persona) ---
+// Digitando in Indirizzo/Città/Foglio/Particella/Sub compaiono i valori degli
+// immobili già presenti; la scelta compila l'intero blocco immobile.
+function setupImmobileSuggestions(inputEl, fieldKey) {
     inputEl.parentNode.style.position = 'relative';
-    inputEl.parentNode.appendChild(suggestionsEl);
-
-    inputEl.addEventListener('input', function() {
-        var val = inputEl.value.trim().toUpperCase();
-        if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
+    setupFilterAutocomplete(inputEl, function() {
         var seen = {};
-        var matches = [];
+        var out = [];
         appData.immobili.forEach(function(imm) {
-            var fieldVal = (imm[fieldType] || '').toUpperCase();
-            if (fieldVal.indexOf(val) === 0 && !seen[fieldVal]) {
-                seen[fieldVal] = true;
-                matches.push(imm);
-            }
+            var v = imm[fieldKey];
+            if (v == null || String(v).trim() === '') return;
+            var label = String(v).trim();
+            if (seen[label]) return;
+            seen[label] = true;
+            var cad = [imm.foglio ? ('Fg.' + imm.foglio) : '', imm.particella ? ('Part.' + imm.particella) : '', imm.sub ? ('Sub ' + imm.sub) : ''].filter(Boolean).join(' - ');
+            var ind = imm.indirizzo ? imm.indirizzo : '';
+            var cit = imm.citta ? imm.citta : '';
+            var sub = ind + (ind && cit ? ', ' : '') + cit;
+            if (sub && cad) sub += ' · ' + cad;
+            if (!sub) sub = cad;
+            out.push({ label: label, sub: sub, data: imm });
         });
-        if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
-        suggestionsEl.innerHTML = matches.map(function(imm, i) {
-            var detail = imm.indirizzo + ', ' + imm.citta;
-            var foglioPart = imm.foglio ? ('Fg.' + imm.foglio) : '';
-            var particellaPart = imm.particella ? ('Part.' + imm.particella) : '';
-            var subPart = imm.sub ? ('Sub ' + imm.sub) : '';
-            var cadastro = [foglioPart, particellaPart, subPart].filter(Boolean).join(' - ');
-            return '<div class="imm-suggestion-item" data-idx="' + i + '"><div class="imm-suggestion-addr">' + detail + '</div><div class="imm-suggestion-cad">' + cadastro + '</div></div>';
-        }).join('');
-        suggestionsEl.classList.add('show');
-
-        suggestionsEl.querySelectorAll('.imm-suggestion-item').forEach(function(item, idx) {
-            item.addEventListener('click', function() {
-                var imm = matches[idx];
-                document.getElementById('cf_imm_indirizzo').value = imm.indirizzo || '';
-                document.getElementById('cf_imm_citta').value = imm.citta || '';
-                document.getElementById('cf_imm_foglio').value = imm.foglio || '';
-                document.getElementById('cf_imm_particella').value = imm.particella || '';
-                document.getElementById('cf_imm_sub').value = imm.sub || '';
-                suggestionsEl.classList.remove('show');
-            });
-        });
-    });
-
-    inputEl.addEventListener('blur', function() {
-        setTimeout(function() { suggestionsEl.classList.remove('show'); }, 200);
+        return out;
+    }, function(imm) {
+        document.getElementById('cf_imm_indirizzo').value = imm.indirizzo || '';
+        document.getElementById('cf_imm_citta').value = imm.citta || '';
+        document.getElementById('cf_imm_foglio').value = imm.foglio || '';
+        document.getElementById('cf_imm_particella').value = imm.particella || '';
+        document.getElementById('cf_imm_sub').value = imm.sub || '';
     });
 }
 
@@ -606,6 +644,14 @@ async function loadAllData() {
         appData.canoni_annuali = canoni.data || [];
         appData.contratto_locatori = locRel.data || [];
         appData.contratto_conduttori = condRel.data || [];
+
+        // Backfill: per ogni contratto crea la scadenza di ogni canone senza
+        // cedolare secca che manca (es. contratti creati prima di questa
+        // logica, come quelli con più canoni che mostravano una sola scadenza).
+        for (var ci = 0; ci < appData.contratti.length; ci++) {
+            var c = appData.contratti[ci];
+            await syncScadenzePerCanoni(c.id, getCanoniByContratto(c.id), c.data_decorrenza);
+        }
     } catch (e) {
         console.error('Errore caricamento dati:', e);
         showToast('Errore nel caricamento dei dati', 'error');
@@ -1266,7 +1312,6 @@ function openModal(type, id) {
         html = '<form id="completaScadenzaForm" class="form-grid">';
         html += '<div style="grid-column:1/-1;padding:14px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:4px">';
         html += '<div class="contract-detail"><label>Contratto</label><span><strong>' + (scC ? scC.identificativo : 'Contratto #' + sc.contratto_id) + '</strong></span></div>';
-        html += '<div class="contract-detail" style="margin-top:8px"><label>Importo</label><span><strong>' + formatCurrency(sc.importo) + '</strong></span></div>';
         html += '</div>';
         html += '<div class="form-group full"><label>Data di completamento</label><input type="date" id="scadDataCompletamento" value="' + toLocalDateStr(new Date()) + '" required></div>';
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Conferma Completamento</button></div>';
@@ -1281,6 +1326,10 @@ function openModal(type, id) {
     var cf = document.getElementById('contrattoForm');
     if (cf) {
         cf.addEventListener('submit', function(e) { e.preventDefault(); saveContratto(id); });
+        // I contatori delle righe ripartono sempre da 1 a ogni apertura del form
+        canoneRowCounter = 0;
+        locatoreRowCounter = 0;
+        conduttoreRowCounter = 0;
         // Populate existing canoni annuali for edit mode
         if (type === 'editContratto' && id) {
             var existingCanoni = getCanoniByContratto(id);
@@ -1312,13 +1361,11 @@ function openModal(type, id) {
         if (decoInput) decoInput.addEventListener('input', syncPersonaDateFields);
         if (chiusInput) chiusInput.addEventListener('input', syncPersonaDateFields);
         syncPersonaDateFields();
-        // Setup immobile field autocomplete
-        var foglioEl = document.getElementById('cf_imm_foglio');
-        var particellaEl = document.getElementById('cf_imm_particella');
-        var subEl = document.getElementById('cf_imm_sub');
-        if (foglioEl) setupImmobileFieldAutocomplete(foglioEl, 'foglio');
-        if (particellaEl) setupImmobileFieldAutocomplete(particellaEl, 'particella');
-        if (subEl) setupImmobileFieldAutocomplete(subEl, 'sub');
+        // Setup immobile field autocomplete (stessa logica dei campi persona)
+        ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(f) {
+            var immFieldEl = document.getElementById('cf_imm_' + f);
+            if (immFieldEl) setupImmobileSuggestions(immFieldEl, f);
+        });
     }
     var iqf = document.getElementById('inquilinoForm');
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
@@ -1519,24 +1566,12 @@ async function saveContratto(editId) {
         }
     }
 
-    // --- Creazione automatica scadenza per i nuovi contratti ---
-    // La scadenza eredita la decorrenza del contratto; il trigger del DB
-    // calcola automaticamente prossima_scadenza.
-    if (!editId) {
-        var primoCanone = newCanoni.length > 0 ? newCanoni[0] : null;
-        var { data: insScad, error: errScad } = await db.from('scadenze').insert({
-            contratto_id: targetId,
-            data_decorrenza: contrattoData.data_decorrenza,
-            importo: primoCanone ? (primoCanone.importo || 0) : 0,
-            stato: 'in-attesa'
-        }).select();
-        if (errScad) {
-            console.error('Errore creazione scadenza:', errScad);
-            showToast('Contratto creato, ma errore nella creazione della scadenza', 'error');
-        } else if (insScad) {
-            appData.scadenze = appData.scadenze.concat(insScad);
-        }
-    }
+    // --- Creazione scadenze di pagamento per i canoni ---
+    // Una scadenza per ogni canone senza cedolare secca (prima il canone 1,
+    // poi il canone 2, ...): la decorrenza è la data di inizio del canone e il
+    // trigger del DB calcola prossima_scadenza. In modifica le scadenze
+    // mancanti vengono aggiunte senza duplicare quelle già presenti.
+    await syncScadenzePerCanoni(targetId, newCanoni, contrattoData.data_decorrenza);
 
     // --- Gestione Locatori/Conduttori (tabelle ponte) ---
     // Delete old relations
@@ -1714,12 +1749,7 @@ async function deleteContratto(id) {
 
 
 
-// --- View Toggle ---
-function setView(view) {
-    document.getElementById('page-contratti').querySelectorAll('.view-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.view === view); });
-    document.getElementById('contractsCards').style.display = view === 'cards' ? '' : 'none';
-    document.getElementById('contractsTable').style.display = view === 'table' ? '' : 'none';
-}
+
 
 
 // --- Decorrenza filter (range da oggi a oggi+N giorni) ---
@@ -1818,38 +1848,15 @@ function renderContrattiList(list) {
         return (b.data_decorrenza || '').localeCompare(a.data_decorrenza || '');
     });
 
-    var cardsEl = document.getElementById('contractsCards');
-    if (filtered.length === 0) {
-        cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div>';
-    } else {
-        cardsEl.innerHTML = filtered.map(function(c) {
-            var scadC = getContrattoScadenzaEffettiva(c);
-            var d = daysUntil(scadC);
-            var dt = d > 0 ? d + ' gg' : 'Scaduto';
-            var ds = d <= 30 ? 'color:var(--danger)' : '';
-            var locLabel = getLocatoriCognomeNomeLabel(c.id);
-            var condLabel = getConduttoriCognomeNomeLabel(c.id);
-            var immLabel = getImmobileLabel(c.immobile_id);
-            var h = '<div class="contract-card">';
-            h += '<div class="contract-title"><i class="fas fa-user-tie"></i> ' + locLabel + ' → <i class="fas fa-user"></i> ' + condLabel + '</div>';
-            h += '<div class="contract-address"><i class="fas fa-map-marker-alt"></i> ' + immLabel + '</div>';
-            h += '<div class="contract-details">';
-            h += '<div class="contract-detail"><label>Rimanenza</label><span style="' + ds + '">' + dt + '</span></div>';
-            h += '</div>';
-            h += '<div class="contract-actions">';
-            h += '<button class="btn btn-sm btn-outline" data-action="view-contratto" data-id="' + c.id + '"><i class="fas fa-eye"></i> Dettagli</button>';
-            h += '<button class="btn btn-sm btn-outline" data-action="edit-contratto" data-id="' + c.id + '"><i class="fas fa-edit"></i></button>';
-            h += '<button class="btn btn-sm btn-outline" data-action="delete-contratto" data-id="' + c.id + '" style="color:var(--danger)"><i class="fas fa-trash"></i></button>';
-            h += '</div></div>';
-            return h;
-        }).join('');
-    }
-
     // Table view
     var tbody = document.getElementById('contractsTableBody');
-    tbody.innerHTML = filtered.map(function(c) {
-        return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
-    }).join('');
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div></td></tr>';
+    } else {
+        tbody.innerHTML = filtered.map(function(c) {
+            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+        }).join('');
+    }
 }
 
 
@@ -2062,9 +2069,11 @@ async function salvaCompletamentoScadenza(id) {
         var giaInAttesa = appData.scadenze.some(function(x) {
             return x.contratto_id === s.contratto_id && x.stato === 'in-attesa';
         });
-        var valida = c && !giaInAttesa && (!limite || nextDeco <= limite);
+        var canone = c ? getCanonePerScadenza(c.id, nextDeco) : null;
+        // Con la cedolare secca sul canone del periodo successivo non c'è
+        // versamento: la prossima scadenza non viene generata.
+        var valida = c && !giaInAttesa && !(canone && canone.tassazione_cedolare_secca) && (!limite || nextDeco <= limite);
         if (valida) {
-            var canone = getCanonePerScadenza(c.id, nextDeco);
             var { data: insScad, error: errScad } = await db.from('scadenze').insert({
                 contratto_id: c.id,
                 data_decorrenza: nextDeco,
@@ -2100,6 +2109,15 @@ function getCanonePerScadenza(contrattoId, dataDecorrenza) {
         if (match) return match;
     }
     return getCanoneAttuale(contrattoId) || canoni[canoni.length - 1];
+}
+
+// Una scadenza di pagamento non compare nella sezione Scadenze quando il
+// canone del relativo periodo ha la cedolare secca attiva (nessun versamento).
+function isScadenzaCedolare(s) {
+    var c = getContrattoById(s.contratto_id);
+    if (!c) return false;
+    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+    return !!(canone && canone.tassazione_cedolare_secca);
 }
 
 function getPersonaF24Nome(p) {
@@ -2145,7 +2163,11 @@ function generateF24Pdf(scadenzaId) {
         importo = parseFloat(s.importo) || 0;
     }
 
-    var annoVersamento = new Date().getFullYear();
+    // L'anno di versamento deve corrispondere all'anno della scadenza
+    // (prossima_scadenza = data di pagamento), non all'anno corrente.
+    var annoVersamento = s.prossima_scadenza ? new Date(s.prossima_scadenza).getFullYear()
+        : (s.data_decorrenza ? new Date(s.data_decorrenza).getFullYear()
+        : new Date().getFullYear());
     var doc = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
     var W = doc.internal.pageSize.getWidth();
     var M = 42;
@@ -2291,20 +2313,65 @@ function getContrattoUrgenza(c) {
 async function renderScadenze() {
     var tipo = document.getElementById('filterScadenzaTipo').value;
 
-    // Stats (scadenze di pagamento in attesa)
-    var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa'; });
+    // Stats: scadenze da pagare, scadute e completate; contratti non scaduti e scaduti.
+    // Le scadenze dei canoni con cedolare secca non vengono contate.
+    var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s); });
     document.getElementById('statScadenzeInAttesa').textContent = inAttesa.length;
+
+    var elScadute = document.getElementById('statScadenzeScadute');
+    var elCompletate = document.getElementById('statScadenzeCompletate');
+    if (elScadute) {
+        elScadute.textContent = appData.scadenze.filter(function(s) {
+            return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
+        }).length;
+    }
+    if (elCompletate) {
+        elCompletate.textContent = appData.scadenze.filter(function(s) {
+            return (s.stato === 'completata' || s.stato === 'completato') && !isScadenzaCedolare(s);
+        }).length;
+    }
+
+    var elCNS = document.getElementById('statContrattiNonScaduti');
+    var elCS = document.getElementById('statContrattiScaduti');
+    if (elCNS) {
+        elCNS.textContent = appData.contratti.filter(function(c) {
+            return !c.data_chiusura && getContrattoScadenzaEffettiva(c) && daysUntil(getContrattoScadenzaEffettiva(c)) > 0;
+        }).length;
+    }
+    if (elCS) {
+        elCS.textContent = appData.contratti.filter(function(c) {
+            return !c.data_chiusura && getContrattoScadenzaEffettiva(c) && daysUntil(getContrattoScadenzaEffettiva(c)) <= 0;
+        }).length;
+    }
 
     // Sottotitolo in base alla lista scelta
     var subEl = document.getElementById('scadenzeSubtitle');
     if (subEl) subEl.textContent = tipo === 'contratti' ? 'Scadenza dei contratti di locazione' : 'Versamento Imposta di Registro 30gg';
 
+    // Filtro di stato: per i pagamenti "Da pagare / Scaduti / Completati",
+    // per i contratti "Non scaduti / Scaduti". Le voci si adattano alla lista.
+    var statoSel = document.getElementById('filterScadenzaStato');
+    var statoFiltro = statoSel ? statoSel.value : 'tutti';
+    if (statoSel) {
+        var optStato = tipo === 'pagamenti'
+            ? [{ v: 'tutti', l: 'Da pagare' }, { v: 'scaduti', l: 'Scaduti' }, { v: 'completati', l: 'Completati' }]
+            : [{ v: 'non-scaduti', l: 'Non scaduti' }, { v: 'scaduti', l: 'Scaduti' }];
+        statoSel.innerHTML = optStato.map(function(o) { return '<option value="' + o.v + '">' + o.l + '</option>'; }).join('');
+        statoSel.value = optStato.some(function(o) { return o.v === statoFiltro; }) ? statoFiltro : optStato[0].v;
+        statoFiltro = statoSel.value;
+    }
+
     // Normalizza gli elementi da mostrare in voci comuni. La lista è ordinata
     // per data di scadenza: la più vicina per prima (le date mancanti in fondo).
     var items = [];
     if (tipo === 'contratti') {
-        items = appData.contratti
-            .filter(function(c) { return !c.data_chiusura && getContrattoScadenzaEffettiva(c); })
+        var contrattiFiltro = appData.contratti.filter(function(c) { return !c.data_chiusura && getContrattoScadenzaEffettiva(c); });
+        if (statoFiltro === 'scaduti') {
+            contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) <= 0; });
+        } else {
+            contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) > 0; });
+        }
+        items = contrattiFiltro
             .sort(function(a, b) {
                 return (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
             })
@@ -2318,61 +2385,73 @@ async function renderScadenze() {
                 };
             });
     } else {
-        items = appData.scadenze.slice()
-            .filter(function(s) { return s.stato === 'in-attesa'; })
+        var scadenzeFiltro = appData.scadenze.slice();
+        // Le scadenze dei canoni con cedolare secca non vengono mai listate
+        if (statoFiltro === 'completati') {
+            scadenzeFiltro = scadenzeFiltro.filter(function(s) { return (s.stato === 'completata' || s.stato === 'completato') && !isScadenzaCedolare(s); });
+        } else {
+            scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s); });
+            if (statoFiltro === 'scaduti') {
+                scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0; });
+            }
+        }
+        items = scadenzeFiltro
             .sort(function(a, b) {
                 return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
             })
             .map(function(s) {
                 var c = getContrattoById(s.contratto_id);
+                // Riferimento al canone: numero, periodo e importo della scadenza
+                var canoneInfo = null;
+                if (c) {
+                    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+                    if (canone) {
+                        var canoniC = getCanoniByContratto(c.id);
+                        var idx = canoniC.indexOf(canone);
+                        canoneInfo = 'Canone ' + (idx >= 0 ? (idx + 1) : '') +
+                            ' · ' + formatDate(canone.data_inizio) + ' → ' + formatDate(canone.data_fine) +
+                            ' · ' + formatCurrency(canone.importo);
+                    }
+                }
                 return {
                     locLabel: c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A',
                     condLabel: c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A',
                     scadenza: s.prossima_scadenza,
                     urg: getScadenzaUrgenza(s),
+                    canoneInfo: canoneInfo,
                     actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s)
                 };
             });
     }
 
+    // La colonna Azioni (Completa / F24) esiste solo per le scadenze di pagamento
+    var hasAzioni = tipo === 'pagamenti';
+    var azioniTh = document.getElementById('scadenzeAzioniTh');
+    if (azioniTh) azioniTh.style.display = hasAzioni ? '' : 'none';
+
     function badgeHtml(it) {
         var proxHtml = formatDate(it.scadenza);
         if (it.urg) proxHtml += ' <span class="status-badge ' + it.urg.type + '">' + it.urg.label + (it.urg.days > 0 ? ' · ' + it.urg.days + ' gg' : '') + '</span>';
+        if (it.canoneInfo) proxHtml += '<div class="scadenza-canone">' + it.canoneInfo + '</div>';
         return proxHtml;
     }
 
-    var cardsEl = document.getElementById('scadenzeCards');
     var tbody = document.getElementById('scadenzeTableBody');
     if (items.length === 0) {
-        cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div>';
-        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + (hasAzioni ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
-        cardsEl.innerHTML = items.map(function(it) {
-            return '<div class="contract-card' + (it.urg ? ' alert-' + it.urg.type : '') + '">' +
-                '<div class="contract-details">' +
-                '<div class="contract-detail"><label>Locatore</label><span><i class="fas fa-user-tie"></i> ' + it.locLabel + '</span></div>' +
-                '<div class="contract-detail"><label>Conduttore</label><span><i class="fas fa-user"></i> ' + it.condLabel + '</span></div>' +
-                '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + badgeHtml(it) + '</span></div>' +
-                '</div>' +
-                '<div class="contract-actions">' + it.actions + '</div></div>';
-        }).join('');
         tbody.innerHTML = items.map(function(it) {
             return '<tr' + (it.urg ? ' class="alert-' + it.urg.type + '"' : '') + '>' +
                 '<td>' + it.locLabel + '</td>' +
                 '<td>' + it.condLabel + '</td>' +
                 '<td>' + badgeHtml(it) + '</td>' +
-                '<td><div class="scadenza-actions">' + it.actions + '</div></td>' +
+                (hasAzioni ? '<td><div class="scadenza-actions">' + it.actions + '</div></td>' : '') +
                 '</tr>';
         }).join('');
     }
 }
 
-// --- View Toggle Scadenze ---
-function setScadenzeView(view) {
-    document.getElementById('page-scadenze').querySelectorAll('.view-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.view === view); });
-    document.getElementById('scadenzeCards').style.display = view === 'cards' ? '' : 'none';
-    document.getElementById('scadenzeTable').style.display = view === 'table' ? '' : 'none';
-}
+
 
 // --- Filter Listeners ---
 
