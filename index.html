@@ -191,8 +191,7 @@
             <div class="page-header">
                 <div>
                     <h1>Scadenze</h1>
-                    <p class="page-subtitle">Scadenze Versamento Imposta di Registro 30gg</p>
-                    <p class="page-subtitle">Scadenze Contratti</p>
+                    <p class="page-subtitle" id="scadenzeSubtitle">Versamento Imposta di Registro 30gg</p>
                 </div>
             </div>
 
@@ -210,8 +209,9 @@
             <!-- Filters -->
             <div class="filters-bar">
                 <div class="filter-group">
-                    <select id="filterScadenzaFinoA" class="filter-select" onchange="renderScadenze()">
-                        <option value="all">Tutte le scadenze</option>
+                    <select id="filterScadenzaTipo" class="filter-select" onchange="renderScadenze()">
+                        <option value="pagamenti">Scadenze di pagamento</option>
+                        <option value="contratti">Scadenze dei contratti</option>
                     </select>
                 </div>
                 <div class="view-toggle">

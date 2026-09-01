@@ -2235,65 +2235,90 @@ function generateF24Pdf(scadenzaId) {
 function getContrattoById(id) {
     return appData.contratti.find(function(c) { return c.id === id; }) || null;
 }
+// Urgenza scadenza di un contratto: scaduto o in scadenza entro l'anticipo configurato
+function getContrattoUrgenza(c) {
+    var scad = getContrattoScadenzaEffettiva(c);
+    if (!scad || c.data_chiusura) return null;
+    var gg = daysUntil(scad);
+    if (gg <= 0) return { type: 'scaduta', label: 'Scaduta', days: gg };
+    if (gg <= getNotifSettings().contrattiAnticipo) return { type: 'in-scadenza', label: 'In scadenza', days: gg };
+    return null;
+}
+
 async function renderScadenze() {
-    var filtroFinoA = document.getElementById('filterScadenzaFinoA').value;
+    var tipo = document.getElementById('filterScadenzaTipo').value;
 
-    // Ripopola il dropdown con tutte le date di scadenza (prossima_scadenza) presenti
-    var scadSelect = document.getElementById('filterScadenzaFinoA');
-    var scadDates = appData.scadenze
-        .map(function(s) { return s.prossima_scadenza; })
-        .filter(function(d) { return !!d; })
-        .filter(function(d, i, arr) { return arr.indexOf(d) === i; })
-        .sort();
-    scadSelect.innerHTML = '<option value="all">Tutte le scadenze</option>' +
-        scadDates.map(function(d) { return '<option value="' + d + '">' + formatDate(d) + '</option>'; }).join('');
-    scadSelect.value = filtroFinoA;
-
-    // Ordinamento per data di scadenza: la più vicina per prima (le date mancanti in fondo)
-    var list = appData.scadenze.slice().sort(function(a, b) {
-        return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
-    });
-    // La lista mostra solo le scadenze in attesa; quelle completate non vengono più visualizzate
-    list = list.filter(function(s) { return s.stato === 'in-attesa'; });
-    if (filtroFinoA !== 'all') list = list.filter(function(s) { return s.prossima_scadenza && s.prossima_scadenza <= filtroFinoA; });
-
-    // Stats
+    // Stats (scadenze di pagamento in attesa)
     var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa'; });
     document.getElementById('statScadenzeInAttesa').textContent = inAttesa.length;
 
+    // Sottotitolo in base alla lista scelta
+    var subEl = document.getElementById('scadenzeSubtitle');
+    if (subEl) subEl.textContent = tipo === 'contratti' ? 'Scadenza dei contratti di locazione' : 'Versamento Imposta di Registro 30gg';
+
+    // Normalizza gli elementi da mostrare in voci comuni. La lista è ordinata
+    // per data di scadenza: la più vicina per prima (le date mancanti in fondo).
+    var items = [];
+    if (tipo === 'contratti') {
+        items = appData.contratti
+            .filter(function(c) { return !c.data_chiusura && getContrattoScadenzaEffettiva(c); })
+            .sort(function(a, b) {
+                return (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
+            })
+            .map(function(c) {
+                return {
+                    locLabel: getLocatoriCognomeNomeLabel(c.id),
+                    condLabel: getConduttoriCognomeNomeLabel(c.id),
+                    scadenza: getContrattoScadenzaEffettiva(c),
+                    urg: getContrattoUrgenza(c),
+                    actions: '<button class="btn btn-sm btn-outline" data-action="view-contratto" data-id="' + c.id + '"><i class="fas fa-eye"></i> Dettagli</button>'
+                };
+            });
+    } else {
+        items = appData.scadenze.slice()
+            .filter(function(s) { return s.stato === 'in-attesa'; })
+            .sort(function(a, b) {
+                return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
+            })
+            .map(function(s) {
+                var c = getContrattoById(s.contratto_id);
+                return {
+                    locLabel: c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A',
+                    condLabel: c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A',
+                    scadenza: s.prossima_scadenza,
+                    urg: getScadenzaUrgenza(s),
+                    actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s)
+                };
+            });
+    }
+
+    function badgeHtml(it) {
+        var proxHtml = formatDate(it.scadenza);
+        if (it.urg) proxHtml += ' <span class="status-badge ' + it.urg.type + '">' + it.urg.label + (it.urg.days > 0 ? ' · ' + it.urg.days + ' gg' : '') + '</span>';
+        return proxHtml;
+    }
+
     var cardsEl = document.getElementById('scadenzeCards');
     var tbody = document.getElementById('scadenzeTableBody');
-    if (list.length === 0) {
+    if (items.length === 0) {
         cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div>';
         tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
-        cardsEl.innerHTML = list.map(function(s) {
-            var c = getContrattoById(s.contratto_id);
-            var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
-            var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
-            var urg = getScadenzaUrgenza(s);
-            var proxHtml = formatDate(s.prossima_scadenza);
-            if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
-            return '<div class="contract-card' + (urg ? ' alert-' + urg.type : '') + '">' +
+        cardsEl.innerHTML = items.map(function(it) {
+            return '<div class="contract-card' + (it.urg ? ' alert-' + it.urg.type : '') + '">' +
                 '<div class="contract-details">' +
-                '<div class="contract-detail"><label>Locatore</label><span><i class="fas fa-user-tie"></i> ' + locLabel + '</span></div>' +
-                '<div class="contract-detail"><label>Conduttore</label><span><i class="fas fa-user"></i> ' + condLabel + '</span></div>' +
-                '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + proxHtml + '</span></div>' +
+                '<div class="contract-detail"><label>Locatore</label><span><i class="fas fa-user-tie"></i> ' + it.locLabel + '</span></div>' +
+                '<div class="contract-detail"><label>Conduttore</label><span><i class="fas fa-user"></i> ' + it.condLabel + '</span></div>' +
+                '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + badgeHtml(it) + '</span></div>' +
                 '</div>' +
-                '<div class="contract-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></div>';
+                '<div class="contract-actions">' + it.actions + '</div></div>';
         }).join('');
-        tbody.innerHTML = list.map(function(s) {
-            var c = getContrattoById(s.contratto_id);
-            var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
-            var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
-            var urg = getScadenzaUrgenza(s);
-            var proxHtml = formatDate(s.prossima_scadenza);
-            if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
-            return '<tr' + (urg ? ' class="alert-' + urg.type + '"' : '') + '>' +
-                '<td>' + locLabel + '</td>' +
-                '<td>' + condLabel + '</td>' +
-                '<td>' + proxHtml + '</td>' +
-                '<td><div class="scadenza-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></td>' +
+        tbody.innerHTML = items.map(function(it) {
+            return '<tr' + (it.urg ? ' class="alert-' + it.urg.type + '"' : '') + '>' +
+                '<td>' + it.locLabel + '</td>' +
+                '<td>' + it.condLabel + '</td>' +
+                '<td>' + badgeHtml(it) + '</td>' +
+                '<td><div class="scadenza-actions">' + it.actions + '</div></td>' +
                 '</tr>';
         }).join('');
     }
