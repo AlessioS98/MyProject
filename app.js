@@ -272,7 +272,7 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
                 <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" class="canone-cedolare-no" name="canone_cedolare_${canoneRowCounter}" value="false"${cedNoChecked} onchange="toggleCanoneCedolare(this)"> No</label>
             </div>
         </div>
-        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Imposta di Registro (%)</label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01"></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Percentuale (%)</label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01"></div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Valore Assoluto (EUR)</label><input type="number" class="canone-valore-assoluto" value="${valoreAssoluto || ''}" min="0" step="0.01"></div>
     `;
     container.appendChild(row);
