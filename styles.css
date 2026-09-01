@@ -1279,7 +1279,13 @@ input, select, textarea { font-family: inherit; }
     color: var(--text-muted);
 }
 
-#scadenzeTable .data-table td:last-child { text-align: center; }
+/* Scadenze: la colonna Azioni non viene mai tagliata dai pulsanti */
+#scadenzeTable .data-table td:last-child {
+    text-align: center;
+    white-space: normal;
+    max-width: none;
+    min-width: 170px;
+}
 
 /* ---------- Table ---------- */
 .table-container {
@@ -1296,8 +1302,16 @@ input, select, textarea { font-family: inherit; }
     border-collapse: collapse;
 }
 
+/* Scadenze: locatore e conduttore vanno a capo su più righe, senza punti di sospensione */
+#scadenzeTable .data-table td:nth-child(1),
+#scadenzeTable .data-table td:nth-child(2) {
+    white-space: normal;
+    max-width: none;
+    min-width: 180px;
+}
+
 /* Colonna "Prossima Scadenza": il badge (es. "In scadenza · 4 gg") non viene più troncato */
-#scadenzeTable .data-table td:nth-child(6) {
+#scadenzeTable .data-table td:nth-child(3) {
     white-space: normal;
     max-width: none;
     min-width: 200px;
@@ -1331,6 +1345,7 @@ input, select, textarea { font-family: inherit; }
 
 /* Tabella contratti: locatore/conduttore/immobile possono andare a capo
    invece di essere troncati, così la tabella rientra nello schermo */
+#contractsTable .data-table td:nth-child(1),
 #contractsTable .data-table td:nth-child(2),
 #contractsTable .data-table td:nth-child(3),
 #contractsTable .data-table td:nth-child(4) {

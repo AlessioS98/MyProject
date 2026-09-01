@@ -47,7 +47,6 @@ CREATE TABLE IF NOT EXISTS scadenze (
   contratto_id bigint REFERENCES contratti(id) ON DELETE CASCADE,
   data_decorrenza date NOT NULL,
   prossima_scadenza date,
-  prossima_decorrenza date,
   importo numeric DEFAULT 0,
   stato text DEFAULT 'in-attesa',
   data_completamento date,
@@ -92,18 +91,16 @@ BEGIN
   END IF;
 END $$;
 
--- Colonna prossima_decorrenza: nuova decorrenza a cui farà riferimento il contratto
-ALTER TABLE scadenze ADD COLUMN IF NOT EXISTS prossima_decorrenza date;
+-- La colonna prossima_decorrenza non è più utilizzata: rimossa dall'interfaccia
+ALTER TABLE scadenze DROP COLUMN IF EXISTS prossima_decorrenza;
 
 -- Calcolo automatico:
 --   prossima_scadenza    = data_decorrenza + 1 anno + 30 giorni
---   prossima_decorrenza  = prossima_scadenza + 1 giorno
 CREATE OR REPLACE FUNCTION calc_scadenze_dates()
 RETURNS trigger AS $$
 BEGIN
   IF NEW.data_decorrenza IS NOT NULL THEN
     NEW.prossima_scadenza := (NEW.data_decorrenza + INTERVAL '1 year' + INTERVAL '30 days')::date;
-    NEW.prossima_decorrenza := (NEW.prossima_scadenza + INTERVAL '1 day')::date;
   END IF;
   RETURN NEW;
 END;
@@ -117,7 +114,7 @@ CREATE TRIGGER trg_scadenze_calc_dates
 
 -- Ricalcola le date per le righe esistenti che non le hanno ancora
 UPDATE scadenze SET data_decorrenza = data_decorrenza
-WHERE prossima_scadenza IS NULL OR prossima_decorrenza IS NULL;
+WHERE prossima_scadenza IS NULL;
 
 -- 7b. Tassazione per canone annuale: cedolare secca e imposta di registro
 -- vengono decise per OGNI singolo canone annuale (non piu' a livello di contratto)
@@ -238,7 +235,7 @@ ALTER TABLE contratti DROP COLUMN IF EXISTS valore_assoluto;
 ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuale;
 ALTER TABLE contratti DROP COLUMN IF EXISTS canone_annuo;
 
--- prossima_scadenza e prossima_decorrenza vengono calcolate automaticamente dal trigger
+-- prossima_scadenza viene calcolata automaticamente dal trigger
 INSERT INTO scadenze (contratto_id, data_decorrenza, importo, stato) VALUES
 (1, '2025-01-15', 7500, 'completata'),
 (2, '2025-06-01', 24000, 'in-attesa');

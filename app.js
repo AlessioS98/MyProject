@@ -1524,7 +1524,7 @@ async function saveContratto(editId) {
 
     // --- Creazione automatica scadenza per i nuovi contratti ---
     // La scadenza eredita la decorrenza del contratto; il trigger del DB
-    // calcola automaticamente prossima_scadenza e prossima_decorrenza.
+    // calcola automaticamente prossima_scadenza.
     if (!editId) {
         var primoCanone = newCanoni.length > 0 ? newCanoni[0] : null;
         var { data: insScad, error: errScad } = await db.from('scadenze').insert({
@@ -2236,7 +2236,6 @@ function getContrattoById(id) {
     return appData.contratti.find(function(c) { return c.id === id; }) || null;
 }
 async function renderScadenze() {
-    var filtroStato = document.getElementById('filterScadenzaStato').value;
     var filtroFinoA = document.getElementById('filterScadenzaFinoA').value;
 
     // Ripopola il dropdown con tutte le date di scadenza (prossima_scadenza) presenti
@@ -2250,11 +2249,13 @@ async function renderScadenze() {
         scadDates.map(function(d) { return '<option value="' + d + '">' + formatDate(d) + '</option>'; }).join('');
     scadSelect.value = filtroFinoA;
 
+    // Ordinamento per data di scadenza: la più vicina per prima (le date mancanti in fondo)
     var list = appData.scadenze.slice().sort(function(a, b) {
-        return (a.data_decorrenza || '').localeCompare(b.data_decorrenza || '');
+        return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
     });
+    // La lista mostra solo le scadenze in attesa; quelle completate non vengono più visualizzate
+    list = list.filter(function(s) { return s.stato === 'in-attesa'; });
     if (filtroFinoA !== 'all') list = list.filter(function(s) { return s.prossima_scadenza && s.prossima_scadenza <= filtroFinoA; });
-    if (filtroStato !== 'all') list = list.filter(function(s) { return s.stato === filtroStato; });
 
     // Stats
     var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa'; });
@@ -2264,41 +2265,34 @@ async function renderScadenze() {
     var tbody = document.getElementById('scadenzeTableBody');
     if (list.length === 0) {
         cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div>';
-        tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         cardsEl.innerHTML = list.map(function(s) {
             var c = getContrattoById(s.contratto_id);
-            var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
             var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
             var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
             var urg = getScadenzaUrgenza(s);
             var proxHtml = formatDate(s.prossima_scadenza);
             if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
             return '<div class="contract-card' + (urg ? ' alert-' + urg.type : '') + '">' +
-                '<div class="contract-top"><span class="contract-code">' + cod + '</span></div>' +
-                '<div class="contract-title"><i class="fas fa-user-tie"></i> ' + locLabel + ' → <i class="fas fa-user"></i> ' + condLabel + '</div>' +
                 '<div class="contract-details">' +
-                '<div class="contract-detail"><label>Decorrenza</label><span>' + formatDate(s.data_decorrenza) + '</span></div>' +
-                '<div class="contract-detail"><label>Importo</label><span>' + formatCurrency(s.importo) + '</span></div>' +
-                '<div class="contract-detail"><label>Stato</label><span><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></span></div>' +
+                '<div class="contract-detail"><label>Locatore</label><span><i class="fas fa-user-tie"></i> ' + locLabel + '</span></div>' +
+                '<div class="contract-detail"><label>Conduttore</label><span><i class="fas fa-user"></i> ' + condLabel + '</span></div>' +
                 '<div class="contract-detail"><label>Prossima Scadenza</label><span>' + proxHtml + '</span></div>' +
-                '<div class="contract-detail"><label>Prossima Decorrenza</label><span>' + formatDate(s.prossima_decorrenza) + '</span></div>' +
                 '</div>' +
                 '<div class="contract-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></div>';
         }).join('');
         tbody.innerHTML = list.map(function(s) {
             var c = getContrattoById(s.contratto_id);
-            var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
+            var locLabel = c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A';
+            var condLabel = c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A';
             var urg = getScadenzaUrgenza(s);
             var proxHtml = formatDate(s.prossima_scadenza);
             if (urg) proxHtml += ' <span class="status-badge ' + urg.type + '">' + urg.label + (urg.days > 0 ? ' · ' + urg.days + ' gg' : '') + '</span>';
             return '<tr' + (urg ? ' class="alert-' + urg.type + '"' : '') + '>' +
-                '<td><strong>' + cod + '</strong></td>' +
-                '<td>' + formatDate(s.data_decorrenza) + '</td>' +
-                '<td>' + formatCurrency(s.importo) + '</td>' +
-                '<td><span class="status-badge ' + s.stato + '">' + getStatusLabel(s.stato) + '</span></td>' +
+                '<td>' + locLabel + '</td>' +
+                '<td>' + condLabel + '</td>' +
                 '<td>' + proxHtml + '</td>' +
-                '<td>' + formatDate(s.prossima_decorrenza) + '</td>' +
                 '<td><div class="scadenza-actions">' + scadenzaF24Btn(s) + scadenzaDoneBtn(s) + '</div></td>' +
                 '</tr>';
         }).join('');

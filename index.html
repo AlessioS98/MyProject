@@ -191,7 +191,8 @@
             <div class="page-header">
                 <div>
                     <h1>Scadenze</h1>
-                    <p class="page-subtitle">Versamento Imposta di Registro 30gg collegate ai contratti</p>
+                    <p class="page-subtitle">Scadenze Versamento Imposta di Registro 30gg</p>
+                    <p class="page-subtitle">Scadenze Contratti</p>
                 </div>
             </div>
 
@@ -211,11 +212,6 @@
                 <div class="filter-group">
                     <select id="filterScadenzaFinoA" class="filter-select" onchange="renderScadenze()">
                         <option value="all">Tutte le scadenze</option>
-                    </select>
-                    <select id="filterScadenzaStato" class="filter-select" onchange="renderScadenze()">
-                        <option value="all">Tutti gli stati</option>
-                        <option value="in-attesa">In attesa</option>
-                        <option value="completata">Completata</option>
                     </select>
                 </div>
                 <div class="view-toggle">
@@ -238,12 +234,9 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Contratto</th>
-                            <th>Decorrenza</th>
-                            <th>Importo</th>
-                            <th>Stato</th>
+                            <th>Locatore</th>
+                            <th>Conduttore</th>
                             <th>Prossima Scadenza</th>
-                            <th>Prossima Decorrenza</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
