@@ -579,6 +579,14 @@ function toLocalDateStr(d) {
     return y + '-' + m + '-' + day;
 }
 
+// --- Helper: aggiunge giorni a una data 'YYYY-MM-DD' (senza problemi di fuso) ---
+function addDaysToDateStr(dateStr, days) {
+    if (!dateStr) return null;
+    var d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return toLocalDateStr(d);
+}
+
 // --- Data Loading ---
 async function loadAllData() {
     try {
@@ -2019,7 +2027,13 @@ function scadenzaF24Btn(s) {
         ' data-action="generate-f24" data-id="' + s.id + '" title="' + (isDone ? 'Scadenza già completata' : 'Genera PDF Modello F24') + '"><i class="fas fa-file-alt"></i> Modello F24</button>';
 }
 
-// Completa la scadenza salvando la data di completamento scelta dall'utente
+// Completa la scadenza salvando la data di completamento scelta dall'utente.
+// Al completamento genera automaticamente la scadenza successiva: la nuova
+// decorrenza parte dal giorno dopo la prossima_scadenza appena completata e il
+// trigger del DB ricalcola la nuova prossima_scadenza (decorrenza + 1 anno + 30 gg).
+// La generazione si ferma quando la nuova decorrenza supera il termine del
+// contratto: la data di chiusura se presente, altrimenti la data di scadenza
+// (o la data di rinnovo, se impostata).
 async function salvaCompletamentoScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
@@ -2036,8 +2050,40 @@ async function salvaCompletamentoScadenza(id) {
     }
     s.stato = 'completata';
     s.data_completamento = data;
+
+    // --- Creazione automatica della scadenza successiva ---
+    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, 1) : null;
+    var nextScad = null;
+    if (nextDeco) {
+        var c = getContrattoById(s.contratto_id);
+        // Termine di riferimento: la data di chiusura se presente, altrimenti
+        // la data di scadenza del contratto (o la data di rinnovo, se impostata).
+        var limite = c ? (c.data_chiusura || getContrattoScadenzaEffettiva(c)) : null;
+        var giaInAttesa = appData.scadenze.some(function(x) {
+            return x.contratto_id === s.contratto_id && x.stato === 'in-attesa';
+        });
+        var valida = c && !giaInAttesa && (!limite || nextDeco <= limite);
+        if (valida) {
+            var canone = getCanonePerScadenza(c.id, nextDeco);
+            var { data: insScad, error: errScad } = await db.from('scadenze').insert({
+                contratto_id: c.id,
+                data_decorrenza: nextDeco,
+                importo: canone ? (parseFloat(canone.importo) || 0) : (parseFloat(s.importo) || 0),
+                stato: 'in-attesa'
+            }).select();
+            if (errScad) {
+                console.error('Errore creazione scadenza successiva:', errScad);
+                showToast('Scadenza completata, ma errore nella creazione della prossima scadenza', 'error');
+            } else if (insScad) {
+                appData.scadenze = appData.scadenze.concat(insScad);
+                nextScad = insScad[0];
+            }
+        }
+    }
+
     closeModal();
-    showToast('Scadenza completata per il ' + formatDate(data), 'success');
+    showToast('Scadenza completata per il ' + formatDate(data) +
+        (nextScad && nextScad.prossima_scadenza ? ' · Prossima scadenza: ' + formatDate(nextScad.prossima_scadenza) : ''), 'success');
     renderScadenze();
     renderNotifications();
 }
