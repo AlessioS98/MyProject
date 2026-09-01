@@ -146,6 +146,32 @@ function getConduttoriByContratto(contrattoId) {
     }
     return rels.map(function(r) { return getPersona(r.persona_id); }).filter(Boolean);
 }
+// Persone + data di inizio (decorrenza) del legame con il contratto.
+// In fase di creazione la data viene precompilata con quella del contratto
+// (modificabile): qui restituisce il valore salvato, con fallback su quella
+// del contratto per i record creati prima delle date per singola persona.
+function getLocatoriRelsByContratto(contrattoId) {
+    var c = appData.contratti.find(function(x) { return x.id === contrattoId; });
+    var rels = appData.contratto_locatori.filter(function(r) { return r.contratto_id === contrattoId; });
+    if (rels.length === 0 && c && c.locatore_id) {
+        var p = getPersona(c.locatore_id);
+        return p ? [{ persona: p, data_decorrenza: c.data_decorrenza, data_chiusura: c.data_chiusura }] : [];
+    }
+    return rels.map(function(r) {
+        return { persona: getPersona(r.persona_id), data_decorrenza: r.data_decorrenza, data_chiusura: r.data_chiusura };
+    }).filter(function(x) { return x.persona; });
+}
+function getConduttoriRelsByContratto(contrattoId) {
+    var c = appData.contratti.find(function(x) { return x.id === contrattoId; });
+    var rels = appData.contratto_conduttori.filter(function(r) { return r.contratto_id === contrattoId; });
+    if (rels.length === 0 && c && c.conduttore_id) {
+        var p = getPersona(c.conduttore_id);
+        return p ? [{ persona: p, data_decorrenza: c.data_decorrenza, data_chiusura: c.data_chiusura }] : [];
+    }
+    return rels.map(function(r) {
+        return { persona: getPersona(r.persona_id), data_decorrenza: r.data_decorrenza, data_chiusura: r.data_chiusura };
+    }).filter(function(x) { return x.persona; });
+}
 function getPersonaDisplayLabel(p) {
     if (!p) return 'N/A';
     // Azienda: ragione_sociale impostata, nome/cognome vuoti
@@ -214,6 +240,15 @@ function dedupImmobili(list) {
 // --- Canoni Annuali helpers ---
 function getCanoniByContratto(contrattoId) {
     return appData.canoni_annuali.filter(function(ca) { return ca.contratto_id === contrattoId; });
+}
+// Etichetta di tassazione di un canone (usata nel dettaglio e nel PDF riepilogo)
+function getCanoneTaxLabel(ca) {
+    if (!ca) return '-';
+    if (ca.tassazione_cedolare_secca) return 'Cedolare Secca';
+    if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
+        return 'Imposta di Registro ' + (parseFloat(ca.percentuale) || 0) + '%' + (parseFloat(ca.valore_assoluto) > 0 ? ' + ' + formatCurrency(ca.valore_assoluto) : '');
+    }
+    return 'Ordinaria';
 }
 function getCanoneAttuale(contrattoId) {
     var today = new Date().toISOString().slice(0, 10);
@@ -332,6 +367,35 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
     container.appendChild(row);
     // Applica il toggle iniziale in base alla cedolare secca scelta
     toggleCanoneCedolare(row.querySelector('.canone-cedolare-si'));
+
+    // Inserendo la percentuale, il valore assoluto viene calcolato in automatico
+    // (percentuale applicata al canone annuo della riga). Anche la modifica
+    // dell'importo ricalcola il valore se la percentuale è già compilata.
+    var pctInput = row.querySelector('.canone-percentuale');
+    var importoInput = row.querySelector('.canone-importo');
+    if (pctInput) {
+        pctInput.addEventListener('input', function() { syncCanoneValoreAssoluto(pctInput); });
+    }
+    if (importoInput) {
+        importoInput.addEventListener('input', function() {
+            if (pctInput && parseFloat(pctInput.value) > 0) syncCanoneValoreAssoluto(pctInput);
+        });
+    }
+}
+
+// Quando si inserisce la percentuale di un canone, il valore assoluto
+// (imposta di registro) viene ricalcolato in automatico sul canone annuo.
+function syncCanoneValoreAssoluto(pctInput) {
+    if (!pctInput) return;
+    var row = pctInput.closest('.canone-row');
+    if (!row) return;
+    var importoEl = row.querySelector('.canone-importo');
+    var valAssEl = row.querySelector('.canone-valore-assoluto');
+    if (!importoEl || !valAssEl) return;
+    var pct = parseFloat(pctInput.value);
+    var importo = parseFloat(importoEl.value);
+    if (isNaN(pct) || pct <= 0 || isNaN(importo) || importo <= 0) return;
+    valAssEl.value = Math.round((pct / 100) * importo * 100) / 100;
 }
 
 // --- CF Autocomplete ---
@@ -689,6 +753,7 @@ document.addEventListener('click', function(e) {
         case 'edit-contratto': openModal('editContratto', id); break;
         case 'delete-contratto': openModal('deleteContrattoConfirm', id); break;
         case 'view-contratto': openModal('viewContratto', id); break;
+        case 'pdf-contratto': generateContrattoPdf(id); break;
 
         case 'new-inquilino': openModal('newInquilino'); break;
         case 'complete-scadenza': openModal('completaScadenza', id); break;
@@ -1089,31 +1154,26 @@ function openModal(type, id) {
         var cv = appData.contratti.find(function(x) { return x.id === id; });
         if (!cv) return;
         title.textContent = 'Dettaglio Contratto';
-        var stato = calcContrattoStato(cv);
         var scadEffCv = getContrattoScadenzaEffettiva(cv);
         var dv = daysUntil(scadEffCv);
         var dl = dv > 0 ? dv + ' giorni alla scadenza' : dv === 0 ? 'Scade oggi!' : 'Scaduto da ' + Math.abs(dv) + ' giorni';
         var dc = dv <= 30 ? 'urgent' : '';
-        var locs = getLocatoriByContratto(cv.id);
-        var conds = getConduttoriByContratto(cv.id);
+        // Mostra solo i locatori/conduttori attivi (senza data di chiusura)
+        var locRels = getLocatoriRelsByContratto(cv.id).filter(function(lr) { return !lr.data_chiusura; });
+        var condRels = getConduttoriRelsByContratto(cv.id).filter(function(cr) { return !cr.data_chiusura; });
         var imm = getImmobile(cv.immobile_id);
 
         html = '<div class="contract-details" style="margin-bottom:16px">';
         html += '<div class="contract-detail"><label>Identificativo</label><span>' + cv.identificativo + '</span></div>';
-        html += '<div class="contract-detail"><label>Stato</label><span><span class="status-badge ' + stato + '">' + getStatusLabel(stato) + '</span></span></div>';
-        var canoniCv = getCanoniByContratto(cv.id);
+        // Mostra solo i canoni in corso alla data di sistema
+        // (data_inizio <= oggi <= data_fine; date mancanti = estremi aperti)
+        var oggiCanoni = new Date().toISOString().slice(0, 10);
+        var canoniCv = getCanoniByContratto(cv.id).filter(function(ca) {
+            return (!ca.data_inizio || ca.data_inizio <= oggiCanoni) && (!ca.data_fine || ca.data_fine >= oggiCanoni);
+        });
         if (canoniCv.length > 0) {
             canoniCv.forEach(function(ca) {
-                var caTax;
-                if (ca.tassazione_cedolare_secca) {
-                    caTax = 'Cedolare Secca';
-                } else if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
-                    caTax = 'Imposta di Registro ' + (parseFloat(ca.percentuale) || 0) + '%' + (parseFloat(ca.valore_assoluto) > 0 ? ' + ' + formatCurrency(ca.valore_assoluto) : '');
-                } else {
-                    caTax = 'Ordinaria';
-                }
                 html += '<div class="contract-detail"><label>Canone ' + formatDate(ca.data_inizio) + ' → ' + formatDate(ca.data_fine) + '</label><span>' + formatCurrency(ca.importo) + '</span></div>';
-                html += '<div class="contract-detail"><label>Tassazione</label><span>' + caTax + '</span></div>';
             });
         } else {
             html += '<div class="contract-detail"><label>Canone Annuale</label><span>-</span></div>';
@@ -1129,9 +1189,10 @@ function openModal(type, id) {
         // Locatori
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:12px">';
         html += '<strong><i class="fas fa-user-tie"></i> Locatori:</strong><br>';
-        if (locs.length > 0) {
-            locs.forEach(function(loc) {
-                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(loc) + (loc.codice_fiscale ? ' <small>(CF: ' + loc.codice_fiscale + ')</small>' : '') + '</span><br>';
+        if (locRels.length > 0) {
+            locRels.forEach(function(lr) {
+                var loc = lr.persona;
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(loc) + (loc.codice_fiscale ? ' <small>(CF: ' + loc.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(lr.data_decorrenza || cv.data_decorrenza) + '</small></span><br>';
             });
         } else {
             html += 'N/A';
@@ -1141,9 +1202,10 @@ function openModal(type, id) {
         // Conduttori
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:12px">';
         html += '<strong><i class="fas fa-user"></i> Conduttori:</strong><br>';
-        if (conds.length > 0) {
-            conds.forEach(function(cond) {
-                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(cond) + (cond.codice_fiscale ? ' <small>(CF: ' + cond.codice_fiscale + ')</small>' : '') + '</span><br>';
+        if (condRels.length > 0) {
+            condRels.forEach(function(cr) {
+                var cond = cr.persona;
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(cond) + (cond.codice_fiscale ? ' <small>(CF: ' + cond.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(cr.data_decorrenza || cv.data_decorrenza) + '</small></span><br>';
             });
         } else {
             html += 'N/A';
@@ -1854,7 +1916,7 @@ function renderContrattiList(list) {
         tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div></td></tr>';
     } else {
         tbody.innerHTML = filtered.map(function(c) {
-            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="pdf-contratto" data-id="' + c.id + '" title="PDF Completo"><i class="fas fa-file-pdf"></i></button><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
         }).join('');
     }
 }
@@ -2294,6 +2356,168 @@ function generateF24Pdf(scadenzaId) {
     var nomeFile = 'F24_' + (c.identificativo || 'contratto-' + c.id).replace(/[^a-zA-Z0-9_-]+/g, '-') + (annoRif ? '_' + annoRif : '') + '.pdf';
     doc.save(nomeFile);
     showToast('PDF Modello F24 generato', 'success');
+}
+
+// --- PDF riepilogo completo contratto ---
+// Genera un PDF con tutte le informazioni del contratto: dati generali,
+// immobile, tutti i locatori e conduttori (anche con data di chiusura),
+// tutti i canoni annuali, le scadenze di pagamento e le note.
+function generateContrattoPdf(contrattoId) {
+    if (typeof jspdf === 'undefined') { showToast('Libreria PDF non disponibile, ricarica la pagina', 'error'); return; }
+    var c = getContrattoById(contrattoId);
+    if (!c) { showToast('Contratto non trovato', 'error'); return; }
+
+    var doc = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    var W = doc.internal.pageSize.getWidth();
+    var M = 42;
+    var y = 0;
+    var DARK = [15, 23, 42], GRAY = [100, 116, 139], LIGHT = [241, 245, 249];
+
+    function ensureSpace(h) { if (y + h > 800) { doc.addPage(); y = 64; } }
+
+    function sectionTitle(title) {
+        ensureSpace(46);
+        y += 12;
+        doc.setFillColor(79, 70, 229);
+        doc.rect(M, y - 11, 5, 13, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11.5);
+        doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+        doc.text(title, M + 12, y);
+        y += 8;
+    }
+
+    // Riga di campi affiancati (1 o più colonne) nello stile del Modello F24
+    function fieldRow(labels, values) {
+        ensureSpace(46);
+        var n = labels.length;
+        var gap = 14;
+        var w = (W - 2 * M - gap * (n - 1)) / n;
+        for (var i = 0; i < n; i++) {
+            var fx = M + i * (w + gap);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+            doc.text(String(labels[i]).toUpperCase(), fx, y);
+            doc.setFillColor(LIGHT[0], LIGHT[1], LIGHT[2]);
+            doc.roundedRect(fx, y + 4, w, 26, 3, 3, 'F');
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(11);
+            doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+            doc.text(String(values[i]), fx + 8, y + 21);
+        }
+        y += 42;
+    }
+
+    function field(label, value) { fieldRow([label], [value]); }
+
+    // Header
+    doc.setFillColor(DARK[0], DARK[1], DARK[2]);
+    doc.rect(0, 0, W, 96, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.text('RIEPILOGO CONTRATTO', M, 46);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(203, 213, 225);
+    doc.text('Contratto: ' + (c.identificativo || '#' + c.id), M, 66);
+    doc.text('Generato il ' + formatDate(new Date().toISOString().slice(0, 10)) + ' - Studio Santantonio', M, 82);
+    y = 120;
+
+    // Dati generali
+    sectionTitle('DATI GENERALI');
+    fieldRow(['Identificativo', 'Stato'], [c.identificativo || 'N/A', getStatusLabel(calcContrattoStato(c))]);
+    fieldRow(['Decorrenza', 'Scadenza'], [formatDate(c.data_decorrenza), formatDate(c.data_scadenza)]);
+    fieldRow(['Scadenza Rinnovo', 'Chiusura'], [c.data_scadenza_rinnovo ? formatDate(c.data_scadenza_rinnovo) : '-', c.data_chiusura ? formatDate(c.data_chiusura) : '-']);
+    var scadEffPdf = getContrattoScadenzaEffettiva(c);
+    var dlPdf = scadEffPdf ? daysUntil(scadEffPdf) : null;
+    var rimanenzaPdf = c.data_chiusura ? 'Chiuso' : (dlPdf === null ? '-' : (dlPdf > 0 ? dlPdf + ' giorni alla scadenza' : (dlPdf === 0 ? 'Scade oggi' : 'Scaduto da ' + Math.abs(dlPdf) + ' giorni')));
+    field('Rimanenza', rimanenzaPdf);
+
+    // Immobile
+    sectionTitle('IMMOBILE');
+    var immPdf = getImmobile(c.immobile_id);
+    if (immPdf) {
+        field('Indirizzo', immPdf.indirizzo + ', ' + immPdf.citta);
+        fieldRow(['Foglio', 'Particella', 'Sub'], [immPdf.foglio || '-', immPdf.particella || '-', immPdf.sub || '-']);
+        field('APE', immPdf.ape ? 'Presente' : 'Non presente');
+    } else {
+        field('Immobile', 'N/A');
+    }
+
+    // Locatori (tutti, anche cessati)
+    sectionTitle('LOCATORI');
+    var locRelsPdf = getLocatoriRelsByContratto(c.id);
+    if (locRelsPdf.length === 0) {
+        field('Locatori', 'N/A');
+    } else {
+        locRelsPdf.forEach(function(lr) {
+            var p = lr.persona;
+            field(getPersonaLabelShort(p), p.codice_fiscale ? 'CF: ' + p.codice_fiscale : 'CF: N/A');
+            fieldRow(['Data Inizio', 'Data Chiusura'], [lr.data_decorrenza ? formatDate(lr.data_decorrenza) : '-', lr.data_chiusura ? formatDate(lr.data_chiusura) : '-']);
+        });
+    }
+
+    // Conduttori (tutti, anche cessati)
+    sectionTitle('CONDUTTORI');
+    var condRelsPdf = getConduttoriRelsByContratto(c.id);
+    if (condRelsPdf.length === 0) {
+        field('Conduttori', 'N/A');
+    } else {
+        condRelsPdf.forEach(function(cr) {
+            var p = cr.persona;
+            field(getPersonaLabelShort(p), p.codice_fiscale ? 'CF: ' + p.codice_fiscale : 'CF: N/A');
+            fieldRow(['Data Inizio', 'Data Chiusura'], [cr.data_decorrenza ? formatDate(cr.data_decorrenza) : '-', cr.data_chiusura ? formatDate(cr.data_chiusura) : '-']);
+        });
+    }
+
+    // Canoni annuali (tutti)
+    sectionTitle('CANONI ANNUALI');
+    var canoniPdf = getCanoniByContratto(c.id);
+    if (canoniPdf.length === 0) {
+        field('Canone Annuale', '-');
+    } else {
+        canoniPdf.forEach(function(ca, i) {
+            field('Canone ' + (i + 1), formatCurrency(ca.importo));
+            var periodoPdf = (ca.data_inizio ? formatDate(ca.data_inizio) : '-') + ' → ' + (ca.data_fine ? formatDate(ca.data_fine) : '-');
+            fieldRow(['Periodo', 'Tassazione'], [periodoPdf, getCanoneTaxLabel(ca)]);
+            if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
+                fieldRow(['Percentuale', 'Valore Assoluto'], [(parseFloat(ca.percentuale) || 0) + '%', parseFloat(ca.valore_assoluto) > 0 ? formatCurrency(ca.valore_assoluto) : '-']);
+            }
+        });
+    }
+
+    // Scadenze di pagamento (tutte)
+    var scadenzePdf = appData.scadenze.filter(function(s) { return s.contratto_id === c.id; });
+    if (scadenzePdf.length > 0) {
+        sectionTitle('SCADENZE DI PAGAMENTO');
+        scadenzePdf.forEach(function(s) {
+            field('Scadenza ' + formatDate(s.data_decorrenza), formatCurrency(s.importo));
+            fieldRow(['Prossima Scadenza', 'Stato'], [s.prossima_scadenza ? formatDate(s.prossima_scadenza) : '-', getStatusLabel(s.stato)]);
+        });
+    }
+
+    // Note
+    sectionTitle('NOTE');
+    ensureSpace(46);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+    var noteLines = doc.splitTextToSize(c.note || 'Nessuna nota', W - 2 * M);
+    doc.text(noteLines, M, y);
+    y += noteLines.length * 14 + 8;
+
+    // Footer
+    ensureSpace(30);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+    doc.text('Documento generato automaticamente - Studio Santantonio', M, y);
+
+    var nomeFilePdf = 'Contratto_' + (c.identificativo || 'contratto-' + c.id).replace(/[^a-zA-Z0-9_-]+/g, '-') + '.pdf';
+    doc.save(nomeFilePdf);
+    showToast('PDF riepilogo contratto generato', 'success');
 }
 
 // --- Render Scadenze ---
