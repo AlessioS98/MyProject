@@ -1414,14 +1414,14 @@ function openModal(type, id) {
 
         // --- SEZIONE CONTRATTO ---
         html += '<div class="form-section-title full"><i class="fas fa-file-contract"></i> Dati Contratto</div>';
-        html += '<div class="form-group"><label>Identificativo <span class="req">*</span></label><input type="text" id="cf_identificativo" value="' + (c ? c.identificativo : '') + '" required></div>';
-        html += '<div class="form-group"><label>Data Decorrenza <span class="req">*</span></label><input type="date" id="cf_decorrenza" value="' + (c ? c.data_decorrenza : '') + '" required></div>';
-        html += '<div class="form-group"><label>Data Scadenza <span class="req">*</span></label><input type="date" id="cf_scadenza" value="' + (c ? c.data_scadenza : '') + '" required></div>';
+        html += '<div class="form-group"><label>Identificativo <span class="req">*</span></label><input type="text" id="cf_identificativo" autocomplete="off" value="' + (c ? c.identificativo : '') + '" required></div>';
+        html += '<div class="form-group"><label>Data Decorrenza <span class="req">*</span></label><input type="date" id="cf_decorrenza" autocomplete="off" value="' + (c ? c.data_decorrenza : '') + '" required></div>';
+        html += '<div class="form-group"><label>Data Scadenza <span class="req">*</span></label><input type="date" id="cf_scadenza" autocomplete="off" value="' + (c ? c.data_scadenza : '') + '" required></div>';
         // Data Scadenza Rinnovo: inseribile solo in fase di modifica del contratto
         if (type === 'editContratto') {
-            html += '<div class="form-group"><label>Data Scadenza Rinnovo</label><input type="date" id="cf_scadenza_rinnovo" title="Nuova data di scadenza dopo il rinnovo del contratto" value="' + (c ? (c.data_scadenza_rinnovo || '') : '') + '"></div>';
+            html += '<div class="form-group"><label>Data Scadenza Rinnovo</label><input type="date" id="cf_scadenza_rinnovo" autocomplete="off" title="Nuova data di scadenza dopo il rinnovo del contratto" value="' + (c ? (c.data_scadenza_rinnovo || '') : '') + '"></div>';
         }
-        html += '<div class="form-group"><label>Data Chiusura</label><input type="date" id="cf_chiusura" value="' + (c && c.data_chiusura ? c.data_chiusura : '') + '"></div><br>';
+        html += '<div class="form-group"><label>Data Chiusura</label><input type="date" id="cf_chiusura" autocomplete="off" value="' + (c && c.data_chiusura ? c.data_chiusura : '') + '"></div><br>';
         // --- SEZIONE CANONI ANNUALI ---
         html += '<div class="form-section-title full"><i class="fas fa-euro-sign"></i> Canoni Annuali</div>';
         html += '<div class="form-group full"><div id="canoniRowsContainer"></div>';
@@ -1857,6 +1857,28 @@ async function saveContratto(editId) {
     if (coverageWarn) {
         updateCanoniCoverageWarning();
         showToast(coverageWarn, 'error');
+        return;
+    }
+
+    // Obbligo di almeno un locatore e almeno un conduttore compilati
+    // (una riga vuota, senza nome/cognome/CF/ragione sociale, non conta)
+    function rowHasData(row, prefix) {
+        var els = row.querySelectorAll('.' + prefix + '-nome, .' + prefix + '-cognome, .' + prefix + '-cf, .' + prefix + '-rs');
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].value.trim() !== '') return true;
+        }
+        return false;
+    }
+    var locRowsCheck = document.querySelectorAll('#locatoriRowsContainer .locatore-row');
+    var condRowsCheck = document.querySelectorAll('#conduttoriRowsContainer .conduttore-row');
+    var hasLocatore = false, hasConduttore = false;
+    locRowsCheck.forEach(function(r) { if (rowHasData(r, 'loc')) hasLocatore = true; });
+    condRowsCheck.forEach(function(r) { if (rowHasData(r, 'cond')) hasConduttore = true; });
+    if (!hasLocatore || !hasConduttore) {
+        var missing = [];
+        if (!hasLocatore) missing.push('almeno un locatore');
+        if (!hasConduttore) missing.push('almeno un conduttore');
+        showToast('Inserisci ' + missing.join(' e ') + ' per salvare il contratto.', 'error');
         return;
     }
 
@@ -2719,7 +2741,7 @@ function generateF24Pdf(scadenzaId) {
 // --- PDF riepilogo completo contratto ---
 // Genera un PDF con tutte le informazioni del contratto: dati generali,
 // immobile, tutti i locatori e conduttori (anche con data di chiusura),
-// tutti i canoni annuali, le scadenze di pagamento e le note.
+// tutti i canoni annuali e le note.
 function generateContrattoPdf(contrattoId) {
     if (typeof jspdf === 'undefined') { showToast('Libreria PDF non disponibile, ricarica la pagina', 'error'); return; }
     var c = getContrattoById(contrattoId);
@@ -2846,16 +2868,6 @@ function generateContrattoPdf(contrattoId) {
         });
     }
 
-    // Scadenze di pagamento (tutte)
-    var scadenzePdf = appData.scadenze.filter(function(s) { return s.contratto_id === c.id; });
-    if (scadenzePdf.length > 0) {
-        sectionTitle('SCADENZE DI PAGAMENTO');
-        scadenzePdf.forEach(function(s) {
-            field('Scadenza ' + formatDate(s.data_decorrenza), formatCurrency(s.importo));
-            fieldRow(['Prossima Scadenza', 'Stato'], [s.prossima_scadenza ? formatDate(s.prossima_scadenza) : '-', getStatusLabel(s.stato)]);
-        });
-    }
-
     // Note
     sectionTitle('NOTE');
     ensureSpace(46);
@@ -2953,9 +2965,14 @@ async function renderScadenze() {
         } else {
             contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) > 0; });
         }
+        // Ordinamento: per i contratti non scaduti la lista parte dalla data
+        // odierna e va in avanti (scadenza più vicina per prima); per quelli
+        // scaduti parte dalla data odierna e va indietro (scadenza più
+        // recente per prima).
+        var sortDir = statoFiltro === 'scaduti' ? -1 : 1;
         items = contrattiFiltro
             .sort(function(a, b) {
-                return (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
+                return sortDir * (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
             })
             .map(function(c) {
                 return {
