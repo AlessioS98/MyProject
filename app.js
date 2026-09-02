@@ -2235,6 +2235,13 @@ function applyDecorrenzaFilter() {
     renderContrattiList(filtered);
 }
 
+// --- Reset filtro contratti: svuota i campi del filtro e mostra di nuovo la lista completa ---
+function resetContrattiFilter() {
+    resetFilterModal();
+    renderContratti();
+    showToast('Lista contratti ripristinata', 'success');
+}
+
 // ============================================
 // RENDERING
 // ============================================
@@ -2244,8 +2251,9 @@ async function renderContratti() {
     renderContrattiList(appData.contratti);
 }
 function renderContrattiList(list) {
+    // Ordinamento alfabetico per locatore (cognome prima del nome)
     var filtered = list.slice().sort(function(a, b) {
-        return (b.data_decorrenza || '').localeCompare(a.data_decorrenza || '');
+        return (getLocatoriCognomeNomeLabel(a.id) || '').localeCompare(getLocatoriCognomeNomeLabel(b.id) || '', 'it');
     });
 
     // Table view
@@ -2852,9 +2860,11 @@ function generateContrattoPdf(contrattoId) {
         });
     }
 
-    // Canoni annuali (tutti)
+    // Canoni annuali (tutti), ordinati per data di inizio
     sectionTitle('CANONI ANNUALI');
-    var canoniPdf = getCanoniByContratto(c.id);
+    var canoniPdf = getCanoniByContratto(c.id).slice().sort(function(a, b) {
+        return (a.data_inizio || '9999-12-31').localeCompare(b.data_inizio || '9999-12-31');
+    });
     if (canoniPdf.length === 0) {
         field('Canone Annuale', '-');
     } else {
