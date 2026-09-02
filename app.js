@@ -1078,6 +1078,8 @@ document.addEventListener('click', function(e) {
         case 'new-inquilino': openModal('newInquilino'); break;
         case 'complete-scadenza': openModal('completaScadenza', id); break;
         case 'generate-f24': generateF24Pdf(id); break;
+        case 'restore-scadenza': openModal('ripristinaScadenzaConfirm', id); break;
+        case 'confirm-restore-scadenza': ripristinaScadenza(id); break;
 
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
@@ -1750,6 +1752,23 @@ function openModal(type, id) {
         html += '<div class="form-actions full">';
         html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
         html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-immobile" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
+    } else if (type === 'ripristinaScadenzaConfirm') {
+        var rs = appData.scadenze.find(function(x) { return x.id === id; });
+        if (!rs) return;
+        var rsC = getContrattoById(rs.contratto_id);
+        title.textContent = 'Ripristina Scadenza';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--primary)">';
+        html += '<strong><i class="fas fa-undo"></i> Conferma ripristino</strong><br>';
+        html += '<span>La scadenza <strong>' + (rs.prossima_scadenza ? formatDate(rs.prossima_scadenza) : '-') + '</strong>' +
+            (rsC ? ' del contratto <strong>' + rsC.identificativo + '</strong>' : '') +
+            ' (' + formatCurrency(rs.importo) + ') tornerà tra le scadenze <strong>da pagare</strong>.</span><br>';
+        html += '<small>L\'eventuale scadenza successiva generata automaticamente verrà eliminata.</small>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-primary" data-action="confirm-restore-scadenza" data-id="' + id + '"><i class="fas fa-undo"></i> Ripristina</button>';
         html += '</div>';
 
     } else if (type === 'completaScadenza') {
@@ -2504,6 +2523,56 @@ function scadenzaF24Btn(s) {
         ' data-action="generate-f24" data-id="' + s.id + '" title="' + (isDone ? 'Scadenza già completata' : 'Genera PDF Modello F24') + '"><i class="fas fa-file-alt"></i> Modello F24</button>';
 }
 
+// --- Bottone Ripristina: riporta una scadenza archiviata tra quelle da pagare ---
+function scadenzaRestoreBtn(s) {
+    var isDone = (s.stato === 'completata' || s.stato === 'completato');
+    if (!isDone) return '';
+    return '<button class="btn btn-sm btn-outline scadenza-restore-btn"' +
+        ' data-action="restore-scadenza" data-id="' + s.id + '" title="Ripristina la scadenza tra quelle da pagare"><i class="fas fa-undo"></i> Ripristina</button>';
+}
+
+// Ripristina una scadenza completata per sbaglio: torna 'in-attesa' senza data
+// di completamento, quindi ricompare nella lista "Da pagare" per poter essere
+// pagata. Elimina anche l'eventuale scadenza successiva creata in automatico
+// al completamento, così non restano due versamenti pendenti per lo stesso
+// periodo (la sua decorrenza è la prossima_scadenza completata - 30 giorni).
+async function ripristinaScadenza(id) {
+    var s = appData.scadenze.find(function(x) { return x.id === id; });
+    if (!s) return;
+    if (s.stato !== 'completata' && s.stato !== 'completato') {
+        showToast('Questa scadenza non è archiviata', 'error');
+        return;
+    }
+
+    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, -30) : null;
+    if (nextDeco) {
+        var nexts = appData.scadenze.filter(function(x) {
+            return x.contratto_id === s.contratto_id && x.stato === 'in-attesa' && x.data_decorrenza === nextDeco;
+        });
+        if (nexts.length > 0) {
+            var nextIds = nexts.map(function(x) { return x.id; });
+            var { error: errDel } = await db.from('scadenze').delete().in('id', nextIds);
+            if (!errDel) {
+                appData.scadenze = appData.scadenze.filter(function(x) { return nextIds.indexOf(x.id) === -1; });
+            }
+        }
+    }
+
+    var { error } = await db.from('scadenze').update({ stato: 'in-attesa', data_completamento: null }).eq('id', id);
+    if (error) {
+        console.error('Errore ripristino scadenza:', error);
+        showToast('Errore ripristino scadenza', 'error');
+        return;
+    }
+    s.stato = 'in-attesa';
+    s.data_completamento = null;
+
+    closeModal();
+    renderScadenze();
+    renderNotifications();
+    showToast('Scadenza ripristinata tra quelle da pagare', 'success');
+}
+
 // Completa la scadenza salvando la data di completamento scelta dall'utente.
 // Al completamento genera automaticamente la scadenza successiva: la nuova
 // decorrenza viene fissata 30 giorni prima della prossima_scadenza appena
@@ -3105,16 +3174,20 @@ async function renderScadenze() {
                     completata: isCompletata,
                     dataCompletamento: s.data_completamento,
                     canoneInfo: canoneInfo,
-                    actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s)
+                    actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s),
+                    restoreBtn: scadenzaRestoreBtn(s)
                 };
             });
     }
 
     // La colonna Azioni (Completa / F24) esiste solo per le scadenze di
-    // pagamento non archiviate: nella lista "Archiviate" non serve.
+    // pagamento non archiviate; nella lista "Archiviate" c'è solo la colonna
+    // Ripristina per riportare tra quelle da pagare una scadenza completata
+    // per errore.
     var hasAzioni = tipo === 'pagamenti' && statoFiltro !== 'archiviate';
+    var hasRestore = tipo === 'pagamenti' && statoFiltro === 'archiviate';
     var azioniTh = document.getElementById('scadenzeAzioniTh');
-    if (azioniTh) azioniTh.style.display = hasAzioni ? '' : 'none';
+    if (azioniTh) azioniTh.style.display = (hasAzioni || hasRestore) ? '' : 'none';
 
     function badgeHtml(it) {
         var proxHtml = formatDate(it.scadenza);
@@ -3131,7 +3204,7 @@ async function renderScadenze() {
 
     var tbody = document.getElementById('scadenzeTableBody');
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="' + (hasAzioni ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + ((hasAzioni || hasRestore) ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         tbody.innerHTML = items.map(function(it) {
             var rowCls = it.urg ? ' alert-' + it.urg.type : (it.completata ? ' alert-completata' : '');
@@ -3140,6 +3213,7 @@ async function renderScadenze() {
                 '<td>' + it.condLabel + '</td>' +
                 '<td>' + badgeHtml(it) + '</td>' +
                 (hasAzioni ? '<td><div class="scadenza-actions">' + it.actions + '</div></td>' : '') +
+                (hasRestore ? '<td><div class="scadenza-actions">' + (it.restoreBtn || '') + '</div></td>' : '') +
                 '</tr>';
         }).join('');
     }
