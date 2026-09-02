@@ -3090,7 +3090,7 @@ async function renderScadenze() {
     if (statoSel) {
         var optStato = tipo === 'pagamenti'
             ? [{ v: 'tutti', l: 'Da pagare' }, { v: 'archiviate', l: 'Archiviate' }]
-            : [{ v: 'non-scaduti', l: 'Non scaduti' }, { v: 'scaduti', l: 'Scaduti' }];
+            : [{ v: 'non-scaduti', l: 'Non scaduti' }, { v: 'scaduti', l: 'Scaduti/Chiusi' }];
         statoSel.innerHTML = optStato.map(function(o) { return '<option value="' + o.v + '">' + o.l + '</option>'; }).join('');
         statoSel.value = optStato.some(function(o) { return o.v === statoFiltro; }) ? statoFiltro : optStato[0].v;
         statoFiltro = statoSel.value;
@@ -3100,11 +3100,17 @@ async function renderScadenze() {
     // per data di scadenza: la più vicina per prima (le date mancanti in fondo).
     var items = [];
     if (tipo === 'contratti') {
-        var contrattiFiltro = appData.contratti.filter(function(c) { return !c.data_chiusura && getContrattoScadenzaEffettiva(c); });
+        var contrattiFiltro = appData.contratti.filter(function(c) { return getContrattoScadenzaEffettiva(c); });
         if (statoFiltro === 'scaduti') {
-            contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) <= 0; });
+            // Scaduti = scadenza effettiva passata oppure contratto chiuso
+            // (con data di chiusura): i chiusi compaiono solo qui.
+            contrattiFiltro = contrattiFiltro.filter(function(c) {
+                return c.data_chiusura || daysUntil(getContrattoScadenzaEffettiva(c)) <= 0;
+            });
         } else {
-            contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) > 0; });
+            contrattiFiltro = contrattiFiltro.filter(function(c) {
+                return !c.data_chiusura && daysUntil(getContrattoScadenzaEffettiva(c)) > 0;
+            });
         }
         // Ordinamento alfabetico per locatore (come nella lista contratti);
         // a parità di locatore si ordina per scadenza effettiva.
