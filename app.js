@@ -1546,9 +1546,10 @@ function openModal(type, id) {
         var dv = daysUntil(scadEffCv);
         var dl = dv > 0 ? dv + ' giorni alla scadenza' : dv === 0 ? 'Scade oggi!' : 'Scaduto da ' + Math.abs(dv) + ' giorni';
         var dc = dv <= 30 ? 'urgent' : '';
-        // Mostra solo i locatori/conduttori attivi (senza data di chiusura)
-        var locRels = getLocatoriRelsByContratto(cv.id).filter(function(lr) { return !lr.data_chiusura; });
-        var condRels = getConduttoriRelsByContratto(cv.id).filter(function(cr) { return !cr.data_chiusura; });
+        // Mostra tutti i locatori/conduttori del contratto (la data di
+        // chiusura del legame, se presente, viene indicata accanto al nome)
+        var locRels = getLocatoriRelsByContratto(cv.id);
+        var condRels = getConduttoriRelsByContratto(cv.id);
         var imm = getImmobile(cv.immobile_id);
 
         html = '<div class="contract-details" style="margin-bottom:16px">';
@@ -1580,7 +1581,7 @@ function openModal(type, id) {
         if (locRels.length > 0) {
             locRels.forEach(function(lr) {
                 var loc = lr.persona;
-                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(loc) + (loc.codice_fiscale ? ' <small>(CF: ' + loc.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(lr.data_decorrenza || cv.data_decorrenza) + '</small></span><br>';
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(loc) + (loc.codice_fiscale ? ' <small>(CF: ' + loc.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(lr.data_decorrenza || cv.data_decorrenza) + (lr.data_chiusura ? ' · Data Chiusura: ' + formatDate(lr.data_chiusura) : '') + '</small></span><br>';
             });
         } else {
             html += 'N/A';
@@ -1593,7 +1594,7 @@ function openModal(type, id) {
         if (condRels.length > 0) {
             condRels.forEach(function(cr) {
                 var cond = cr.persona;
-                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(cond) + (cond.codice_fiscale ? ' <small>(CF: ' + cond.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(cr.data_decorrenza || cv.data_decorrenza) + '</small></span><br>';
+                html += '<span style="display:inline-block;margin:4px 0">' + getPersonaLabelShort(cond) + (cond.codice_fiscale ? ' <small>(CF: ' + cond.codice_fiscale + ')</small>' : '') + ' <small style="color:var(--text-muted)">— Data Inizio: ' + formatDate(cr.data_decorrenza || cv.data_decorrenza) + (cr.data_chiusura ? ' · Data Chiusura: ' + formatDate(cr.data_chiusura) : '') + '</small></span><br>';
             });
         } else {
             html += 'N/A';
