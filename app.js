@@ -352,6 +352,43 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
     }
 }
 
+// --- Ricalcolo delle scadenze dopo una modifica al contratto ---
+// Se l'utente modifica qualcosa che intacca le scadenze (decorrenza, scadenza,
+// rinnovo, chiusura, canoni, tassazione), le scadenze in attesa che non sono
+// più valide vengono eliminate e gli importi disallineati vengono corretti:
+// - canone del periodo a cedolare secca: nessun versamento da effettuare;
+// - data della scadenza oltre il termine del contratto (chiusura se presente,
+//   altrimenti scadenza o scadenza del rinnovo): non ci sono più versamenti;
+// - importo diverso da quello del canone che copre la decorrenza: allineato.
+// Le scadenze completate NON vengono toccate (rappresentano versamenti
+// effettivamente effettuati). Le scadenze mancanti vengono poi create da
+// syncScadenzePerCanoni, che va chiamata DOPO questa funzione.
+async function ricalcolaScadenzeContratto(contrattoId) {
+    var c = getContrattoById(contrattoId);
+    if (!c) return;
+    var limite = c.data_chiusura || getContrattoScadenzaEffettiva(c);
+    var scadenzeContratto = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
+    for (var i = 0; i < scadenzeContratto.length; i++) {
+        var s = scadenzeContratto[i];
+        if (s.stato === 'completata' || s.stato === 'completato') continue;
+        // Canone del periodo della scadenza (nessun fallback: senza un canone
+        // che copre la decorrenza l'importo resta invariato).
+        var canone = getCanoneCheCopre(contrattoId, s.data_decorrenza);
+        var importoOk = !canone || parseFloat(s.importo) === parseFloat(canone.importo || 0);
+        var daEliminare = (canone && canone.tassazione_cedolare_secca) ||
+                          (limite && s.prossima_scadenza && s.prossima_scadenza > limite) ||
+                          !importoOk;
+        if (daEliminare) {
+            var { error } = await db.from('scadenze').delete().eq('id', s.id);
+            if (error) {
+                console.error('Errore eliminazione scadenza non valida:', error);
+            } else {
+                appData.scadenze = appData.scadenze.filter(function(x) { return x.id !== s.id; });
+            }
+        }
+    }
+}
+
 // --- Auto-completamento scadenze passate ---
 // Le scadenze con prossima_scadenza prima della data odierna vengono marcate
 // automaticamente come completate, così la sezione Scadenze mostra solo le
@@ -1947,8 +1984,11 @@ async function saveContratto(editId) {
     // --- Creazione scadenze di pagamento per i canoni ---
     // Una scadenza per ogni canone senza cedolare secca (prima il canone 1,
     // poi il canone 2, ...): la decorrenza è la data di inizio del canone e il
-    // trigger del DB calcola prossima_scadenza. In modifica le scadenze
-    // mancanti vengono aggiunte senza duplicare quelle già presenti.
+    // trigger del DB calcola prossima_scadenza. In modifica le scadenze non
+    // più valide (cedolare, oltre il termine del contratto, importo cambiato)
+    // vengono prima ricalcolate/eliminate, poi quelle mancanti vengono
+    // aggiunte senza duplicare quelle già presenti.
+    if (editId) await ricalcolaScadenzeContratto(targetId);
     await syncScadenzePerCanoni(targetId, newCanoni, contrattoData.data_decorrenza);
     // Le scadenze appena create con data nel passato (es. contratto vecchio)
     // vengono subito marcate come completate.
