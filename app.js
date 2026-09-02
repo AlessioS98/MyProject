@@ -3000,10 +3000,10 @@ function generateContrattoPdf(contrattoId) {
     if (canoniPdf.length === 0) {
         field('Canone Annuale', '-');
     } else {
-        canoniPdf.forEach(function(ca, i) {
-            field('Canone ' + (i + 1), formatCurrency(ca.importo));
+        canoniPdf.forEach(function(ca) {
             var periodoPdf = (ca.data_inizio ? formatDate(ca.data_inizio) : '-') + ' → ' + (ca.data_fine ? formatDate(ca.data_fine) : '-');
-            fieldRow(['Periodo', 'Tassazione'], [periodoPdf, getCanoneTaxLabel(ca)]);
+            field('Canone', periodoPdf);
+            fieldRow(['Importo', 'Tassazione'], [formatCurrency(ca.importo), getCanoneTaxLabel(ca)]);
             if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
                 fieldRow(['Percentuale', 'Valore Assoluto'], [(parseFloat(ca.percentuale) || 0) + '%', parseFloat(ca.valore_assoluto) > 0 ? formatCurrency(ca.valore_assoluto) : '-']);
             }
