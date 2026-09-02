@@ -2488,6 +2488,18 @@ function isScadenzaCedolare(s) {
     return false;
 }
 
+// Una scadenza che va oltre il termine del contratto non deve essere elencata:
+// il termine è la data di chiusura se presente, altrimenti la data di scadenza
+// del contratto (o la data di scadenza del rinnovo, se impostata). Es. scadenza
+// 14/02/28 di un contratto scaduto il 30/09/27: non ci sono più versamenti da
+// effettuare e la scadenza non compare in lista.
+function isScadenzaOltreTermine(s) {
+    var c = getContrattoById(s.contratto_id);
+    if (!c || !s.prossima_scadenza) return false;
+    var limite = c.data_chiusura || getContrattoScadenzaEffettiva(c);
+    return !!limite && s.prossima_scadenza > limite;
+}
+
 function getPersonaF24Nome(p) {
     if (!p) return 'N/A';
     if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
@@ -2845,14 +2857,14 @@ async function renderScadenze() {
 
     // Stats: scadenze da pagare, scadute e completate; contratti non scaduti e scaduti.
     // Le scadenze dei canoni con cedolare secca non vengono contate.
-    var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s); });
+    var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
     document.getElementById('statScadenzeInAttesa').textContent = inAttesa.length;
 
     var elScadute = document.getElementById('statScadenzeScadute');
     var elCompletate = document.getElementById('statScadenzeCompletate');
     if (elScadute) {
         elScadute.textContent = appData.scadenze.filter(function(s) {
-            return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
+            return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
         }).length;
     }
     if (elCompletate) {
@@ -2917,15 +2929,18 @@ async function renderScadenze() {
     } else {
         var scadenzeFiltro = appData.scadenze.slice();
         // Le scadenze dei canoni con cedolare secca non vengono mai listate
+        // Le scadenze oltre il termine del contratto (chiusura, scadenza o
+        // scadenza del rinnovo) non vengono mai listate: non ci sono più
+        // versamenti da effettuare.
         if (statoFiltro === 'archiviate') {
             // Archiviate = scadute (in attesa con data nel passato) + completate
             scadenzeFiltro = scadenzeFiltro.filter(function(s) {
                 if (isScadenzaCedolare(s)) return false;
                 if (s.stato === 'completata' || s.stato === 'completato') return true;
-                return s.stato === 'in-attesa' && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
+                return s.stato === 'in-attesa' && !isScadenzaOltreTermine(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
             });
         } else {
-            scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s); });
+            scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
         }
         items = scadenzeFiltro
             .sort(function(a, b) {
