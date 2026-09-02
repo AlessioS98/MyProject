@@ -96,11 +96,13 @@ ALTER TABLE scadenze DROP COLUMN IF EXISTS prossima_decorrenza;
 
 -- Calcolo automatico:
 --   prossima_scadenza    = data_decorrenza + 1 anno + 30 giorni
--- La PRIMA scadenza del contratto usa come decorrenza la data di inizio del
--- canone (o la decorrenza del contratto): esce quindi a 1 anno + 30 gg.
--- Per le scadenze successive l'app imposta data_decorrenza = prossima_scadenza
--- precedente - 30 giorni, così questo trigger produce esattamente +1 anno
--- (es. decorrenza 05/06/23 -> 05/07/24 -> 05/07/25 -> 05/07/26...).
+-- L'app crea una scadenza per OGNI annualità di ogni canone non a cedolare
+-- secca: la data_decorrenza della scadenza è l'inizio dell'annualità (data
+-- inizio del canone, poi di anno in anno) e questo trigger produce la
+-- prossima_scadenza a +1 anno +30 gg (es. canone 12/05/24 -> 11/05/26:
+-- scadenze 11/06/25 e 11/06/26). Al completamento manuale di una scadenza
+-- l'app può comunque creare la successiva con
+-- data_decorrenza = prossima_scadenza - 30 giorni.
 CREATE OR REPLACE FUNCTION calc_scadenze_dates()
 RETURNS trigger AS $$
 BEGIN
