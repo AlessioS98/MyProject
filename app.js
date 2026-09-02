@@ -1158,10 +1158,13 @@ function closeFilterModal() {
 }
 
 // --- Filter Autocomplete ---
-function setupFilterAutocomplete(inputEl, getValues, onPick) {
+function setupFilterAutocomplete(inputEl, getValues, onPick, opts) {
     // Disabilita i suggerimenti nativi del browser (es. Firefox) che si
     // sovrappongono a quelli del programma.
     inputEl.setAttribute('autocomplete', 'off');
+    // Ancoraggio corretto della lista suggerimenti sotto il campo
+    inputEl.parentNode.style.position = 'relative';
+    opts = opts || {};
     // Idempotent binding: remove a previously attached handler and the old
     // suggestions container so reopening the modal never stacks listeners.
     if (inputEl.__filterHandler) inputEl.removeEventListener('input', inputEl.__filterHandler);
@@ -1197,11 +1200,15 @@ function setupFilterAutocomplete(inputEl, getValues, onPick) {
         var matches = [];
         items.forEach(function(item) {
             var label = toLabel(item);
-            var upper = label.toUpperCase();
-            // Dedupe by the displayed value so identical texts appear once.
-            if (label.length > 0 && upper.indexOf(val) === 0 && !seen[upper]) {
-                seen[upper] = true;
-                matches.push(item);
+            // Dedupe by the displayed value (o da una chiave personalizzata
+            // come l'id del record) così ogni anagrafica/immobile diverso
+            // compare anche se ha lo stesso testo di un altro.
+            if (label.length > 0 && label.toUpperCase().indexOf(val) === 0) {
+                var key = opts.dedupeKey ? opts.dedupeKey(item) : label.toUpperCase();
+                if (!seen[key]) {
+                    seen[key] = true;
+                    matches.push(item);
+                }
             }
         });
         if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
@@ -1239,35 +1246,90 @@ function setupFilterInputs() {
     var immobili = appData.immobili;
     var contratti = appData.contratti;
 
-    // Person field factories (used for both locatore and conduttore)
-    function nomi()     { return persone.map(function(p) { return { label: p.nome }; }); }
-    function cognomi()  { return persone.map(function(p) { return { label: p.cognome }; }); }
-    function cfList()   { return persone.map(function(p) { return p.codice_fiscale ? { label: p.codice_fiscale, sub: getPersonaLabelShort(p) } : null; }).filter(Boolean); }
-    function rsList()   { return persone.filter(function(p) { return p.ragione_sociale; }).map(function(p) { return { label: p.ragione_sociale }; }); }
+    // Suggerimenti "a blocco" come nella sezione Immobile del form contratto:
+    // digitando in un campo compaiono TUTTE le anagrafiche/immobili che
+    // corrispondono a quel campo; selezionandone una si compilano tutti i
+    // campi della sezione.
+
+    // --- Persone (Locatore / Conduttore) ---
+    // Ogni suggerimento è una persona: etichetta = valore del campo digitato,
+    // sottotitolo = nome completo + codice fiscale.
+    function personeSugg(fieldKey) {
+        return persone.map(function(p) {
+            var v = p[fieldKey];
+            if (v == null || String(v).trim() === '') return null;
+            var label = String(v).trim();
+            var parts = [];
+            var full = getPersonaLabelShort(p);
+            if (full && full !== label) parts.push(full);
+            if (p.codice_fiscale) parts.push('CF: ' + p.codice_fiscale);
+            return { label: label, sub: parts.join(' · '), data: p };
+        }).filter(Boolean);
+    }
+    function setupPersonFilter(inputId, fieldKey, onPick) {
+        setupFilterAutocomplete(document.getElementById(inputId), function() { return personeSugg(fieldKey); }, onPick, {
+            dedupeKey: function(item) { return item.data.id; }
+        });
+    }
+    function fillLocatoreFilter(p) {
+        document.getElementById('ffLocNome').value = p.nome || '';
+        document.getElementById('ffLocCognome').value = p.cognome || '';
+        document.getElementById('ffLocCF').value = p.codice_fiscale || '';
+        document.getElementById('ffLocRS').value = p.ragione_sociale || '';
+    }
+    function fillConduttoreFilter(p) {
+        document.getElementById('ffConNome').value = p.nome || '';
+        document.getElementById('ffConCognome').value = p.cognome || '';
+        document.getElementById('ffConCF').value = p.codice_fiscale || '';
+        document.getElementById('ffConRS').value = p.ragione_sociale || '';
+    }
 
     // Locatore
-    setupFilterAutocomplete(document.getElementById('ffLocNome'), nomi, null);
-    setupFilterAutocomplete(document.getElementById('ffLocCognome'), cognomi, null);
-    setupFilterAutocomplete(document.getElementById('ffLocCF'), cfList, null);
-    setupFilterAutocomplete(document.getElementById('ffLocRS'), rsList, null);
+    setupPersonFilter('ffLocNome', 'nome', fillLocatoreFilter);
+    setupPersonFilter('ffLocCognome', 'cognome', fillLocatoreFilter);
+    setupPersonFilter('ffLocCF', 'codice_fiscale', fillLocatoreFilter);
+    setupPersonFilter('ffLocRS', 'ragione_sociale', fillLocatoreFilter);
 
     // Conduttore
-    setupFilterAutocomplete(document.getElementById('ffConNome'), nomi, null);
-    setupFilterAutocomplete(document.getElementById('ffConCognome'), cognomi, null);
-    setupFilterAutocomplete(document.getElementById('ffConCF'), cfList, null);
-    setupFilterAutocomplete(document.getElementById('ffConRS'), rsList, null);
+    setupPersonFilter('ffConNome', 'nome', fillConduttoreFilter);
+    setupPersonFilter('ffConCognome', 'cognome', fillConduttoreFilter);
+    setupPersonFilter('ffConCF', 'codice_fiscale', fillConduttoreFilter);
+    setupPersonFilter('ffConRS', 'ragione_sociale', fillConduttoreFilter);
 
-    // Immobile
-    setupFilterAutocomplete(document.getElementById('ffIndirizzo'),
-        function() { return immobili.map(function(i) { return { label: i.indirizzo, sub: i.citta }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffCitta'),
-        function() { return immobili.map(function(i) { return { label: i.citta }; }); }, null);
-    setupFilterAutocomplete(document.getElementById('ffFoglio'),
-        function() { return immobili.map(function(i) { return i.foglio ? { label: i.foglio, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffParticella'),
-        function() { return immobili.map(function(i) { return i.particella ? { label: i.particella, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
-    setupFilterAutocomplete(document.getElementById('ffSub'),
-        function() { return immobili.map(function(i) { return i.sub ? { label: i.sub, sub: i.indirizzo + ', ' + i.citta } : null; }).filter(Boolean); }, null);
+    // --- Immobile ---
+    // Ogni suggerimento è un immobile: etichetta = valore del campo digitato,
+    // sottotitolo = indirizzo completo + dati catastali; selezionandolo si
+    // compila l'intero blocco immobile.
+    function immobileSugg(fieldKey) {
+        return immobili.map(function(i) {
+            var v = i[fieldKey];
+            if (v == null || String(v).trim() === '') return null;
+            var cad = [i.foglio ? ('Fg.' + i.foglio) : '', i.particella ? ('Part.' + i.particella) : '', i.sub ? ('Sub ' + i.sub) : ''].filter(Boolean).join(' - ');
+            var ind = i.indirizzo ? i.indirizzo : '';
+            var cit = i.citta ? i.citta : '';
+            var sub = ind + (ind && cit ? ', ' : '') + cit;
+            if (sub && cad) sub += ' · ' + cad;
+            if (!sub) sub = cad;
+            return { label: String(v).trim(), sub: sub, data: i };
+        }).filter(Boolean);
+    }
+    function setupImmobileFilter(inputId, fieldKey) {
+        setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, fillImmobileFilter, {
+            dedupeKey: function(item) { return item.data.id; }
+        });
+    }
+    function fillImmobileFilter(i) {
+        document.getElementById('ffIndirizzo').value = i.indirizzo || '';
+        document.getElementById('ffCitta').value = i.citta || '';
+        document.getElementById('ffFoglio').value = i.foglio || '';
+        document.getElementById('ffParticella').value = i.particella || '';
+        document.getElementById('ffSub').value = i.sub || '';
+    }
+    setupImmobileFilter('ffIndirizzo', 'indirizzo');
+    setupImmobileFilter('ffCitta', 'citta');
+    setupImmobileFilter('ffFoglio', 'foglio');
+    setupImmobileFilter('ffParticella', 'particella');
+    setupImmobileFilter('ffSub', 'sub');
 
     // Identificativo
     setupFilterAutocomplete(document.getElementById('ffIdentificativo'),
@@ -2975,14 +3037,15 @@ async function renderScadenze() {
         } else {
             contrattiFiltro = contrattiFiltro.filter(function(c) { return daysUntil(getContrattoScadenzaEffettiva(c)) > 0; });
         }
-        // Ordinamento: per i contratti non scaduti la lista parte dalla data
-        // odierna e va in avanti (scadenza più vicina per prima); per quelli
-        // scaduti parte dalla data odierna e va indietro (scadenza più
-        // recente per prima).
-        var sortDir = statoFiltro === 'scaduti' ? -1 : 1;
+        // Ordinamento alfabetico per locatore (come nella lista contratti);
+        // a parità di locatore si ordina per scadenza effettiva.
         items = contrattiFiltro
             .sort(function(a, b) {
-                return sortDir * (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
+                var la = getLocatoriCognomeNomeLabel(a.id);
+                var lb = getLocatoriCognomeNomeLabel(b.id);
+                var cmp = la.localeCompare(lb, 'it');
+                if (cmp !== 0) return cmp;
+                return (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
             })
             .map(function(c) {
                 return {
@@ -3009,8 +3072,14 @@ async function renderScadenze() {
         } else {
             scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
         }
+        // Ordinamento alfabetico per locatore (come nella lista contratti);
+        // a parità di locatore si ordina per prossima scadenza.
         items = scadenzeFiltro
             .sort(function(a, b) {
+                var la = getContrattoById(a.contratto_id) ? getLocatoriCognomeNomeLabel(a.contratto_id) : 'N/A';
+                var lb = getContrattoById(b.contratto_id) ? getLocatoriCognomeNomeLabel(b.contratto_id) : 'N/A';
+                var cmp = la.localeCompare(lb, 'it');
+                if (cmp !== 0) return cmp;
                 return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
             })
             .map(function(s) {
@@ -3041,8 +3110,9 @@ async function renderScadenze() {
             });
     }
 
-    // La colonna Azioni (Completa / F24) esiste solo per le scadenze di pagamento
-    var hasAzioni = tipo === 'pagamenti';
+    // La colonna Azioni (Completa / F24) esiste solo per le scadenze di
+    // pagamento non archiviate: nella lista "Archiviate" non serve.
+    var hasAzioni = tipo === 'pagamenti' && statoFiltro !== 'archiviate';
     var azioniTh = document.getElementById('scadenzeAzioniTh');
     if (azioniTh) azioniTh.style.display = hasAzioni ? '' : 'none';
 
