@@ -842,7 +842,13 @@ function syncPersonaDateFields() {
 // --- Toggle globale maiuscolo/minuscolo per il form contratto ---
 // Un solo pulsante accanto al titolo del modale: premuto scrive tutti i campi
 // di testo del contratto in MAIUSCOLO, premuto di nuovo in minuscolo.
+// Preferenza salvata: la modalità maiuscolo/minuscolo scelta con il pulsante
+// viene ricordata tra un'apertura del form e l'altra (e tra le sessioni).
 var contrattoCaseMode = 'lower';
+try {
+    var savedCaseMode = localStorage.getItem('contrattoCaseMode');
+    if (savedCaseMode === 'upper' || savedCaseMode === 'lower') contrattoCaseMode = savedCaseMode;
+} catch (e) {}
 
 function setupContrattoCaseFields(container) {
     if (!container) return;
@@ -870,6 +876,7 @@ function applyContrattoCase() {
 
 function toggleContrattoCase() {
     contrattoCaseMode = contrattoCaseMode === 'upper' ? 'lower' : 'upper';
+    try { localStorage.setItem('contrattoCaseMode', contrattoCaseMode); } catch (e) {}
     updateCaseToggleBtn();
     applyContrattoCase();
 }
@@ -1633,7 +1640,6 @@ function openModal(type, id) {
     var isContrattoForm = !!document.getElementById('contrattoForm');
     if (caseBtn) caseBtn.hidden = !isContrattoForm;
     if (isContrattoForm) {
-        contrattoCaseMode = 'lower';
         setupContrattoCaseFields(body);
         updateCaseToggleBtn();
     }
@@ -1677,6 +1683,9 @@ function openModal(type, id) {
         if (decoInput) decoInput.addEventListener('input', syncPersonaDateFields);
         if (chiusInput) chiusInput.addEventListener('input', syncPersonaDateFields);
         syncPersonaDateFields();
+        // Applica la modalità salvata (maiuscolo/minuscolo) anche ai valori
+        // già presenti nel form, così la preferenza vale a ogni apertura
+        applyContrattoCase();
         // Avviso quando i canoni non coprono l'intero periodo del contratto
         // (fino alla scadenza o, se presente, alla scadenza rinnovo)
         var scadInput = document.getElementById('cf_scadenza');
