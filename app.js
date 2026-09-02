@@ -2671,6 +2671,21 @@ function getCanoneCheCopre(contrattoId, data) {
     }) || null;
 }
 
+// Canone di riferimento di una scadenza di pagamento: il canone il cui
+// periodo contiene la DATA della scadenza (prossima_scadenza), così il
+// riferimento mostrato sotto la scadenza e nel Modello F24 corrisponde
+// sempre al periodo in cui la scadenza ricade. Solo se nessun canone copre
+// quella data (es. scadenza a cavallo della fine dell'ultimo canone) si usa
+// il canone che copre la decorrenza dell'annualità, infine il fallback
+// storico (canone attuale / ultimo canone).
+function getCanoneRiferimentoScadenza(s) {
+    var c = getContrattoById(s.contratto_id);
+    if (!c) return null;
+    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza);
+    if (!canone) canone = getCanoneCheCopre(c.id, s.data_decorrenza);
+    return canone || getCanonePerScadenza(c.id, s.data_decorrenza);
+}
+
 // Una scadenza di pagamento non compare nelle liste quando non ci sono
 // versamenti da effettuare:
 // - il canone del periodo della scadenza (data_decorrenza) è a cedolare
@@ -2732,7 +2747,8 @@ function generateF24Pdf(scadenzaId) {
     // Nel Modello F24 vanno elencati solo locatori/conduttori ancora attivi (senza data di chiusura)
     var locs = getLocatoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'loc'); });
     var conds = getConduttoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'cond'); });
-    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+    // Canone di riferimento: quello il cui periodo contiene la data della scadenza
+    var canone = getCanoneRiferimentoScadenza(s);
 
     // Importo: se il canone ha una percentuale, = percentuale sul canone annuo
     var percentuale = canone ? (parseFloat(canone.percentuale) || 0) : 0;
@@ -3163,7 +3179,8 @@ async function renderScadenze() {
                 // Riferimento al canone: numero, periodo e importo della scadenza
                 var canoneInfo = null;
                 if (c) {
-                    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
+                    // Riferimento al canone il cui periodo contiene la data della scadenza
+                    var canone = getCanoneRiferimentoScadenza(s);
                     if (canone) {
                         var canoniC = getCanoniByContratto(c.id);
                         var idx = canoniC.indexOf(canone);
