@@ -1321,6 +1321,11 @@ function setupFilterAutocomplete(inputEl, getValues, onPick, opts) {
 function openFilterModal() {
     var overlay = document.getElementById('filterModalOverlay');
     overlay.classList.add('active');
+    // La finestrella si apre sempre dall'inizio (scroll in alto)
+    var fm = overlay.querySelector('.filter-modal');
+    if (fm) fm.scrollTop = 0;
+    var fmb = overlay.querySelector('.filter-modal-body');
+    if (fmb) fmb.scrollTop = 0;
     setupFilterInputs();
 }
 
@@ -1873,6 +1878,11 @@ function openModal(type, id) {
 
     body.innerHTML = html;
     overlay.classList.add('show');
+    // La finestrella si apre sempre dall'inizio: azzera lo scroll interno
+    // (modal-body), così non riparte dal punto in cui si era arrivati
+    // nell'ultima apertura del form.
+    modal.scrollTop = 0;
+    body.scrollTop = 0;
 
     // Pulsante maiuscolo/minuscolo: visibile solo nel form contratto,
     // accanto al titolo del modale
