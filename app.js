@@ -3052,7 +3052,10 @@ function generateContrattoPdf(contrattoId) {
     } else {
         locRelsPdf.forEach(function(lr) {
             var p = lr.persona;
-            field(getPersonaLabelShort(p), p.codice_fiscale ? 'CF: ' + p.codice_fiscale : 'CF: N/A');
+            // Nome e cognome (o ragione sociale) in un riquadro azzurrino,
+            // come il codice fiscale
+            field(getPersonaF24TipoLabel(p), getPersonaLabelShort(p));
+            field('Codice Fiscale', p.codice_fiscale || 'N/A');
             fieldRow(['Data Inizio', 'Data Chiusura'], [lr.data_decorrenza ? formatDate(lr.data_decorrenza) : '-', lr.data_chiusura ? formatDate(lr.data_chiusura) : '-']);
         });
     }
@@ -3065,7 +3068,10 @@ function generateContrattoPdf(contrattoId) {
     } else {
         condRelsPdf.forEach(function(cr) {
             var p = cr.persona;
-            field(getPersonaLabelShort(p), p.codice_fiscale ? 'CF: ' + p.codice_fiscale : 'CF: N/A');
+            // Nome e cognome (o ragione sociale) in un riquadro azzurrino,
+            // come il codice fiscale
+            field(getPersonaF24TipoLabel(p), getPersonaLabelShort(p));
+            field('Codice Fiscale', p.codice_fiscale || 'N/A');
             fieldRow(['Data Inizio', 'Data Chiusura'], [cr.data_decorrenza ? formatDate(cr.data_decorrenza) : '-', cr.data_chiusura ? formatDate(cr.data_chiusura) : '-']);
         });
     }
