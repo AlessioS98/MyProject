@@ -228,6 +228,15 @@ function getPersonaLabelShort(p) {
     if (p.ragione_sociale) label += ' (' + p.ragione_sociale + ')';
     return label.trim();
 }
+// Versione con il COGNOME prima del NOME (usata nel PDF riepilogo contratto,
+// in coerenza con l'etichetta "Cognome / Nome" dei campi)
+function getPersonaLabelCognomeNome(p) {
+    if (!p) return 'N/A';
+    if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
+    var label = (p.cognome || '') + ' ' + (p.nome || '');
+    if (p.ragione_sociale) label += ' (' + p.ragione_sociale + ')';
+    return label.trim();
+}
 
 // --- Dedup anagrafiche: le stesse persone/immobili non vanno ripetute nelle liste ---
 function dedupPersone(list) {
@@ -756,6 +765,13 @@ function setupCfAutocomplete(inputEl, rowEl) {
                 matches.push(p);
             }
         });
+        // Suggerimenti in ordine alfabetico per il NOME mostrato sotto il CF
+        // (cognome + nome per le persone fisiche, ragione sociale per le aziende)
+        matches.sort(function(a, b) {
+            var la = a.nome ? ((a.cognome || '') + ' ' + (a.nome || '')) : (a.ragione_sociale || '');
+            var lb = b.nome ? ((b.cognome || '') + ' ' + (b.nome || '')) : (b.ragione_sociale || '');
+            return la.localeCompare(lb, 'it', { sensitivity: 'base' });
+        });
         if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
         suggestionsEl.innerHTML = matches.map(function(p, i) {
             var label = p.nome ? (p.cognome + ' ' + p.nome) : (p.ragione_sociale || '-');
@@ -798,6 +814,16 @@ function setupCfAutocomplete(inputEl, rowEl) {
     });
 }
 
+// --- Ordinamento indirizzi ---
+// I suggerimenti degli indirizzi vengono ordinati in base al nome della
+// strada, ignorando il tipo iniziale (Via, Piazza, Corso, ...): così
+// "Via Torino 12" e "Piazza Maggiore 5" compaiono ordinati per "Torino"
+// e "Maggiore".
+var STREET_PREFIX_RE = /^(via|viale|piazza|piazzale|corso|vicolo|vico|largo|borgo|strada|contrada|salita|calle|galleria|piazzetta|rotonda|lungomare|lungolago)\s+/i;
+function indirizzoSortLabel(s) {
+    return String(s == null ? '' : s).replace(STREET_PREFIX_RE, '').trim();
+}
+
 // --- Immobile Suggestions nel form contratto (stessa logica dei campi persona) ---
 // Digitando in Indirizzo/Città/Foglio/Particella/Sub compaiono i valori degli
 // immobili già presenti; la scelta compila l'intero blocco immobile.
@@ -827,7 +853,7 @@ function setupImmobileSuggestions(inputEl, fieldKey) {
         document.getElementById('cf_imm_foglio').value = imm.foglio || '';
         document.getElementById('cf_imm_particella').value = imm.particella || '';
         document.getElementById('cf_imm_sub').value = imm.sub || '';
-    });
+    }, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
 }
 
 // --- Locatore / Conduttore Row Helpers ---
@@ -1298,6 +1324,14 @@ function setupFilterAutocomplete(inputEl, getValues, onPick, opts) {
                 }
             }
         });
+        // Suggerimenti in ordine alfabetico (ignora maiuscole e accenti).
+        // Per gli indirizzi opts.sortLabel rimuove il tipo di strada iniziale
+        // (Via, Piazza, Corso, ...) così l'ordine segue il nome della strada.
+        matches.sort(function(a, b) {
+            var la = opts.sortLabel ? opts.sortLabel(toLabel(a)) : toLabel(a);
+            var lb = opts.sortLabel ? opts.sortLabel(toLabel(b)) : toLabel(b);
+            return la.localeCompare(lb, 'it', { sensitivity: 'base' });
+        });
         if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
         suggestionsEl.innerHTML = matches.map(function(item, i) {
             var label = toLabel(item);
@@ -1406,9 +1440,10 @@ function setupFilterInputs() {
         }).filter(Boolean);
     }
     function setupImmobileFilter(inputId, fieldKey) {
-        setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, fillImmobileFilter, {
-            dedupeKey: function(item) { return item.data.id; }
-        });
+        var opts = { dedupeKey: function(item) { return item.data.id; } };
+        // Per il campo indirizzo ordina per nome della strada (senza il tipo iniziale)
+        if (fieldKey === 'indirizzo') opts.sortLabel = indirizzoSortLabel;
+        setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, fillImmobileFilter, opts);
     }
     function fillImmobileFilter(i) {
         document.getElementById('ffIndirizzo').value = i.indirizzo || '';
@@ -3066,7 +3101,7 @@ function generateContrattoPdf(contrattoId) {
             var p = lr.persona;
             // Nome e cognome (o ragione sociale) in un riquadro azzurrino,
             // come il codice fiscale
-            field(getPersonaF24TipoLabel(p), getPersonaLabelShort(p));
+            field(getPersonaF24TipoLabel(p), getPersonaLabelCognomeNome(p));
             field('Codice Fiscale', p.codice_fiscale || 'N/A');
             fieldRow(['Data Inizio', 'Data Chiusura'], [lr.data_decorrenza ? formatDate(lr.data_decorrenza) : '-', lr.data_chiusura ? formatDate(lr.data_chiusura) : '-']);
         });
@@ -3082,7 +3117,7 @@ function generateContrattoPdf(contrattoId) {
             var p = cr.persona;
             // Nome e cognome (o ragione sociale) in un riquadro azzurrino,
             // come il codice fiscale
-            field(getPersonaF24TipoLabel(p), getPersonaLabelShort(p));
+            field(getPersonaF24TipoLabel(p), getPersonaLabelCognomeNome(p));
             field('Codice Fiscale', p.codice_fiscale || 'N/A');
             fieldRow(['Data Inizio', 'Data Chiusura'], [cr.data_decorrenza ? formatDate(cr.data_decorrenza) : '-', cr.data_chiusura ? formatDate(cr.data_chiusura) : '-']);
         });
