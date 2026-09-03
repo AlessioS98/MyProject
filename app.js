@@ -3229,13 +3229,20 @@ async function renderScadenze() {
         } else {
             scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
         }
-        // Ordinamento alfabetico per locatore (come nella lista contratti);
-        // a parità di locatore si ordina per prossima scadenza.
+        // Ordinamento alfabetico per locatore e poi per conduttore (come nella
+        // lista contratti); a parità di locatore e conduttore si ordina per
+        // prossima scadenza.
         items = scadenzeFiltro
             .sort(function(a, b) {
-                var la = getContrattoById(a.contratto_id) ? getLocatoriCognomeNomeLabel(a.contratto_id) : 'N/A';
-                var lb = getContrattoById(b.contratto_id) ? getLocatoriCognomeNomeLabel(b.contratto_id) : 'N/A';
+                var ca = getContrattoById(a.contratto_id);
+                var cb = getContrattoById(b.contratto_id);
+                var la = ca ? getLocatoriCognomeNomeLabel(ca.id) : 'N/A';
+                var lb = cb ? getLocatoriCognomeNomeLabel(cb.id) : 'N/A';
                 var cmp = la.localeCompare(lb, 'it');
+                if (cmp !== 0) return cmp;
+                var coa = ca ? getConduttoriCognomeNomeLabel(ca.id) : 'N/A';
+                var cob = cb ? getConduttoriCognomeNomeLabel(cb.id) : 'N/A';
+                cmp = coa.localeCompare(cob, 'it');
                 if (cmp !== 0) return cmp;
                 return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
             })
