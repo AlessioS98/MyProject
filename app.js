@@ -2500,21 +2500,31 @@ function getScadenzaUrgenza(s) {
 }
 
 // --- Notifiche: scadenze di pagamento ---
-// L'utente ha 30 giorni dalla data di scadenza per pagare.
-// Calendario notifiche: giorno della scadenza, 15 giorni dopo e poi ogni
-// giorno negli ultimi 7 giorni del termine (dal 24° al 30° giorno).
-// Dopo il 30° giorno non vengono più inviate notifiche.
+// Il calendario è identico a quello dei contratti: una notifica 30 giorni
+// prima della scadenza di pagamento, una 15 giorni prima e poi ogni giorno
+// negli ultimi 7 giorni (da 7 a 1 giorno prima). A scadenza avvenuta non
+// vengono più inviate notifiche, TRANNE se il contratto ha una data di
+// chiusura: la scadenza continua a essere notificata (anche dopo la sua
+// data) fino alla data di chiusura del contratto. I contratti invece si
+// fermano appena viene inserita la data di chiusura.
 function getScadenzaNotifica(s) {
     if (isScadenzaArchiviata(s)) return null;
     if (!s.prossima_scadenza) return null;
     var c = getContrattoById(s.contratto_id);
     if (!c) return null;
-    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
-    if (!canone || !canone.tassazione_cedolare_secca) return null;
-    var gg = -daysUntil(s.prossima_scadenza); // giorni trascorsi dalla scadenza
-    if (gg < 0) return null;                  // non ancora scaduta
-    if (gg === 0 || gg === 15 || (gg >= 24 && gg <= 30)) return { days: gg };
-    return null;                              // oltre il 30° giorno: stop
+    // Nessun versamento da effettuare nei periodi a cedolare secca
+    if (isScadenzaCedolare(s)) return null;
+    // Chiusura già passata: oltre il termine non si notifica più
+    if (c.data_chiusura && daysUntil(c.data_chiusura) < 0) return null;
+    var gg = daysUntil(s.prossima_scadenza);
+    // Finestra identica ai contratti: 30 gg prima, 15 gg prima e ogni
+    // giorno negli ultimi 7 gg prima della scadenza.
+    if (gg === 30 || gg === 15 || (gg >= 1 && gg <= 7)) return { days: gg };
+    // Differenza dai contratti: con una data di chiusura la scadenza di
+    // pagamento continua a essere notificata fino alla chiusura del
+    // contratto, anche dopo la sua data.
+    if (c.data_chiusura && gg <= 0) return { days: gg };
+    return null;                              // oltre la scadenza: stop
 }
 
 // --- Notifiche: contratti in scadenza ---
@@ -2540,20 +2550,27 @@ function markNotifSeen(key) {
 function renderNotifications() {
     var items = [];
 
-    // Scadenze di pagamento (solo contratti con cedolare secca)
+    // Scadenze di pagamento: calendario identico ai contratti (30 gg prima,
+    // 15 gg prima e ogni giorno negli ultimi 7 gg prima della scadenza).
+    // Con una data di chiusura la scadenza continua a essere notificata,
+    // anche dopo la sua data, fino alla chiusura del contratto.
     appData.scadenze.forEach(function(s) {
         var n = getScadenzaNotifica(s);
         if (!n) return;
         var c = getContrattoById(s.contratto_id);
         var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
+        var gg = n.days;
+        var txt;
+        if (gg > 1) txt = 'Scadenza tra ' + gg + ' giorni · ' + cod;
+        else if (gg === 1) txt = 'Scadenza domani · ' + cod;
+        else if (gg === 0) txt = 'Scadenza oggi · ' + cod;
+        else txt = 'Scadenza da ' + (-gg) + ' giorni · ' + cod;
         items.push({
             key: 'scadenza_' + s.id,
             date: s.prossima_scadenza,
-            icon: n.days === 0 ? 'fa-hourglass-half' : 'fa-exclamation-circle',
-            cls: n.days === 0 ? 'warning' : 'danger',
-            txt: n.days === 0 ? 'Scadenza oggi · ' + cod
-                : n.days === 15 ? 'Scadenza da 15 giorni · ' + cod
-                : 'Scadenza da ' + n.days + ' giorni · ' + cod,
+            icon: gg > 0 ? 'fa-hourglass-half' : 'fa-exclamation-circle',
+            cls: gg > 0 ? 'warning' : 'danger',
+            txt: txt,
             meta: formatDate(s.prossima_scadenza) + ' · ' + formatCurrency(s.importo)
         });
     });

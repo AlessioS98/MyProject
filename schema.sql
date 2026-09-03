@@ -279,7 +279,8 @@ FROM contratti ct
 WHERE ct.id = cc.contratto_id;
 
 -- 9. Impostazioni notifiche (rimossa): il calendario delle notifiche è fisso
---    (scadenze pagamento: giorno scadenza, +15 gg, ultimi 7 gg;
---     contratti: 30 gg prima, 15 gg prima e ogni giorno negli ultimi 7 gg,
---     stop a scadenza avvenuta o con data di chiusura inserita)
+--    (scadenze pagamento e contratti: 30 gg prima, 15 gg prima e ogni giorno
+--     negli ultimi 7 gg prima della scadenza, stop a scadenza avvenuta;
+--     con data di chiusura i pagamenti continuano fino alla chiusura del
+--     contratto, i contratti invece si fermano appena viene inserita la data)
 DROP TABLE IF EXISTS impostazioni_notifiche;
