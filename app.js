@@ -350,14 +350,16 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
     // a catena che ripartiva dall'inizio di un canone a metà anno). Le
     // archiviate (scadute/completate) restano: rappresentano versamenti già
     // riconosciuti dall'utente nelle liste.
+    // Una decorrenza è un anniversario dell'ancoraggio se cade nello stesso
+    // giorno/mese di un anno successivo (il 29/02 viene riportato al 28/02
+    // negli anni non bisestili, come in addYearsToDateStr). Nessun elenco
+    // predefinito di anni: contratti più lunghi di 12 anni (es. 4+4+4) hanno
+    // anniversari oltre il +12° anno e non vanno considerati sbagliati.
     var isAnniversario = function(deco) {
-        return !!deco && (deco === ancora || addYearsToDateStr(ancora, 1) === deco ||
-            addYearsToDateStr(ancora, 2) === deco || addYearsToDateStr(ancora, 3) === deco ||
-            addYearsToDateStr(ancora, 4) === deco || addYearsToDateStr(ancora, 5) === deco ||
-            addYearsToDateStr(ancora, 6) === deco || addYearsToDateStr(ancora, 7) === deco ||
-            addYearsToDateStr(ancora, 8) === deco || addYearsToDateStr(ancora, 9) === deco ||
-            addYearsToDateStr(ancora, 10) === deco || addYearsToDateStr(ancora, 11) === deco ||
-            addYearsToDateStr(ancora, 12) === deco);
+        if (!ancora || !deco || deco < ancora) return false;
+        var dAncora = new Date(ancora + 'T00:00:00');
+        var dDeco = new Date(deco + 'T00:00:00');
+        return addYearsToDateStr(ancora, dDeco.getFullYear() - dAncora.getFullYear()) === deco;
     };
     var daRiparare = appData.scadenze.filter(function(s) {
         return s.contratto_id === contrattoId && s.stato === 'in-attesa' && !isAnniversario(s.data_decorrenza);
@@ -372,14 +374,32 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
     var esistenti = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
     var daInserire = [];
     // Una scadenza per ogni RICORRENZA ANNUALE della decorrenza del contratto
-    // (ancora, +1 anno, +2 anni, ...) fino al termine del contratto: il
-    // canone che copre il giorno dell'anniversario ne determina l'importo e
-    // se è a cedolare secca la scadenza non viene generata (non ci sono
-    // imposte da versare). Le scadenze già presenti (archiviate o create in
-    // precedenza) non vengono duplicate.
-    for (var annoIdx = 0; annoIdx <= 12; annoIdx++) {
+    // (ancora, +1 anno, +2 anni, ...) la cui DATA DI PAGAMENTO cade ancora
+    // entro il termine del contratto (chiusura se presente, altrimenti
+    // scadenza o scadenza del rinnovo): il pagamento avviene all'anniversario
+    // successivo + 30 giorni (prossima_scadenza, calcolata dal trigger del
+    // DB) e deve essere <= limite. Così anche i contratti più lunghi di 12
+    // anni (es. 4+4+4) ricevono tutte le scadenze fino al termine, senza
+    // generare pagamenti oltre la fine del contratto. Senza un termine ci si
+    // ferma comunque entro un orizzonte di 12 anni per non creare scadenze
+    // illimitate nel futuro. Il canone che copre il giorno dell'anniversario
+    // ne determina l'importo e se è a cedolare secca la scadenza non viene
+    // generata (non ci sono imposte da versare). Le scadenze già presenti
+    // (archiviate o create in precedenza) non vengono duplicate.
+    var orizzonteMax = 12;
+    if (limite && ancora) {
+        var annoAncora = parseInt(ancora.slice(0, 4), 10);
+        var annoLimite = parseInt(limite.slice(0, 4), 10);
+        if (!isNaN(annoAncora) && !isNaN(annoLimite)) {
+            orizzonteMax = Math.max(orizzonteMax, annoLimite - annoAncora + 1);
+        }
+    }
+    for (var annoIdx = 0; annoIdx <= orizzonteMax; annoIdx++) {
         var anniversario = annoIdx === 0 ? ancora : addYearsToDateStr(ancora, annoIdx);
-        if (limite && anniversario > limite) break;  // oltre la fine del contratto
+        if (!anniversario) break;
+        // Data di pagamento dell'annualità (stessa formula del trigger del DB)
+        var dataPagamento = addDaysToDateStr(addYearsToDateStr(anniversario, 1), 30);
+        if (limite && dataPagamento > limite) break;  // pagamento oltre la fine del contratto
         // Canone che copre il giorno dell'anniversario: il suo importo è
         // quello del versamento. Nessun canone = nessun versamento; canone
         // a cedolare secca = nessun versamento da effettuare.
@@ -2749,8 +2769,12 @@ async function salvaCompletamentoScadenza(id) {
         // versamento: la scadenza non viene creata. La DATA della prossima
         // scadenza può invece cadere in un periodo a cedolare: l'imposta
         // dell'annualità va comunque versata entro +1 anno +30 giorni.
+        // Come nella generazione delle scadenze, la scadenza successiva si
+        // crea solo se il suo pagamento (decorrenza + 1 anno + 30 giorni)
+        // cade entro il termine del contratto.
+        var nextPagamento = addDaysToDateStr(addYearsToDateStr(nextDeco, 1), 30);
         var valida = c && !giaInAttesa && !(canone && canone.tassazione_cedolare_secca) &&
-                     (!limite || nextDeco <= limite);
+                     (!limite || (nextPagamento && nextPagamento <= limite));
         if (valida) {
             var { data: insScad, error: errScad } = await db.from('scadenze').insert({
                 contratto_id: c.id,
