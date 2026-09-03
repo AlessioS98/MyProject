@@ -1844,7 +1844,6 @@ function openModal(type, id) {
         html += '<span>La scadenza <strong>' + (rs.prossima_scadenza ? formatDate(rs.prossima_scadenza) : '-') + '</strong>' +
             (rsC ? ' del contratto <strong>' + rsC.identificativo + '</strong>' : '') +
             ' (' + formatCurrency(rs.importo) + ') tornerà tra le scadenze <strong>da pagare</strong>.</span><br>';
-        html += '<small>L\'eventuale scadenza successiva generata automaticamente verrà eliminata.</small>';
         html += '</div>';
         html += '<div class="form-actions full">';
         html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
