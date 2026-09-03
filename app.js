@@ -29,7 +29,23 @@ function daysUntil(d) {
     return Math.ceil((t - n) / 864e5);
 }
 function getStatusLabel(s) {
-    return { attivo: 'Attivo', scaduto: 'Scaduto', chiuso: 'Chiuso', sospeso: 'Sospeso', completato: 'Completato', completata: 'Completata', 'in-attesa': 'In Attesa' }[s] || s;
+    return { attivo: 'Attivo', scaduto: 'Scaduto', chiuso: 'Chiuso', sospeso: 'Sospeso', completato: 'Completato', completata: 'Completata', scaduta: 'Scaduta', 'in-attesa': 'In Attesa' }[s] || s;
+}
+
+// --- Stati archiviati delle scadenze ---
+// 'completata': versamento effettuato, completato manualmente dall'utente
+// ('completato' resta accettato per compatibilita' con vecchi record).
+// 'scaduta': scadenza gia' passata archiviata in automatico dal sistema,
+// NON pagata: viene mostrata nelle liste come "Scaduta", non come "Completata".
+function isScadenzaCompletata(s) {
+    return s.stato === 'completata' || s.stato === 'completato';
+}
+function isScadenzaScaduta(s) {
+    return s.stato === 'scaduta';
+}
+// Archiviata = completata manualmente OPPURE scaduta e archiviata in automatico.
+function isScadenzaArchiviata(s) {
+    return isScadenzaCompletata(s) || isScadenzaScaduta(s);
 }
 
 function getScadenzaIcon(t) {
@@ -370,7 +386,7 @@ async function ricalcolaScadenzeContratto(contrattoId) {
     var scadenzeContratto = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
     for (var i = 0; i < scadenzeContratto.length; i++) {
         var s = scadenzeContratto[i];
-        if (s.stato === 'completata' || s.stato === 'completato') continue;
+        if (isScadenzaArchiviata(s)) continue;
         // Canone del periodo della scadenza (nessun fallback: senza un canone
         // che copre la decorrenza l'importo resta invariato).
         var canone = getCanoneCheCopre(contrattoId, s.data_decorrenza);
@@ -389,28 +405,57 @@ async function ricalcolaScadenzeContratto(contrattoId) {
     }
 }
 
-// --- Auto-completamento scadenze passate ---
-// Le scadenze con prossima_scadenza prima della data odierna vengono marcate
-// automaticamente come completate, così la sezione Scadenze mostra solo le
-// scadenze da oggi in poi (es. contratti inseriti con decorrenza nel passato).
+// --- Auto-archiviazione scadenze passate ---
+// Le scadenze con prossima_scadenza prima della data odierna vengono archiviate
+// automaticamente con stato 'scaduta' (NON 'completata': non e' stato effettuato
+// alcun versamento), così la sezione Scadenze mostra solo le scadenze da oggi
+// in poi (es. contratti inseriti con decorrenza nel passato). Con il filtro
+// "Archiviate" compaiono come "Scaduta" e possono essere ripristinate tra le
+// scadenze da pagare.
 async function autoCompleteScadenzePassate() {
     var oggi = toLocalDateStr(new Date());
-    var daCompletare = appData.scadenze.filter(function(s) {
+    var daScadere = appData.scadenze.filter(function(s) {
         return s.stato === 'in-attesa' && s.prossima_scadenza && s.prossima_scadenza < oggi;
     });
-    if (daCompletare.length === 0) return;
-    for (var i = 0; i < daCompletare.length; i++) {
-        var s = daCompletare[i];
+    if (daScadere.length === 0) return;
+    for (var i = 0; i < daScadere.length; i++) {
+        var s = daScadere[i];
         var { error } = await db.from('scadenze').update({
-            stato: 'completata',
-            data_completamento: s.prossima_scadenza
+            stato: 'scaduta',
+            data_completamento: null
         }).eq('id', s.id);
         if (!error) {
-            s.stato = 'completata';
-            s.data_completamento = s.prossima_scadenza;
+            s.stato = 'scaduta';
+            s.data_completamento = null;
         }
     }
     renderNotifications();
+}
+
+// --- Migrazione one-time dei vecchi record auto-completati ---
+// La vecchia logica archiviava le scadenze passate come 'completata' con
+// data_completamento uguale alla prossima_scadenza (l'utente non puo' aver
+// inserito una data futura al completamento, quindi data_completamento ==
+// prossima_scadenza significa archiviazione automatica). Questi record
+// vengono convertiti in 'scaduta' una sola volta (flag in localStorage).
+async function migrateScadenzeAutoCompletate() {
+    if (localStorage.getItem('migrate_scadute_v1') === '1') return;
+    var daMigrare = appData.scadenze.filter(function(s) {
+        return isScadenzaCompletata(s) && s.data_completamento && s.prossima_scadenza &&
+               s.data_completamento === s.prossima_scadenza;
+    });
+    for (var i = 0; i < daMigrare.length; i++) {
+        var s = daMigrare[i];
+        var { error } = await db.from('scadenze').update({
+            stato: 'scaduta',
+            data_completamento: null
+        }).eq('id', s.id);
+        if (!error) {
+            s.stato = 'scaduta';
+            s.data_completamento = null;
+        }
+    }
+    localStorage.setItem('migrate_scadute_v1', '1');
 }
 var canoneRowCounter = 0;
 function toggleCanoneCedolare(el) {
@@ -1034,8 +1079,11 @@ async function loadAllData() {
             var c = appData.contratti[ci];
             await syncScadenzePerCanoni(c.id, getCanoniByContratto(c.id), c.data_decorrenza);
         }
-        // Le scadenze con data nel passato vengono marcate automaticamente
-        // come completate: la sezione mostra solo le scadenze da oggi in poi.
+        // Migrazione one-time: i vecchi record auto-archiviati come
+        // 'completata' diventano 'scaduta'.
+        await migrateScadenzeAutoCompletate();
+        // Le scadenze con data nel passato vengono archiviate automaticamente
+        // come scadute: la sezione mostra solo le scadenze da oggi in poi.
         await autoCompleteScadenzePassate();
     } catch (e) {
         console.error('Errore caricamento dati:', e);
@@ -2095,7 +2143,7 @@ async function saveContratto(editId) {
     if (editId) await ricalcolaScadenzeContratto(targetId);
     await syncScadenzePerCanoni(targetId, newCanoni, contrattoData.data_decorrenza);
     // Le scadenze appena create con data nel passato (es. contratto vecchio)
-    // vengono subito marcate come completate.
+    // vengono subito archiviate come scadute.
     await autoCompleteScadenzePassate();
 
     // --- Gestione Locatori/Conduttori (tabelle ponte) ---
@@ -2357,7 +2405,7 @@ function renderContrattiList(list) {
 // --- Urgenza scadenze (usata dalla pagina Scadenze, non dalle notifiche) ---
 // Anticipo fisso: 7 giorni prima della prossima scadenza
 function getScadenzaUrgenza(s) {
-    if (s.stato === 'completata' || s.stato === 'completato') return null;
+    if (isScadenzaArchiviata(s)) return null;
     if (!s.prossima_scadenza) return null;
     var c = getContrattoById(s.contratto_id);
     if (!c) return null;
@@ -2375,7 +2423,7 @@ function getScadenzaUrgenza(s) {
 // giorno negli ultimi 7 giorni del termine (dal 24° al 30° giorno).
 // Dopo il 30° giorno non vengono più inviate notifiche.
 function getScadenzaNotifica(s) {
-    if (s.stato === 'completata' || s.stato === 'completato') return null;
+    if (isScadenzaArchiviata(s)) return null;
     if (!s.prossima_scadenza) return null;
     var c = getContrattoById(s.contratto_id);
     if (!c) return null;
@@ -2508,7 +2556,7 @@ function isNotificationDismissed(key) {
 
 // --- Bottone Completa: apre una finestra per inserire la data di completamento ---
 function scadenzaDoneBtn(s) {
-    var isDone = (s.stato === 'completata' || s.stato === 'completato');
+    var isDone = isScadenzaCompletata(s);
     if (isDone) {
         return '<span class="status-badge attivo"><i class="fas fa-check"></i> ' + (s.data_completamento ? formatDate(s.data_completamento) : 'Completata') + '</span>';
     }
@@ -2518,29 +2566,31 @@ function scadenzaDoneBtn(s) {
 
 // --- Bottone Modello F24: genera il PDF del versamento ---
 function scadenzaF24Btn(s) {
-    var isDone = (s.stato === 'completata' || s.stato === 'completato');
+    var isDone = isScadenzaCompletata(s);
     return '<button class="btn btn-sm btn-outline scadenza-f24-btn"' +
         (isDone ? ' disabled' : '') +
         ' data-action="generate-f24" data-id="' + s.id + '" title="' + (isDone ? 'Scadenza già completata' : 'Genera PDF Modello F24') + '"><i class="fas fa-file-alt"></i> Modello F24</button>';
 }
 
 // --- Bottone Ripristina: riporta una scadenza archiviata tra quelle da pagare ---
+// Visibile sia per le completate manualmente sia per le scadute archiviate in
+// automatico: una scadenza scaduta può essere ripristinata per essere pagata.
 function scadenzaRestoreBtn(s) {
-    var isDone = (s.stato === 'completata' || s.stato === 'completato');
-    if (!isDone) return '';
+    if (!isScadenzaArchiviata(s)) return '';
     return '<button class="btn btn-sm btn-outline scadenza-restore-btn"' +
         ' data-action="restore-scadenza" data-id="' + s.id + '" title="Ripristina la scadenza tra quelle da pagare"><i class="fas fa-undo"></i> Ripristina</button>';
 }
 
-// Ripristina una scadenza completata per sbaglio: torna 'in-attesa' senza data
-// di completamento, quindi ricompare nella lista "Da pagare" per poter essere
-// pagata. Elimina anche l'eventuale scadenza successiva creata in automatico
-// al completamento, così non restano due versamenti pendenti per lo stesso
-// periodo (la sua decorrenza è la prossima_scadenza completata - 30 giorni).
+// Ripristina una scadenza archiviata (completata per sbaglio oppure scaduta e
+// ancora da saldare): torna 'in-attesa' senza data di completamento, quindi
+// ricompare nella lista "Da pagare" per poter essere pagata. Elimina anche
+// l'eventuale scadenza successiva creata in automatico al completamento, così
+// non restano due versamenti pendenti per lo stesso periodo (la sua decorrenza
+// è la prossima_scadenza completata - 30 giorni).
 async function ripristinaScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
-    if (s.stato !== 'completata' && s.stato !== 'completato') {
+    if (!isScadenzaArchiviata(s)) {
         showToast('Questa scadenza non è archiviata', 'error');
         return;
     }
@@ -3073,13 +3123,18 @@ async function renderScadenze() {
     var elScadute = document.getElementById('statScadenzeScadute');
     var elCompletate = document.getElementById('statScadenzeCompletate');
     if (elScadute) {
+        // Scadute = scadenze archiviate in automatico (stato 'scaduta');
+        // quelle ancora in attesa con data nel passato vengono contate comunque.
         elScadute.textContent = appData.scadenze.filter(function(s) {
-            return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
+            if (isScadenzaCedolare(s)) return false;
+            if (s.stato === 'scaduta') return true;
+            return s.stato === 'in-attesa' && !isScadenzaOltreTermine(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
         }).length;
     }
     if (elCompletate) {
+        // Completate = solo i versamenti effettuati manualmente dall'utente.
         elCompletate.textContent = appData.scadenze.filter(function(s) {
-            return (s.stato === 'completata' || s.stato === 'completato') && !isScadenzaCedolare(s);
+            return isScadenzaCompletata(s) && !isScadenzaCedolare(s);
         }).length;
     }
 
@@ -3155,9 +3210,10 @@ async function renderScadenze() {
         // scadenza del rinnovo) non vengono mai listate: non ci sono più
         // versamenti da effettuare.
         if (statoFiltro === 'archiviate') {
-            // Archiviate = scadute (in attesa con data nel passato) + completate
+            // Archiviate = completate manualmente + scadute (archiviate in automatico)
             scadenzeFiltro = scadenzeFiltro.filter(function(s) {
                 if (isScadenzaCedolare(s)) return false;
+                if (s.stato === 'scaduta') return true;
                 if (s.stato === 'completata' || s.stato === 'completato') return true;
                 return s.stato === 'in-attesa' && !isScadenzaOltreTermine(s) && s.prossima_scadenza && daysUntil(s.prossima_scadenza) <= 0;
             });
@@ -3189,13 +3245,14 @@ async function renderScadenze() {
                             ' · ' + formatCurrency(canone.importo);
                     }
                 }
-                var isCompletata = (s.stato === 'completata' || s.stato === 'completato');
+                var isCompletata = isScadenzaCompletata(s);
                 return {
                     locLabel: c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A',
                     condLabel: c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A',
                     scadenza: s.prossima_scadenza,
                     urg: getScadenzaUrgenza(s),
                     completata: isCompletata,
+                    scaduta: s.stato === 'scaduta',
                     dataCompletamento: s.data_completamento,
                     canoneInfo: canoneInfo,
                     actions: scadenzaF24Btn(s) + scadenzaDoneBtn(s),
@@ -3207,7 +3264,7 @@ async function renderScadenze() {
     // La colonna Azioni (Completa / F24) esiste solo per le scadenze di
     // pagamento non archiviate; nella lista "Archiviate" c'è solo la colonna
     // Ripristina per riportare tra quelle da pagare una scadenza completata
-    // per errore.
+    // per errore o scaduta e ancora da saldare.
     var hasAzioni = tipo === 'pagamenti' && statoFiltro !== 'archiviate';
     var hasRestore = tipo === 'pagamenti' && statoFiltro === 'archiviate';
     var azioniTh = document.getElementById('scadenzeAzioniTh');
@@ -3219,6 +3276,9 @@ async function renderScadenze() {
             // Scadenza archiviata e completata: badge verde con data di completamento
             proxHtml += ' <span class="status-badge attivo"><i class="fas fa-check"></i> Completata' +
                 (it.dataCompletamento ? ' · ' + formatDate(it.dataCompletamento) : '') + '</span>';
+        } else if (it.scaduta) {
+            // Scadenza archiviata in automatico perché passata: badge rosso "Scaduta"
+            proxHtml += ' <span class="status-badge scaduto"><i class="fas fa-exclamation-circle"></i> Scaduta</span>';
         } else if (it.urg) {
             proxHtml += ' <span class="status-badge ' + it.urg.type + '">' + it.urg.label + (it.urg.days > 0 ? ' · ' + it.urg.days + ' gg' : '') + '</span>';
         }
@@ -3231,7 +3291,7 @@ async function renderScadenze() {
         tbody.innerHTML = '<tr><td colspan="' + ((hasAzioni || hasRestore) ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         tbody.innerHTML = items.map(function(it) {
-            var rowCls = it.urg ? ' alert-' + it.urg.type : (it.completata ? ' alert-completata' : '');
+            var rowCls = it.urg ? ' alert-' + it.urg.type : (it.completata ? ' alert-completata' : (it.scaduta ? ' alert-scaduta' : ''));
             return '<tr' + (rowCls ? ' class="' + rowCls.trim() + '"' : '') + '>' +
                 '<td>' + it.locLabel + '</td>' +
                 '<td>' + it.condLabel + '</td>' +
