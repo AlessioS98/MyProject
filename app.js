@@ -3257,8 +3257,16 @@ async function renderScadenze() {
                 // Riferimento al canone: numero, periodo e importo della scadenza
                 var canoneInfo = null;
                 if (c) {
-                    // Riferimento al canone il cui periodo contiene la data della scadenza
-                    var canone = getCanoneRiferimentoScadenza(s);
+                    // Riferimento al canone: quello il cui periodo contiene la DATA DI
+                    // PAGAMENTO della scadenza (prossima_scadenza), non la decorrenza
+                    // dell'annualità. Es. la scadenza del 18/10/2026 riporta il canone
+                    // 18/09/2026 -> 17/09/2027 perché quella data rientra in quel
+                    // periodo. Il PDF F24 invece continua a usare il canone
+                    // dell'annualità (getCanoneRiferimentoScadenza), che determina
+                    // l'importo del versamento.
+                    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza) ||
+                                 getCanoneCheCopre(c.id, s.data_decorrenza) ||
+                                 getCanonePerScadenza(c.id, s.data_decorrenza);
                     if (canone) {
                         var canoniC = getCanoniByContratto(c.id);
                         var idx = canoniC.indexOf(canone);
