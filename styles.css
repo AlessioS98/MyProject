@@ -1121,6 +1121,15 @@ input, select, textarea { font-family: inherit; }
 .status-badge.in-scadenza { background: var(--warning-bg); color: var(--warning); }
 .status-badge.scaduto { background: var(--danger-bg); color: var(--danger); }
 .status-badge.chiuso { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Contratti chiusi nella lista Scadenze dei contratti: non più evidenziati
+   in grigio, ma in un neretto chiaro ben leggibile */
+.status-badge.contratto-chiuso {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 700;
+}
 .status-badge.sospeso { background: var(--bg); color: var(--text-muted); }
 
 /* Badge scadenza scaduta */
@@ -1132,7 +1141,7 @@ input, select, textarea { font-family: inherit; }
 .data-table tr.alert-in-scadenza td { background: var(--warning-bg); }
 .data-table tr.alert-scaduta td { background: var(--danger-bg); }
 .data-table tr.alert-completata td { background: var(--success-bg); }
-.data-table tr.alert-chiusa td { background: var(--surface-hover); color: var(--text-muted); }
+.data-table tr.alert-chiusa td { color: var(--text); font-weight: 600; }
 
 .contract-title {
     font-size: 1.05rem;

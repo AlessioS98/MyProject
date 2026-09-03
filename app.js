@@ -2468,9 +2468,12 @@ async function renderContratti() {
     renderContrattiList(appData.contratti);
 }
 function renderContrattiList(list) {
-    // Ordinamento alfabetico per locatore (cognome prima del nome)
+    // Ordinamento alfabetico per locatore (cognome prima del nome) e, a
+    // parità di locatore, per conduttore
     var filtered = list.slice().sort(function(a, b) {
-        return (getLocatoriCognomeNomeLabel(a.id) || '').localeCompare(getLocatoriCognomeNomeLabel(b.id) || '', 'it');
+        var cmp = (getLocatoriCognomeNomeLabel(a.id) || '').localeCompare(getLocatoriCognomeNomeLabel(b.id) || '', 'it');
+        if (cmp !== 0) return cmp;
+        return (getConduttoriCognomeNomeLabel(a.id) || '').localeCompare(getConduttoriCognomeNomeLabel(b.id) || '', 'it');
     });
 
     // Table view
@@ -3387,7 +3390,7 @@ async function renderScadenze() {
         // chiusi.
         if (tipo === 'contratti') {
             if (it.chiuso) {
-                return '<span class="status-badge chiuso"><i class="fas fa-lock"></i> Chiuso il ' + formatDate(it.dataChiusura) + '</span>';
+                return '<span class="status-badge contratto-chiuso"><i class="fas fa-lock"></i> Chiuso il ' + formatDate(it.dataChiusura) + '</span>';
             }
             if (it.scaduto) {
                 return '<span class="status-badge scaduto"><i class="fas fa-exclamation-circle"></i> Scaduto il ' + formatDate(it.scadenza) + '</span>';
