@@ -2762,18 +2762,19 @@ function getCanoneRiferimentoScadenza(s) {
     return canone || getCanonePerScadenza(c.id, s.data_decorrenza);
 }
 
-// Una scadenza di pagamento non compare nelle liste quando il canone del
-// periodo dell'annualità (data_decorrenza) è a cedolare secca: in quel
-// periodo non ci sono imposte da versare. La DATA della scadenza
-// (prossima_scadenza) può invece legittimamente cadere in un periodo a
-// cedolare successivo: l'imposta dell'annualità va versata entro +1 anno
-// +30 giorni dalla sua decorrenza, anche se nel frattempo il contratto è
-// passato alla cedolare secca (es. imposta dell'annualità 18/09/27 ->
-// 17/09/28 da pagare il 18/10/28 con canoni successivi a cedolare).
+// Una scadenza di pagamento non compare nelle liste quando il canone che
+// copre la sua DATA DI PAGAMENTO (prossima_scadenza) è a cedolare secca,
+// in coerenza con il canone stampato sotto la scadenza nella lista: se la
+// data di pagamento cade in un periodo a cedolare secca non c'è un
+// versamento da effettuare in quel periodo. Es. imposta dell'annualità
+// 18/09/27 -> 17/09/28 da pagare il 18/10/28: la data di pagamento cade nel
+// canone a cedolare successivo (18/09/28 -> 17/09/31) e la scadenza non
+// compare in lista. Fallback alla decorrenza se la data di pagamento non è
+// disponibile.
 function isScadenzaCedolare(s) {
     var c = getContrattoById(s.contratto_id);
     if (!c) return false;
-    var canone = getCanoneCheCopre(c.id, s.data_decorrenza);
+    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza) || getCanoneCheCopre(c.id, s.data_decorrenza);
     return !!(canone && canone.tassazione_cedolare_secca);
 }
 
@@ -3138,7 +3139,8 @@ async function renderScadenze() {
     var tipo = document.getElementById('filterScadenzaTipo').value;
 
     // Stats: scadenze da pagare, scadute e completate; contratti non scaduti e scaduti.
-    // Le scadenze dei canoni con cedolare secca non vengono contate.
+    // Le scadenze il cui canone di riferimento (quello che copre la data di
+    // pagamento) è a cedolare secca non vengono contate.
     var inAttesa = appData.scadenze.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
     document.getElementById('statScadenzeInAttesa').textContent = inAttesa.length;
 
@@ -3227,7 +3229,9 @@ async function renderScadenze() {
             });
     } else {
         var scadenzeFiltro = appData.scadenze.slice();
-        // Le scadenze dei canoni con cedolare secca non vengono mai listate
+        // Le scadenze il cui canone di riferimento (quello che copre la data
+        // di pagamento) è a cedolare secca non vengono mai listate: non ci
+        // sono versamenti da effettuare in quel periodo.
         // Le scadenze oltre il termine del contratto (chiusura, scadenza o
         // scadenza del rinnovo) non vengono mai listate: non ci sono più
         // versamenti da effettuare.
