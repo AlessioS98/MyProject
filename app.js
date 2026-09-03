@@ -2747,17 +2747,18 @@ function getCanoneCheCopre(contrattoId, data) {
 }
 
 // Canone di riferimento di una scadenza di pagamento: il canone il cui
-// periodo contiene la DECORRENZA della scadenza (l'anniversario del
-// contratto), che è quello che ne ha determinato l'importo. Solo se nessun
-// canone copre quella data (es. anniversario in un buco tra canoni) si usa
-// il canone che copre la DATA della scadenza (prossima_scadenza), infine il
-// fallback storico (canone attuale / ultimo canone).
+// periodo contiene la DATA DI PAGAMENTO della scadenza (prossima_scadenza),
+// cioè quello stampato sotto la data nella lista Scadenze e quello su cui il
+// Modello F24 basa importo e Dettaglio Calcolo. Solo se nessun canone copre
+// quella data (es. buco tra canoni) si usa il canone che copre la decorrenza
+// dell'annualità (l'anniversario del contratto), infine il fallback storico
+// (canone attuale / ultimo canone).
 function getCanoneRiferimentoScadenza(s) {
     var c = getContrattoById(s.contratto_id);
     if (!c) return null;
-    // Canone dell'annualità (decorrenza della scadenza): ne ha determinato l'importo
-    var canone = getCanoneCheCopre(c.id, s.data_decorrenza);
-    if (!canone) canone = getCanoneCheCopre(c.id, s.prossima_scadenza);
+    // Canone che copre la data di pagamento: riferimento del versamento
+    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza);
+    if (!canone) canone = getCanoneCheCopre(c.id, s.data_decorrenza);
     return canone || getCanonePerScadenza(c.id, s.data_decorrenza);
 }
 
@@ -2819,7 +2820,8 @@ function generateF24Pdf(scadenzaId) {
     // Nel Modello F24 vanno elencati solo locatori/conduttori ancora attivi (senza data di chiusura)
     var locs = getLocatoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'loc'); });
     var conds = getConduttoriByContratto(c.id).filter(function(p) { return !getPersonaRelDataChiusura(c.id, p.id, 'cond'); });
-    // Canone di riferimento: quello il cui periodo contiene la data della scadenza
+    // Canone di riferimento: quello stampato sotto la data nella lista Scadenze,
+    // cioè quello il cui periodo contiene la DATA DI PAGAMENTO (prossima_scadenza)
     var canone = getCanoneRiferimentoScadenza(s);
 
     // Importo: se il canone ha una percentuale, = percentuale sul canone annuo
@@ -3300,15 +3302,11 @@ async function renderScadenze() {
                 var canoneInfo = null;
                 if (c) {
                     // Riferimento al canone: quello il cui periodo contiene la DATA DI
-                    // PAGAMENTO della scadenza (prossima_scadenza), non la decorrenza
-                    // dell'annualità. Es. la scadenza del 18/10/2026 riporta il canone
-                    // 18/09/2026 -> 17/09/2027 perché quella data rientra in quel
-                    // periodo. Il PDF F24 invece continua a usare il canone
-                    // dell'annualità (getCanoneRiferimentoScadenza), che determina
-                    // l'importo del versamento.
-                    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza) ||
-                                 getCanoneCheCopre(c.id, s.data_decorrenza) ||
-                                 getCanonePerScadenza(c.id, s.data_decorrenza);
+                    // PAGAMENTO della scadenza (prossima_scadenza), lo stesso usato dal
+                    // Modello F24 nel Dettaglio Calcolo. Es. la scadenza del 18/10/2026
+                    // riporta il canone 18/09/2026 -> 17/09/2027 perché quella data
+                    // rientra in quel periodo.
+                    var canone = getCanoneRiferimentoScadenza(s);
                     if (canone) {
                         var canoniC = getCanoniByContratto(c.id);
                         var idx = canoniC.indexOf(canone);
