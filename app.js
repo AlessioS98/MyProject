@@ -866,8 +866,11 @@ function addLocatoreRow(persona, isEdit, rel) {
     if (isEdit) {
         rowDeco = rel.data_decorrenza || '';
         rowChius = rel.data_chiusura || '';
-        if (rowDeco) decoUserSet = ' data-user-set="1"';
-        if (rowChius) chiusUserSet = ' data-user-set="1"';
+        // La data della riga è considerata scelta dall'utente solo se diversa
+        // da quella del contratto: se coincide (o manca) è stata compilata in
+        // automatico e continua a seguire il contratto quando questo cambia.
+        if (rowDeco && rowDeco !== (document.getElementById('cf_decorrenza') || {}).value) decoUserSet = ' data-user-set="1"';
+        if (rowChius && rowChius !== (document.getElementById('cf_chiusura') || {}).value) chiusUserSet = ' data-user-set="1"';
     } else {
         var cfd = document.getElementById('cf_decorrenza');
         var cfc = document.getElementById('cf_chiusura');
@@ -928,8 +931,11 @@ function addConduttoreRow(persona, isEdit, rel) {
     if (isEdit) {
         rowDeco = rel.data_decorrenza || '';
         rowChius = rel.data_chiusura || '';
-        if (rowDeco) decoUserSet = ' data-user-set="1"';
-        if (rowChius) chiusUserSet = ' data-user-set="1"';
+        // La data della riga è considerata scelta dall'utente solo se diversa
+        // da quella del contratto: se coincide (o manca) è stata compilata in
+        // automatico e continua a seguire il contratto quando questo cambia.
+        if (rowDeco && rowDeco !== (document.getElementById('cf_decorrenza') || {}).value) decoUserSet = ' data-user-set="1"';
+        if (rowChius && rowChius !== (document.getElementById('cf_chiusura') || {}).value) chiusUserSet = ' data-user-set="1"';
     } else {
         var cfd = document.getElementById('cf_decorrenza');
         var cfc = document.getElementById('cf_chiusura');
@@ -3155,6 +3161,12 @@ async function renderScadenze() {
     if (elCS) {
         elCS.textContent = appData.contratti.filter(function(c) {
             return !c.data_chiusura && getContrattoScadenzaEffettiva(c) && daysUntil(getContrattoScadenzaEffettiva(c)) <= 0;
+        }).length;
+    }
+    var elCChiusi = document.getElementById('statContrattiChiusi');
+    if (elCChiusi) {
+        elCChiusi.textContent = appData.contratti.filter(function(c) {
+            return !!c.data_chiusura;
         }).length;
     }
 
