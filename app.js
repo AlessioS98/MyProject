@@ -3187,6 +3187,11 @@ async function renderScadenze() {
         statoFiltro = statoSel.value;
     }
 
+    // Intestazione della colonna: per i contratti scaduti/chiusi la colonna
+    // mostra l'esito (Scaduto il / Chiuso il) invece della prossima scadenza.
+    var prossimaTh = document.getElementById('scadenzeProssimaTh');
+    if (prossimaTh) prossimaTh.textContent = (tipo === 'contratti' && statoFiltro === 'scaduti') ? 'Esito' : 'Prossima Scadenza';
+
     // Normalizza gli elementi da mostrare in voci comuni. La lista è ordinata
     // per data di scadenza: la più vicina per prima (le date mancanti in fondo).
     var items = [];
@@ -3203,15 +3208,25 @@ async function renderScadenze() {
                 return !c.data_chiusura && daysUntil(getContrattoScadenzaEffettiva(c)) > 0;
             });
         }
-        // Ordinamento alfabetico per locatore (come nella lista contratti);
-        // a parità di locatore si ordina per scadenza effettiva.
+        // Ordinamento per data: i non scaduti dalla più vicina a oggi in
+        // avanti, i Scaduti/Chiusi dalla più recente a oggi all'indietro.
+        // Per i chiusi la data di riferimento è la data di chiusura, per gli
+        // altri la scadenza effettiva. A parità di data, ordine alfabetico
+        // per locatore e poi conduttore.
         items = contrattiFiltro
             .sort(function(a, b) {
+                var dataRif = function(c) {
+                    return c.data_chiusura || getContrattoScadenzaEffettiva(c) || '9999-12-31';
+                };
+                var cmp = (statoFiltro === 'scaduti')
+                    ? dataRif(b).localeCompare(dataRif(a))
+                    : dataRif(a).localeCompare(dataRif(b));
+                if (cmp !== 0) return cmp;
                 var la = getLocatoriCognomeNomeLabel(a.id);
                 var lb = getLocatoriCognomeNomeLabel(b.id);
-                var cmp = la.localeCompare(lb, 'it');
+                cmp = la.localeCompare(lb, 'it');
                 if (cmp !== 0) return cmp;
-                return (getContrattoScadenzaEffettiva(a) || '9999-12-31').localeCompare(getContrattoScadenzaEffettiva(b) || '9999-12-31');
+                return getConduttoriCognomeNomeLabel(a.id).localeCompare(getConduttoriCognomeNomeLabel(b.id), 'it');
             })
             .map(function(c) {
                 return {
@@ -3219,6 +3234,11 @@ async function renderScadenze() {
                     condLabel: getConduttoriCognomeNomeLabel(c.id),
                     scadenza: getContrattoScadenzaEffettiva(c),
                     urg: getContrattoUrgenza(c),
+                    // Stato per la colonna esito: chiuso (data di chiusura) o
+                    // scaduto (scadenza effettiva passata)
+                    chiuso: !!c.data_chiusura,
+                    scaduto: !c.data_chiusura && daysUntil(getContrattoScadenzaEffettiva(c)) <= 0,
+                    dataChiusura: c.data_chiusura,
                     actions: '<button class="btn btn-sm btn-outline" data-action="view-contratto" data-id="' + c.id + '"><i class="fas fa-eye"></i> Dettagli</button>'
                 };
             });
@@ -3307,6 +3327,17 @@ async function renderScadenze() {
     if (azioniTh) azioniTh.style.display = (hasAzioni || hasRestore) ? '' : 'none';
 
     function badgeHtml(it) {
+        // Contratti scaduti/chiusi: al posto della prossima scadenza la
+        // colonna mostra l'esito, in rosso per gli scaduti e in grigio per i
+        // chiusi.
+        if (tipo === 'contratti') {
+            if (it.chiuso) {
+                return '<span class="status-badge chiuso"><i class="fas fa-lock"></i> Chiuso il ' + formatDate(it.dataChiusura) + '</span>';
+            }
+            if (it.scaduto) {
+                return '<span class="status-badge scaduto"><i class="fas fa-exclamation-circle"></i> Scaduto il ' + formatDate(it.scadenza) + '</span>';
+            }
+        }
         var proxHtml = formatDate(it.scadenza);
         if (it.completata) {
             // Scadenza archiviata e completata: badge verde con data di completamento
@@ -3327,7 +3358,7 @@ async function renderScadenze() {
         tbody.innerHTML = '<tr><td colspan="' + ((hasAzioni || hasRestore) ? 4 : 3) + '"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
     } else {
         tbody.innerHTML = items.map(function(it) {
-            var rowCls = it.urg ? ' alert-' + it.urg.type : (it.completata ? ' alert-completata' : (it.scaduta ? ' alert-scaduta' : ''));
+            var rowCls = it.urg ? ' alert-' + it.urg.type : (it.chiuso ? ' alert-chiusa' : (it.completata ? ' alert-completata' : (it.scaduta ? ' alert-scaduta' : '')));
             return '<tr' + (rowCls ? ' class="' + rowCls.trim() + '"' : '') + '>' +
                 '<td>' + it.locLabel + '</td>' +
                 '<td>' + it.condLabel + '</td>' +
