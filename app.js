@@ -287,15 +287,26 @@ function addYearsToDateStr(dateStr, years) {
 }
 
 // --- Crea le scadenze di pagamento per ogni canone del contratto ---
-// Una scadenza per OGNI annualità di ogni canone senza cedolare secca: la
-// decorrenza della scadenza è l'inizio dell'annualità (la data inizio del
-// canone, poi di anno in anno) e il trigger del DB calcola prossima_scadenza
-// (+1 anno +30 gg). Esempio: canone 12/05/24 -> 11/05/26 non a cedolare
-// genera le scadenze 11/06/25 e 11/06/26; un canone a cedolare secca non
-// genera scadenze, e non viene generata nemmeno una scadenza la cui DATA
-// ricade nel periodo di un canone a cedolare secca (es. scadenza 11/06/27
-// che ricade nel canone 12/02/27 -> 11/05/28 a cedolare). Non duplica le
-// scadenze già presenti (controllo sulla data_decorrenza dell'annualità).
+// Le scadenze sono ancorate alle RICORRENZE ANNUALI della decorrenza del
+// contratto (stesso giorno/mese, di anno in anno), NON agli inizi delle
+// annualità dei singoli canoni: così un canone che inizia a metà anno non
+// spezza il ritmo annuale dei versamenti. La decorrenza della scadenza è
+// l'anniversario della decorrenza del contratto; il trigger del DB calcola
+// prossima_scadenza (+1 anno +30 gg). Esempio: contratto dal 18/09/21 con
+// canoni 18/09/21->17/06/26 (€4000) e 18/06/26->17/09/27 (€4500): le
+// scadenze restano ancorate ai 18/09 di ogni anno (18/09/21 ... 18/09/25 a
+// €4000 e 18/09/26 a €4500, pagamenti 18/10/22 ... 18/10/26 e 18/10/27);
+// la vecchia logica a catena avrebbe invece ripartito il ritmo dall'inizio
+// del secondo canone generando 18/06/26 e 18/06/27 (pagamenti 18/07/27 e
+// 18/07/28). Un canone a cedolare secca non genera scadenze: il canone che
+// copre l'anniversario è quello che determina il versamento, e se è a
+// cedolare non c'è imposta da versare (la DATA di pagamento può invece
+// cadere in un periodo a cedolare successivo: l'imposta dell'annualità va
+// comunque versata entro +1 anno +30 gg). Non duplica le scadenze già
+// presenti (controllo sulla data_decorrenza dell'anniversario) e RIPARA
+// quelle sbagliate: le scadenze in attesa che non corrispondono a un
+// anniversario del contratto vengono eliminate e rigenerate (quelle
+// archiviate non vengono toccate).
 async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
     if (!canoni || canoni.length === 0) {
         // Nessun canone definito: scadenza unica con la decorrenza del contratto
@@ -316,48 +327,67 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
         }
         return;
     }
-    var esistenti = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
     // Termine oltre il quale non si generano scadenze: la chiusura del
     // contratto se presente, altrimenti la sua scadenza (o il rinnovo).
     var cLimite = getContrattoById(contrattoId);
     var limite = cLimite ? (cLimite.data_chiusura || getContrattoScadenzaEffettiva(cLimite)) : null;
-    var daInserire = [];
-    canoni.forEach(function(ca) {
-        if (ca.tassazione_cedolare_secca) return; // cedolare secca: nessun versamento
-        if (!ca.data_inizio) return;
-        var fine = ca.data_fine || null;
-        // Un canone può coprire più annualità: una scadenza per ogni anno,
-        // dall'inizio del canone fino alla sua fine (e mai oltre il termine
-        // del contratto). Ogni annualità viene verificata singolarmente, così
-        // gli anni mancanti vengono creati senza duplicare quelli esistenti.
-        var curStart = ca.data_inizio;
-        for (var anno = 1; anno <= 50; anno++) {
-            if (limite && curStart > limite) break;   // oltre la fine del contratto
-            if (fine && curStart > fine) break;       // oltre la fine del canone
-            var annoFine = fine ? addDaysToDateStr(addYearsToDateStr(ca.data_inizio, anno), -1) : null;
-            if (annoFine && fine && annoFine > fine) annoFine = fine; // ultima annualità parziale
-            // La scadenza dell'annualità cade a +1 anno +30 giorni: se quella
-            // DATA ricade nel periodo di un canone a cedolare secca non ci
-            // sono versamenti e la scadenza non viene generata.
-            var dataScad = addDaysToDateStr(addYearsToDateStr(curStart, 1), 30);
-            var canoneScad = getCanoneCheCopre(contrattoId, dataScad);
-            var scadInCedolare = !!(canoneScad && canoneScad.tassazione_cedolare_secca);
-            var coperto = esistenti.some(function(s) {
-                return s.data_decorrenza && s.data_decorrenza >= curStart &&
-                       (!annoFine || s.data_decorrenza <= annoFine);
-            });
-            if (!coperto && !scadInCedolare) {
-                daInserire.push({
-                    contratto_id: contrattoId,
-                    data_decorrenza: curStart,
-                    importo: ca.importo || 0,
-                    stato: 'in-attesa'
-                });
-            }
-            if (!fine) break;                         // canone senza data fine: una sola scadenza
-            curStart = addDaysToDateStr(annoFine, 1); // inizio dell'annualità successiva
-        }
+    // Ancoraggio: la decorrenza del contratto è il giorno/mese di cui si
+    // seguono le ricorrenze annuali (fallback: il primo canone).
+    var ancora = (cLimite && cLimite.data_decorrenza) || canoni[0].data_inizio;
+
+    // --- Autoriparazione: elimina le scadenze IN ATTESA sbagliate ---
+    // Sono sbagliate le scadenze la cui decorrenza NON è un anniversario
+    // dell'ancoraggio (es. 18/06/26 e 18/06/27 generate dalla vecchia logica
+    // a catena che ripartiva dall'inizio di un canone a metà anno). Le
+    // archiviate (scadute/completate) restano: rappresentano versamenti già
+    // riconosciuti dall'utente nelle liste.
+    var isAnniversario = function(deco) {
+        return !!deco && (deco === ancora || addYearsToDateStr(ancora, 1) === deco ||
+            addYearsToDateStr(ancora, 2) === deco || addYearsToDateStr(ancora, 3) === deco ||
+            addYearsToDateStr(ancora, 4) === deco || addYearsToDateStr(ancora, 5) === deco ||
+            addYearsToDateStr(ancora, 6) === deco || addYearsToDateStr(ancora, 7) === deco ||
+            addYearsToDateStr(ancora, 8) === deco || addYearsToDateStr(ancora, 9) === deco ||
+            addYearsToDateStr(ancora, 10) === deco || addYearsToDateStr(ancora, 11) === deco ||
+            addYearsToDateStr(ancora, 12) === deco);
+    };
+    var daRiparare = appData.scadenze.filter(function(s) {
+        return s.contratto_id === contrattoId && s.stato === 'in-attesa' && !isAnniversario(s.data_decorrenza);
     });
+    for (var r = 0; r < daRiparare.length; r++) {
+        var { error: errDel } = await db.from('scadenze').delete().eq('id', daRiparare[r].id);
+        if (!errDel) {
+            appData.scadenze = appData.scadenze.filter(function(x) { return x.id !== daRiparare[r].id; });
+        }
+    }
+
+    var esistenti = appData.scadenze.filter(function(s) { return s.contratto_id === contrattoId; });
+    var daInserire = [];
+    // Una scadenza per ogni RICORRENZA ANNUALE della decorrenza del contratto
+    // (ancora, +1 anno, +2 anni, ...) fino al termine del contratto: il
+    // canone che copre il giorno dell'anniversario ne determina l'importo e
+    // se è a cedolare secca la scadenza non viene generata (non ci sono
+    // imposte da versare). Le scadenze già presenti (archiviate o create in
+    // precedenza) non vengono duplicate.
+    for (var annoIdx = 0; annoIdx <= 12; annoIdx++) {
+        var anniversario = annoIdx === 0 ? ancora : addYearsToDateStr(ancora, annoIdx);
+        if (limite && anniversario > limite) break;  // oltre la fine del contratto
+        // Canone che copre il giorno dell'anniversario: il suo importo è
+        // quello del versamento. Nessun canone = nessun versamento; canone
+        // a cedolare secca = nessun versamento da effettuare.
+        var canoneAnn = getCanoneCheCopre(contrattoId, anniversario);
+        if (!canoneAnn || canoneAnn.tassazione_cedolare_secca) continue;
+        var coperto = esistenti.some(function(s) {
+            return s.data_decorrenza === anniversario;
+        });
+        if (!coperto) {
+            daInserire.push({
+                contratto_id: contrattoId,
+                data_decorrenza: anniversario,
+                importo: canoneAnn.importo || 0,
+                stato: 'in-attesa'
+            });
+        }
+    }
     if (daInserire.length === 0) return;
     var { data: insScad, error: errScad } = await db.from('scadenze').insert(daInserire).select();
     if (errScad) {
@@ -377,8 +407,9 @@ async function syncScadenzePerCanoni(contrattoId, canoni, decorrenzaFallback) {
 //   altrimenti scadenza o scadenza del rinnovo): non ci sono più versamenti;
 // - importo diverso da quello del canone che copre la decorrenza: allineato.
 // Le scadenze completate NON vengono toccate (rappresentano versamenti
-// effettivamente effettuati). Le scadenze mancanti vengono poi create da
-// syncScadenzePerCanoni, che va chiamata DOPO questa funzione.
+// effettivamente effettuati). Le scadenze con decorrenza fuori dal ritmo
+// annuale del contratto vengono riparate da syncScadenzePerCanoni, che va
+// chiamata DOPO questa funzione.
 async function ricalcolaScadenzeContratto(contrattoId) {
     var c = getContrattoById(contrattoId);
     if (!c) return;
@@ -2586,7 +2617,7 @@ function scadenzaRestoreBtn(s) {
 // ricompare nella lista "Da pagare" per poter essere pagata. Elimina anche
 // l'eventuale scadenza successiva creata in automatico al completamento, così
 // non restano due versamenti pendenti per lo stesso periodo (la sua decorrenza
-// è la prossima_scadenza completata - 30 giorni).
+// è la decorrenza della scadenza completata + 1 anno).
 async function ripristinaScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
@@ -2595,7 +2626,7 @@ async function ripristinaScadenza(id) {
         return;
     }
 
-    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, -30) : null;
+    var nextDeco = s.data_decorrenza ? addYearsToDateStr(s.data_decorrenza, 1) : null;
     if (nextDeco) {
         var nexts = appData.scadenze.filter(function(x) {
             return x.contratto_id === s.contratto_id && x.stato === 'in-attesa' && x.data_decorrenza === nextDeco;
@@ -2626,13 +2657,12 @@ async function ripristinaScadenza(id) {
 
 // Completa la scadenza salvando la data di completamento scelta dall'utente.
 // Al completamento genera automaticamente la scadenza successiva: la nuova
-// decorrenza viene fissata 30 giorni prima della prossima_scadenza appena
-// completata, così il trigger del DB (decorrenza + 1 anno + 30 gg) produce una
-// nuova prossima_scadenza esattamente 1 anno dopo la precedente. La prima
-// scadenza resta comunque a 1 anno + 30 gg dalla decorrenza del contratto.
-// La generazione si ferma quando la nuova decorrenza supera il termine del
-// contratto: la data di chiusura se presente, altrimenti la data di scadenza
-// (o la data di rinnovo, se impostata).
+// decorrenza è la decorrenza della scadenza appena completata + 1 anno
+// (stesso giorno/mese), così il ritmo annuale dei versamenti resta ancorato
+// alla decorrenza del contratto anche quando l'utente paga in anticipo o in
+// ritardo. La generazione si ferma quando la nuova decorrenza supera il
+// termine del contratto: la data di chiusura se presente, altrimenti la data
+// di scadenza (o la data di rinnovo, se impostata).
 async function salvaCompletamentoScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
@@ -2651,7 +2681,7 @@ async function salvaCompletamentoScadenza(id) {
     s.data_completamento = data;
 
     // --- Creazione automatica della scadenza successiva ---
-    var nextDeco = s.prossima_scadenza ? addDaysToDateStr(s.prossima_scadenza, -30) : null;
+    var nextDeco = s.data_decorrenza ? addYearsToDateStr(s.data_decorrenza, 1) : null;
     var nextScad = null;
     if (nextDeco) {
         var c = getContrattoById(s.contratto_id);
@@ -2662,15 +2692,11 @@ async function salvaCompletamentoScadenza(id) {
             return x.contratto_id === s.contratto_id && x.stato === 'in-attesa';
         });
         var canone = c ? getCanonePerScadenza(c.id, nextDeco) : null;
-        // Data della prossima scadenza (decorrenza + 1 anno + 30 giorni): se
-        // ricade nel periodo di un canone a cedolare secca non ci sono
-        // versamenti e la scadenza non viene generata.
-        var nextDataScad = addDaysToDateStr(addYearsToDateStr(nextDeco, 1), 30);
-        var canoneScad = c ? getCanoneCheCopre(c.id, nextDataScad) : null;
-        // Con la cedolare secca sul canone del periodo successivo (o sulla
-        // data della prossima scadenza) non c'è versamento: non viene creata.
+        // Con la cedolare secca sul canone del periodo successivo non c'è
+        // versamento: la scadenza non viene creata. La DATA della prossima
+        // scadenza può invece cadere in un periodo a cedolare: l'imposta
+        // dell'annualità va comunque versata entro +1 anno +30 giorni.
         var valida = c && !giaInAttesa && !(canone && canone.tassazione_cedolare_secca) &&
-                     !(canoneScad && canoneScad.tassazione_cedolare_secca) &&
                      (!limite || nextDeco <= limite);
         if (valida) {
             var { data: insScad, error: errScad } = await db.from('scadenze').insert({
@@ -2722,37 +2748,33 @@ function getCanoneCheCopre(contrattoId, data) {
 }
 
 // Canone di riferimento di una scadenza di pagamento: il canone il cui
-// periodo contiene la DATA della scadenza (prossima_scadenza), così il
-// riferimento mostrato sotto la scadenza e nel Modello F24 corrisponde
-// sempre al periodo in cui la scadenza ricade. Solo se nessun canone copre
-// quella data (es. scadenza a cavallo della fine dell'ultimo canone) si usa
-// il canone che copre la decorrenza dell'annualità, infine il fallback
-// storico (canone attuale / ultimo canone).
+// periodo contiene la DECORRENZA della scadenza (l'anniversario del
+// contratto), che è quello che ne ha determinato l'importo. Solo se nessun
+// canone copre quella data (es. anniversario in un buco tra canoni) si usa
+// il canone che copre la DATA della scadenza (prossima_scadenza), infine il
+// fallback storico (canone attuale / ultimo canone).
 function getCanoneRiferimentoScadenza(s) {
     var c = getContrattoById(s.contratto_id);
     if (!c) return null;
-    var canone = getCanoneCheCopre(c.id, s.prossima_scadenza);
-    if (!canone) canone = getCanoneCheCopre(c.id, s.data_decorrenza);
+    // Canone dell'annualità (decorrenza della scadenza): ne ha determinato l'importo
+    var canone = getCanoneCheCopre(c.id, s.data_decorrenza);
+    if (!canone) canone = getCanoneCheCopre(c.id, s.prossima_scadenza);
     return canone || getCanonePerScadenza(c.id, s.data_decorrenza);
 }
 
-// Una scadenza di pagamento non compare nelle liste quando non ci sono
-// versamenti da effettuare:
-// - il canone del periodo della scadenza (data_decorrenza) è a cedolare
-//   secca, oppure
-// - la DATA della scadenza (prossima_scadenza) ricade nel periodo di un
-//   canone a cedolare secca (es. scadenza 11/06/27 che ricade nel canone
-//   12/02/27 -> 11/05/28 a cedolare).
+// Una scadenza di pagamento non compare nelle liste quando il canone del
+// periodo dell'annualità (data_decorrenza) è a cedolare secca: in quel
+// periodo non ci sono imposte da versare. La DATA della scadenza
+// (prossima_scadenza) può invece legittimamente cadere in un periodo a
+// cedolare successivo: l'imposta dell'annualità va versata entro +1 anno
+// +30 giorni dalla sua decorrenza, anche se nel frattempo il contratto è
+// passato alla cedolare secca (es. imposta dell'annualità 18/09/27 ->
+// 17/09/28 da pagare il 18/10/28 con canoni successivi a cedolare).
 function isScadenzaCedolare(s) {
     var c = getContrattoById(s.contratto_id);
     if (!c) return false;
-    var canone = getCanonePerScadenza(c.id, s.data_decorrenza);
-    if (canone && canone.tassazione_cedolare_secca) return true;
-    if (s.prossima_scadenza) {
-        var canoneScad = getCanoneCheCopre(c.id, s.prossima_scadenza);
-        if (canoneScad && canoneScad.tassazione_cedolare_secca) return true;
-    }
-    return false;
+    var canone = getCanoneCheCopre(c.id, s.data_decorrenza);
+    return !!(canone && canone.tassazione_cedolare_secca);
 }
 
 // Una scadenza che va oltre il termine del contratto non deve essere elencata:
