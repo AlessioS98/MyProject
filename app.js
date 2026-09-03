@@ -1237,15 +1237,7 @@ document.getElementById('notifBtn').addEventListener('click', function(e) {
 });
 document.getElementById('notifClear').addEventListener('click', function() {
     appData.scadenze.forEach(function(s) { markNotifSeen('scadenza_' + s.id); });
-    appData.contratti.forEach(function(c) {
-        markNotifSeen('contratto_' + c.id);
-        // I contratti notificano una sola volta: "segna tutte come lette"
-        // vale come notifica già inviata per quelli ormai scaduti
-        var refDate = getContrattoScadenzaEffettiva(c);
-        if (refDate && -daysUntil(refDate) >= 0) {
-            localStorage.setItem('notifOnce_contratto_' + c.id, '1');
-        }
-    });
+    appData.contratti.forEach(function(c) { markNotifSeen('contratto_' + c.id); });
     notificationShownWith.clear();
     notificationReadThisSession.clear();
     renderNotifications();
@@ -2526,14 +2518,19 @@ function getScadenzaNotifica(s) {
 }
 
 // --- Notifiche: contratti in scadenza ---
-// Una sola notifica, a partire dalla data di scadenza del contratto.
+// La notifica anticipata segue la data di scadenza del contratto (o la data
+// di scadenza rinnovo, se presente): una notifica 30 giorni prima, una 15
+// giorni prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno
+// prima della scadenza). A scadenza avvenuta, o con una data di chiusura
+// inserita, non viene inviata nessuna notifica.
 function getContrattoNotifica(c) {
     if (c.data_chiusura) return null;
     var refDate = getContrattoScadenzaEffettiva(c);
     if (!refDate) return null;
-    if (-daysUntil(refDate) < 0) return null; // non ancora scaduto
-    if (localStorage.getItem('notifOnce_contratto_' + c.id) === '1') return null;
-    return { days: -daysUntil(refDate) };
+    var gg = daysUntil(refDate);
+    if (gg <= 0) return null;            // scaduto o scade oggi: nessuna notifica
+    if (gg === 30 || gg === 15 || gg <= 7) return { days: gg };
+    return null;                         // fuori dalle finestre (31+, 29..16, 14..8)
 }
 
 function markNotifSeen(key) {
@@ -2561,34 +2558,30 @@ function renderNotifications() {
         });
     });
 
-    // Contratti in scadenza: una sola notifica a partire dalla data di scadenza
+    // Contratti in scadenza: una notifica 30 giorni prima, una 15 giorni
+    // prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno prima
+    // della scadenza).
     appData.contratti.forEach(function(c) {
-        var n = getContrattoNotifica(c);
-        if (!n) return;
+        if (!getContrattoNotifica(c)) return;
         var refDate = getContrattoScadenzaEffettiva(c);
         items.push({
             key: 'contratto_' + c.id,
-            once: true,
             date: refDate,
             icon: 'fa-file-contract',
             cls: 'info',
-            txt: n.days === 0 ? 'Contratto ' + c.identificativo + ' scade oggi' : 'Contratto ' + c.identificativo + ' scaduto',
-            meta: formatDate(refDate)
+            txt: 'In data ' + formatDate(refDate) + ' scade il contratto tra ' +
+                 getLocatoriLabel(c.id) + ' e ' + getConduttoriLabel(c.id),
+            meta: 'Contratto ' + c.identificativo
         });
     });
 
     // Snooze: mostra solo le notifiche non eliminate.
-    // Le notifiche di pagamento si mostrano una volta al giorno; quelle dei
-    // contratti una sola volta in assoluto (flag notifOnce).
+    // Ogni notifica si mostra una volta al giorno: il giorno successivo,
+    // se il calendario prevede ancora una notifica (es. ultimi 7 giorni
+    // prima della scadenza del contratto), torna a comparire.
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
-        if (it.once) {
-            localStorage.setItem('notifOnce_' + it.key, '1');
-            daMostrare.push(it);
-            notificationShownWith.add(it.key);
-            return;
-        }
         // Se la notifica è già stata mostrata in questa sessione,
         // visualizzala sempre: solo markNotificationRead può rimuoverla
         // (rimuovendola da notificationShownWith).
