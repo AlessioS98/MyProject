@@ -2614,30 +2614,14 @@ function scadenzaRestoreBtn(s) {
 
 // Ripristina una scadenza archiviata (completata per sbaglio oppure scaduta e
 // ancora da saldare): torna 'in-attesa' senza data di completamento, quindi
-// ricompare nella lista "Da pagare" per poter essere pagata. Elimina anche
-// l'eventuale scadenza successiva creata in automatico al completamento, così
-// non restano due versamenti pendenti per lo stesso periodo (la sua decorrenza
-// è la decorrenza della scadenza completata + 1 anno).
+// ricompare nella lista "Da pagare" per poter essere pagata. Le scadenze
+// successive restano invariate: ognuna rappresenta il proprio versamento.
 async function ripristinaScadenza(id) {
     var s = appData.scadenze.find(function(x) { return x.id === id; });
     if (!s) return;
     if (!isScadenzaArchiviata(s)) {
         showToast('Questa scadenza non è archiviata', 'error');
         return;
-    }
-
-    var nextDeco = s.data_decorrenza ? addYearsToDateStr(s.data_decorrenza, 1) : null;
-    if (nextDeco) {
-        var nexts = appData.scadenze.filter(function(x) {
-            return x.contratto_id === s.contratto_id && x.stato === 'in-attesa' && x.data_decorrenza === nextDeco;
-        });
-        if (nexts.length > 0) {
-            var nextIds = nexts.map(function(x) { return x.id; });
-            var { error: errDel } = await db.from('scadenze').delete().in('id', nextIds);
-            if (!errDel) {
-                appData.scadenze = appData.scadenze.filter(function(x) { return nextIds.indexOf(x.id) === -1; });
-            }
-        }
     }
 
     var { error } = await db.from('scadenze').update({ stato: 'in-attesa', data_completamento: null }).eq('id', id);
