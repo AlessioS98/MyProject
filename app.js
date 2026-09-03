@@ -1394,7 +1394,10 @@ function setupFilterInputs() {
     }
     function setupPersonFilter(inputId, fieldKey, onPick) {
         setupFilterAutocomplete(document.getElementById(inputId), function() { return personeSugg(fieldKey); }, onPick, {
-            dedupeKey: function(item) { return item.data.id; }
+            dedupeKey: function(item) { return item.data.id; },
+            // Ordina per il nome completo mostrato sotto il valore del campo
+            // (es. digitando nel Cognome, per "Maria Rossi" e "Luca Rossi")
+            sortLabel: function(item) { return getPersonaLabelShort(item.data); }
         });
     }
     function fillLocatoreFilter(p) {
@@ -1440,7 +1443,10 @@ function setupFilterInputs() {
         }).filter(Boolean);
     }
     function setupImmobileFilter(inputId, fieldKey) {
-        var opts = { dedupeKey: function(item) { return item.data.id; } };
+        // Ogni valore compare una sola volta nei suggerimenti (stesso indirizzo,
+        // città, foglio, particella o sub anche se appartiene a più immobili):
+        // si deduplica sul valore mostrato, non sul singolo immobile.
+        var opts = {};
         // Per il campo indirizzo ordina per nome della strada (senza il tipo iniziale)
         if (fieldKey === 'indirizzo') opts.sortLabel = indirizzoSortLabel;
         setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, fillImmobileFilter, opts);
