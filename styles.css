@@ -390,6 +390,17 @@ input, select, textarea { font-family: inherit; }
     justify-content: center;
 }
 
+/* Pulsazione del badge quando arriva una nuova notifica */
+@keyframes notifPulse {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.5); }
+    60% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+}
+.notif-badge.notif-pulse {
+    animation: notifPulse 0.55s ease-in-out 2;
+}
+
 /* ---------- Notification Panel ---------- */
 .notification-panel {
     position: fixed;

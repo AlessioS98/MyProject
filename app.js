@@ -2600,6 +2600,30 @@ function isNotifSeenToday(key, deadline) {
     return parts[1] === deadline;
 }
 
+// --- Annuncio nuove notifiche ---
+// Ogni render confronta le notifiche mostrate con quelle del render
+// precedente: una notifica NUOVA (chiave mai vista in questa sessione)
+// oppure con data di riferimento CAMBIATA (es. scadenza del contratto
+// modificata) viene annunciata con un toast e con una pulsazione del
+// badge della campanella. Il primo render della sessione fa solo lo
+// snapshot: all'apertura della pagina non vengono annunciati arrivi
+// "vecchi", ma solo le novità che capitano da quel momento in poi.
+var notifSnapshotReady = false;
+var lastRenderedNotifs = {};
+
+function announceNotificationArrivals(arrivals) {
+    arrivals.forEach(function(it) {
+        showToast('Nuova notifica · ' + it.txt, 'info');
+    });
+    var badgeEl = document.getElementById('notifBadge');
+    if (badgeEl) {
+        // Riavvio l'animazione anche se la classe era già presente
+        badgeEl.classList.remove('notif-pulse');
+        void badgeEl.offsetWidth;
+        badgeEl.classList.add('notif-pulse');
+    }
+}
+
 function renderNotifications() {
     var items = [];
 
@@ -2670,6 +2694,28 @@ function renderNotifications() {
 
     // Letta oggi (con la stessa data di riferimento) = schiarita, non eliminata
     function isReadNotif(it) { return isNotifSeenToday(it.key, it.date); }
+
+    // Rilevamento nuove notifiche rispetto al render precedente
+    var arrivals = [];
+    if (!notifSnapshotReady) {
+        daMostrare.forEach(function(it) { lastRenderedNotifs[it.key] = it.date || ''; });
+        notifSnapshotReady = true;
+    } else {
+        var chiaviCorrenti = {};
+        daMostrare.forEach(function(it) {
+            chiaviCorrenti[it.key] = true;
+            var dataPrec = lastRenderedNotifs[it.key];
+            var dataNuova = it.date || '';
+            // Arrivo: chiave mai vista oppure data di riferimento cambiata
+            if (dataPrec === undefined || dataPrec !== dataNuova) arrivals.push(it);
+            lastRenderedNotifs[it.key] = dataNuova;
+        });
+        // Dimentica le chiavi che non sono più mostrate (es. eliminate)
+        Object.keys(lastRenderedNotifs).forEach(function(k) {
+            if (!chiaviCorrenti[k]) delete lastRenderedNotifs[k];
+        });
+        if (arrivals.length > 0) announceNotificationArrivals(arrivals);
+    }
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
 
