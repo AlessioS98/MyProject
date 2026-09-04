@@ -2679,16 +2679,18 @@ function renderNotifications() {
 
     // Le notifiche restano visibili nella campanella finché l'utente non le
     // ELIMINA (✕) o finché la scadenza non esce dalle finestre del
-    // calendario: un refresh NON le fa sparire. Il segno ✓ ("Segna come
-    // letta") NON rimuove la notifica: la schiarisce per il resto della
-    // giornata (e la schiarita resiste anche al refresh). Il giorno
+    // calendario: un refresh NON le fa sparire. La ✕ elimina SOLO la
+    // notifica per la data di riferimento corrente: se la scadenza cambia,
+    // la notifica per la nuova data arriva regolarmente. Il segno ✓ ("Segna
+    // come letta") NON rimuove la notifica: la schiarisce per il resto
+    // della giornata (e la schiarita resiste anche al refresh). Il giorno
     // successivo, se il calendario prevede ancora una notifica (es. ultimi
     // 7 giorni prima della scadenza), torna non letta. Se la data di
     // riferimento cambia (es. nuova scadenza del contratto) il segno di
     // lettura si azzera e la notifica torna subito non letta.
     var daMostrare = [];
     items.forEach(function(it) {
-        if (isNotificationDismissed(it.key)) return false;
+        if (isNotificationDismissed(it.key, it.date)) return false;
         daMostrare.push(it);
     });
 
@@ -2737,7 +2739,7 @@ function renderNotifications() {
             '<div class="notif-time">' + it.meta + '</div></div>' +
             '<div class="notif-actions">' +
             '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>' +
-            '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\')"><i class="fas fa-times"></i></button>' +
+            '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>' +
             '</div></div>';
     }).join('');
 }
@@ -2753,15 +2755,26 @@ function markNotificationRead(key, deadline) {
     renderNotifications();
 }
 
-// Elimina definitivamente una notifica (non verrà mai più mostrata)
-function deleteNotification(key) {
+// Elimina la notifica corrente: l'eliminazione è legata alla data di
+// riferimento (la scadenza a cui la notifica si riferiva). Se la data di
+// scadenza cambia, la notifica per la NUOVA data non è eliminata e torna
+// ad arrivare normalmente.
+function deleteNotification(key, deadline) {
     localStorage.removeItem('notifSeen_' + key);
-    localStorage.setItem('notifDismissed_' + key, '1');
+    localStorage.setItem('notifDismissed_' + key, deadline || '1');
     renderNotifications();
 }
 
-function isNotificationDismissed(key) {
-    return localStorage.getItem('notifDismissed_' + key) === '1';
+// True se la notifica è stata eliminata con la ✕. L'eliminazione vale per
+// quella specifica data di riferimento: con una scadenza diversa la
+// notifica non è eliminata e ricompare.
+function isNotificationDismissed(key, deadline) {
+    var v = localStorage.getItem('notifDismissed_' + key);
+    if (!v) return false;
+    // Vecchio formato '1' (senza data): per sicurezza vale come eliminata
+    // per qualunque data (i flag vecchi vengono comunque ripuliti all'avvio)
+    if (v === '1') return true;
+    return v === (deadline || '1');
 }
 
 // --- Bottone Completa: apre una finestra per inserire la data di completamento ---
@@ -3560,6 +3573,21 @@ async function renderScadenze() {
 // INIT
 // ============================================
 document.addEventListener('DOMContentLoaded', async function() {
+    // Migrazione: i vecchi flag di eliminazione (valore '1', senza data di
+    // riferimento) potevano bloccare per sempre le notifiche di un
+    // contratto/scadenza anche quando la data cambiava. Vengono rimossi
+    // una tantum: la notifica eventualmente ancora attuale ricompare una
+    // sola volta e può essere rieliminata (ora l'eliminazione resta legata
+    // alla data, quindi non blocca più le notifiche future).
+    var daPulire = [];
+    for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('notifDismissed_') === 0 && localStorage.getItem(k) === '1') {
+            daPulire.push(k);
+        }
+    }
+    daPulire.forEach(function(k) { localStorage.removeItem(k); });
+
     await loadAllData();
     renderNotifications();
     try { renderContratti(); } catch(e) { console.error('Contratti error:', e); }
