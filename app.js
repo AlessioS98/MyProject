@@ -2736,18 +2736,23 @@ function renderNotifications() {
         var c = getContrattoById(s.contratto_id);
         var cod = c ? c.identificativo : 'Contratto #' + s.contratto_id;
         var gg = n.days;
-        var txt;
-        if (gg > 1) txt = 'Scadenza tra ' + gg + ' giorni · ' + cod;
-        else if (gg === 1) txt = 'Scadenza domani · ' + cod;
-        else if (gg === 0) txt = 'Scadenza oggi · ' + cod;
-        else txt = 'Scadenza da ' + (-gg) + ' giorni · ' + cod;
+        // Come nelle notifiche dei contratti, la scadenza di pagamento indica
+        // anche le parti, con COGNOME prima del NOME.
+        var quando;
+        if (gg > 1) quando = 'fra ' + gg + ' giorni';
+        else if (gg === 1) quando = 'domani';
+        else if (gg === 0) quando = 'oggi';
+        else quando = 'da ' + (-gg) + ' giorni';
+        var parti = c ? ' tra ' + getLocatoriCognomeNomeLabel(c.id) + ' e ' +
+                             getConduttoriCognomeNomeLabel(c.id) : '';
+        var txt = 'Scadenza di pagamento ' + quando + parti;
         items.push({
             key: 'scadenza_' + s.id,
             date: s.prossima_scadenza,
             icon: gg > 0 ? 'fa-hourglass-half' : 'fa-exclamation-circle',
             cls: gg > 0 ? 'warning' : 'danger',
             txt: txt,
-            meta: formatDate(s.prossima_scadenza) + ' · ' + formatCurrency(s.importo)
+            meta: cod + ' · ' + formatDate(s.prossima_scadenza) + ' · ' + formatCurrency(s.importo)
         });
     });
 
