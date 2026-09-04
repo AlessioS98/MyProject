@@ -9,8 +9,6 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
 var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
-// Notifiche segnate come lette in questa sessione (schiarite, non eliminate)
-var notificationReadThisSession = new Set();
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -2185,9 +2183,9 @@ async function saveContratto(editId) {
         var idx = appData.contratti.findIndex(function(c) { return c.id === targetId; });
         if (idx >= 0) Object.assign(appData.contratti[idx], contrattoData);
         // Se cambia la data di scadenza (o la scadenza rinnovo), lo stato
-        // della notifica del contratto viene azzerato (snooze del giorno ed
+        // della notifica del contratto viene azzerato (segno di lettura ed
         // eventuale 'Elimina'): la notifica per la NUOVA data viene
-        // considerata nuova e torna visibile anche lo stesso giorno, a
+        // considerata nuova e torna NON letta anche lo stesso giorno, a
         // qualunque data si passi (anche tornando a una data già provata).
         if (vecchioContratto &&
             (vecchioContratto.data_scadenza !== contrattoData.data_scadenza ||
@@ -2195,10 +2193,6 @@ async function saveContratto(editId) {
             var notifKey = 'contratto_' + targetId;
             localStorage.removeItem('notifSeen_' + notifKey);
             localStorage.removeItem('notifDismissed_' + notifKey);
-            // La notifica per la nuova data torna in stato non letto
-            // (pallino non letto), anche se quella precedente era stata
-            // segnata come letta nella stessa sessione.
-            notificationReadThisSession.delete(notifKey);
         }
     } else {
         var { data, error } = await db.from('contratti').insert(contrattoData).select('id').single();
@@ -2579,11 +2573,12 @@ function getContrattoNotifica(c) {
     return null;                         // fuori dalle finestre (31+, 29..16, 14..8)
 }
 
-// Lo snooze salva la data odierna insieme alla DATA DI RIFERIMENTO della
-// notifica (scadenza del contratto / prossima_scadenza di pagamento): se la
-// data cambia (es. modifica della scadenza del contratto) la notifica si
-// considera NUOVA e torna subito visibile lo stesso giorno, così si può
-// testare più volte al giorno senza svuotare localStorage.
+// 'Segna come letta' salva la data odierna insieme alla DATA DI RIFERIMENTO
+// della notifica (scadenza del contratto / prossima_scadenza di pagamento):
+// la notifica risulta letta OGGI per quella scadenza. Se la data cambia
+// (es. modifica della scadenza del contratto) il segno di lettura viene
+// azzerato e la notifica torna non letta anche lo stesso giorno, così si
+// può testare più volte al giorno senza svuotare localStorage.
 function markNotifSeen(key, deadline) {
     var v = toLocalDateStr(new Date());
     if (deadline) v += '|' + deadline;
@@ -2658,35 +2653,37 @@ function renderNotifications() {
         });
     });
 
-    // Filtro: mostra le notifiche non eliminate che oggi non sono ancora
-    // state segnate come lette (con la stessa data di riferimento). Una
-    // notifica NON viene marcata come vista al solo rendering: resta nella
-    // campanella anche dopo un refresh finché l'utente non la segna come
-    // letta o non la elimina. Segnandola come letta sparisce per il resto
-    // della giornata; il giorno successivo, se il calendario prevede
-    // ancora una notifica (es. ultimi 7 giorni prima della scadenza),
-    // torna a comparire. Se la data di riferimento cambia (es. nuova
-    // scadenza del contratto) lo snooze si azzera e la notifica ricompare
-    // subito, anche lo stesso giorno.
+    // Le notifiche restano visibili nella campanella finché l'utente non le
+    // ELIMINA (✕) o finché la scadenza non esce dalle finestre del
+    // calendario: un refresh NON le fa sparire. Il segno ✓ ("Segna come
+    // letta") NON rimuove la notifica: la schiarisce per il resto della
+    // giornata (e la schiarita resiste anche al refresh). Il giorno
+    // successivo, se il calendario prevede ancora una notifica (es. ultimi
+    // 7 giorni prima della scadenza), torna non letta. Se la data di
+    // riferimento cambia (es. nuova scadenza del contratto) il segno di
+    // lettura si azzera e la notifica torna subito non letta.
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
-        // Letta oggi con la stessa data di riferimento: nascosta per oggi
-        if (isNotifSeenToday(it.key, it.date)) return false;
         daMostrare.push(it);
     });
+
+    // Letta oggi (con la stessa data di riferimento) = schiarita, non eliminata
+    function isReadNotif(it) { return isNotifSeenToday(it.key, it.date); }
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
 
     var badge = document.getElementById('notifBadge');
     var list = document.getElementById('notifList');
-    badge.textContent = daMostrare.length > 0 ? daMostrare.length : '';
+    // Il badge conta solo le notifiche NON lette: schiarirle non le elimina
+    var nonLette = daMostrare.filter(function(it) { return !isReadNotif(it); });
+    badge.textContent = nonLette.length > 0 ? nonLette.length : '';
     if (daMostrare.length === 0) {
         list.innerHTML = '<div class="notif-item"><div class="notif-content"><p>Nessuna notifica</p></div></div>';
         return;
     }
     list.innerHTML = daMostrare.map(function(it) {
-        var isRead = notificationReadThisSession.has(it.key);
+        var isRead = isReadNotif(it);
         var itemClass = isRead ? 'notif-item notif-read' : 'notif-item unread';
         return '<div class="' + itemClass + '">' +
             '<div class="notif-icon ' + it.cls + '"><i class="fas ' + it.icon + '"></i></div>' +
@@ -2699,11 +2696,13 @@ function renderNotifications() {
     }).join('');
 }
 
-// Segna una singola notifica come letta: sparisce per il resto della
-// giornata e ricompare il giorno successivo se il calendario prevede
-// ancora una notifica (o subito, se la data di riferimento cambia).
+// Segna una singola notifica come letta: la notifica viene SCHIARITA ma
+// resta visibile nella campanella (il badge non la conta più). La
+// schiarita vale per il resto della giornata e resiste al refresh; il
+// giorno successivo, se il calendario prevede ancora una notifica (es.
+// ultimi 7 giorni prima della scadenza), torna non letta (o subito, se la
+// data di riferimento cambia).
 function markNotificationRead(key, deadline) {
-    notificationReadThisSession.add(key);
     markNotifSeen(key, deadline);
     renderNotifications();
 }
