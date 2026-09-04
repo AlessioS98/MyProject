@@ -2180,18 +2180,28 @@ async function saveContratto(editId) {
     var targetId = editId;
     if (targetId) {
         var vecchioContratto = appData.contratti.find(function(c) { return c.id === targetId; });
+        // COPIA del contratto PRIMA dell'aggiornamento: l'oggetto in
+        // appData viene subito dopo sovrascritto con i dati nuovi
+        // (Object.assign) e senza copia la notifica "vecchia" verrebbe
+        // congelata con la data già cambiata, quindi non comparirebbe mai.
+        var vecchioSnapshot = vecchioContratto ? Object.assign({}, vecchioContratto) : null;
         var { error } = await db.from('contratti').update(contrattoData).eq('id', targetId);
         if (error) { console.error('Errore update contratto:', error); showToast('Errore salvataggio', 'error'); return; }
         var idx = appData.contratti.findIndex(function(c) { return c.id === targetId; });
         if (idx >= 0) Object.assign(appData.contratti[idx], contrattoData);
-        // Se cambia la data di scadenza (o la scadenza rinnovo), lo stato
-        // della notifica del contratto viene azzerato (segno di lettura ed
-        // eventuale 'Elimina'): la notifica per la NUOVA data viene
-        // considerata nuova e torna NON letta anche lo stesso giorno, a
-        // qualunque data si passi (anche tornando a una data già provata).
-        if (vecchioContratto &&
-            (vecchioContratto.data_scadenza !== contrattoData.data_scadenza ||
-             vecchioContratto.data_scadenza_rinnovo !== contrattoData.data_scadenza_rinnovo)) {
+        // Se cambia la data di scadenza (o la scadenza rinnovo), la
+        // notifica eventualmente visibile NON viene sostituita: viene
+        // conservata come voce storica (testo e data originali, finché il
+        // contratto è in corso) e per la NUOVA data arriverà una notifica
+        // separata. Lo stato della notifica del contratto viene poi
+        // azzerato (segno di lettura ed eventuale 'Elimina'): la notifica
+        // per la NUOVA data viene considerata nuova e torna NON letta
+        // anche lo stesso giorno, a qualunque data si passi (anche
+        // tornando a una data già provata).
+        if (vecchioSnapshot &&
+            (vecchioSnapshot.data_scadenza !== contrattoData.data_scadenza ||
+             vecchioSnapshot.data_scadenza_rinnovo !== contrattoData.data_scadenza_rinnovo)) {
+            conservaNotificaContrattoVisibile(vecchioSnapshot);
             var notifKey = 'contratto_' + targetId;
             localStorage.removeItem('notifSeen_' + notifKey);
             localStorage.removeItem('notifDismissed_' + notifKey);
@@ -2426,6 +2436,12 @@ async function deleteContratto(id) {
     appData.canoni_annuali = appData.canoni_annuali.filter(function(ca) { return ca.contratto_id !== id; });
     appData.contratto_locatori = appData.contratto_locatori.filter(function(r) { return r.contratto_id !== id; });
     appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.contratto_id !== id; });
+    // Rimuove anche le eventuali notifiche storiche conservate per il contratto
+    var storicoStore = getNotifStoriche();
+    if (storicoStore['contratto_' + id]) {
+        delete storicoStore['contratto_' + id];
+        saveNotifStoriche(storicoStore);
+    }
     showToast('Contratto eliminato', 'info');
     await refreshPage('contratti');
 }
@@ -2575,6 +2591,85 @@ function getContrattoNotifica(c) {
     return null;                         // fuori dalle finestre (31+, 29..16, 14..8)
 }
 
+// --- Notifiche storiche dei contratti ---
+// Quando la data di scadenza di un contratto viene MODIFICATA mentre una
+// sua notifica è visibile nella campanella, la notifica NON viene
+// sostituita dalla nuova: viene congelata in questo archivio locale
+// (localStorage 'notifStoriche') con il testo e la data originali, e per
+// la NUOVA data arriva una notifica separata e non letta. La voce storica
+// resta visibile accanto a quella nuova finché il contratto è ancora in
+// corso (non chiuso, non scaduto) e la sua data di riferimento non è
+// passata; la ✕ la elimina definitivamente, il ✓ la schiarisce in modo
+// permanente (le voci storiche non vengono riproposte il giorno dopo:
+// non rappresentano un appuntamento del calendario ma una notifica già
+// arrivata).
+//
+// Struttura: notifStoriche = { '<chiave notifica>': { '<data di
+// riferimento>': { txt, meta, icon, cls, read, readDate, dismissed } } }
+function getNotifStoriche() {
+    try { return JSON.parse(localStorage.getItem('notifStoriche') || '{}'); }
+    catch (e) { return {}; }
+}
+function saveNotifStoriche(store) {
+    localStorage.setItem('notifStoriche', JSON.stringify(store));
+}
+
+// Costruisce la voce della campanella per un contratto in scadenza, come
+// verrebbe mostrata OGGI (stessa logica del render delle notifiche).
+// Restituisce null se oggi nessuna notifica è prevista per il contratto.
+function buildContrattoNotifItem(c) {
+    var n = getContrattoNotifica(c);
+    if (!n) return null;
+    var refDate = getContrattoScadenzaEffettiva(c);
+    var gg = n.days;
+    // Il testo include il numero di giorni mancanti, così la notifica dei
+    // 30 gg, quella dei 15 gg e quelle degli ultimi 7 giorni sono
+    // riconoscibili: cambiando la data di scadenza il messaggio cambia e
+    // la nuova notifica risulta subito evidente.
+    var quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
+    return {
+        key: 'contratto_' + c.id,
+        date: refDate,
+        icon: 'fa-file-contract',
+        cls: 'info',
+        // Nelle notifiche i nomi sono ordinati COGNOME + NOME
+        txt: quando + ' scade il contratto tra ' +
+             getLocatoriCognomeNomeLabel(c.id) + ' e ' +
+             getConduttoriCognomeNomeLabel(c.id) +
+             ' (' + formatDate(refDate) + ')',
+        meta: 'Contratto ' + c.identificativo
+    };
+}
+
+// Congela la notifica attualmente visibile di un contratto (se oggi ce
+// n'è una) prima che la modifica della data di scadenza la faccia
+// sparire. La voce storica eredita lo stato che la notifica aveva nella
+// campanella: se era stata eliminata con la ✕ non viene riesumata.
+function conservaNotificaContrattoVisibile(c) {
+    var it = buildContrattoNotifItem(c);
+    if (!it) return;               // nessuna notifica visibile oggi: nulla da conservare
+    var store = getNotifStoriche();
+    var perContratto = store[it.key] || {};
+    if (isNotificationDismissed(it.key, it.date)) {
+        // Eliminata in precedenza con la ✕: resta eliminata anche per la
+        // data di riferimento originale (niente riesumazioni).
+        delete perContratto[it.date];
+    } else {
+        var lettaOggi = isNotifSeenToday(it.key, it.date);
+        perContratto[it.date] = {
+            txt: it.txt,
+            meta: it.meta,
+            icon: it.icon,
+            cls: it.cls,
+            read: lettaOggi,
+            readDate: lettaOggi ? toLocalDateStr(new Date()) : null,
+            dismissed: false
+        };
+    }
+    store[it.key] = perContratto;
+    saveNotifStoriche(store);
+}
+
 // 'Segna come letta' salva la data odierna insieme alla DATA DI RIFERIMENTO
 // della notifica (scadenza del contratto / prossima_scadenza di pagamento):
 // la notifica risulta letta OGGI per quella scadenza. Se la data cambia
@@ -2660,28 +2755,61 @@ function renderNotifications() {
     // prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno prima
     // della scadenza).
     appData.contratti.forEach(function(c) {
-        var n = getContrattoNotifica(c);
-        if (!n) return;
-        var refDate = getContrattoScadenzaEffettiva(c);
-        var gg = n.days;
-        // Il testo include il numero di giorni mancanti, così la notifica
-        // dei 30 gg, quella dei 15 gg e quelle degli ultimi 7 giorni sono
-        // riconoscibili: cambiando la data di scadenza il messaggio cambia
-        // e la nuova notifica risulta subito evidente.
-        var quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
-        items.push({
-            key: 'contratto_' + c.id,
-            date: refDate,
-            icon: 'fa-file-contract',
-            cls: 'info',
-            // Nelle notifiche i nomi sono ordinati COGNOME + NOME
-            txt: quando + ' scade il contratto tra ' +
-                 getLocatoriCognomeNomeLabel(c.id) + ' e ' +
-                 getConduttoriCognomeNomeLabel(c.id) +
-                 ' (' + formatDate(refDate) + ')',
-            meta: 'Contratto ' + c.identificativo
-        });
+        var it = buildContrattoNotifItem(c);
+        if (it) items.push(it);
     });
+
+    // Notifiche storiche (scadenza modificata mentre la notifica era
+    // visibile): restano nella campanella accanto alla notifica per la
+    // NUOVA data, con il testo e la data originali. Restano finché il
+    // contratto è ancora in corso; le voci eliminate con la ✕, con la
+    // data di riferimento passata o che coincidono con la scadenza
+    // attuale (es. data riportata al valore originale) non vengono
+    // mostrate e vengono rimosse dall'archivio.
+    var oggiNotif = toLocalDateStr(new Date());
+    var storicoStore = getNotifStoriche();
+    var storicoModificato = false;
+    appData.contratti.forEach(function(c) {
+        var key = 'contratto_' + c.id;
+        var perContratto = storicoStore[key];
+        if (!perContratto) return;
+        var scadEff = getContrattoScadenzaEffettiva(c);
+        // Contratto chiuso o scaduto: le notifiche del contratto si
+        // fermano (stessa regola delle notifiche normali) e con esse
+        // anche le voci storiche.
+        if (c.data_chiusura || !scadEff || daysUntil(scadEff) <= 0) {
+            delete storicoStore[key];
+            storicoModificato = true;
+            return;
+        }
+        Object.keys(perContratto).forEach(function(refDate) {
+            var g = perContratto[refDate];
+            if (!g) return;
+            if (g.dismissed) return;
+            if (refDate <= oggiNotif || refDate === scadEff) {
+                delete perContratto[refDate];
+                storicoModificato = true;
+                return;
+            }
+            items.push({
+                key: key,
+                date: refDate,
+                icon: g.icon || 'fa-file-contract',
+                cls: g.cls || 'info',
+                txt: g.txt,
+                meta: g.meta,
+                // Marca le voci storiche: stato di lettura proprio e
+                // nessun annuncio "Nuova notifica" al loro arrivo
+                storico: true,
+                storicoRead: !!g.read
+            });
+        });
+        if (Object.keys(perContratto).length === 0) {
+            delete storicoStore[key];
+            storicoModificato = true;
+        }
+    });
+    if (storicoModificato) saveNotifStoriche(storicoStore);
 
     // Le notifiche restano visibili nella campanella finché l'utente non le
     // ELIMINA (✕) o finché la scadenza non esce dalle finestre del
@@ -2696,22 +2824,28 @@ function renderNotifications() {
     // lettura si azzera e la notifica torna subito non letta.
     var daMostrare = [];
     items.forEach(function(it) {
-        if (isNotificationDismissed(it.key, it.date)) return false;
+        // Le voci storiche hanno uno stato di eliminazione proprio
+        // (campo 'dismissed' nell'archivio), già filtrato sopra.
+        if (!it.storico && isNotificationDismissed(it.key, it.date)) return false;
         daMostrare.push(it);
     });
 
-    // Letta oggi (con la stessa data di riferimento) = schiarita, non eliminata
-    function isReadNotif(it) { return isNotifSeenToday(it.key, it.date); }
+    // Letta oggi (con la stessa data di riferimento) = schiarita, non eliminata.
+    // Le notifiche storiche hanno uno stato di lettura proprio e permanente.
+    function isReadNotif(it) { return it.storico ? !!it.storicoRead : isNotifSeenToday(it.key, it.date); }
 
     // Rilevamento nuove notifiche rispetto al render precedente
     var arrivals = [];
     if (!notifSnapshotReady) {
-        daMostrare.forEach(function(it) { lastRenderedNotifs[it.key] = it.date || ''; });
+        daMostrare.forEach(function(it) { if (!it.storico) lastRenderedNotifs[it.key] = it.date || ''; });
         notifSnapshotReady = true;
     } else {
         var chiaviCorrenti = {};
         daMostrare.forEach(function(it) {
             chiaviCorrenti[it.key] = true;
+            // Le voci storiche sono notifiche già arrivate: conservate,
+            // mai annunciate come nuove né confrontate col render passato.
+            if (it.storico) return;
             var dataPrec = lastRenderedNotifs[it.key];
             var dataNuova = it.date || '';
             // Arrivo: chiave mai vista oppure data di riferimento cambiata
@@ -2739,15 +2873,48 @@ function renderNotifications() {
     list.innerHTML = daMostrare.map(function(it) {
         var isRead = isReadNotif(it);
         var itemClass = isRead ? 'notif-item notif-read' : 'notif-item unread';
+        var readBtn, delBtn;
+        if (it.storico) {
+            // Voci storiche: azioni dedicate allo stato proprio della voce
+            // (indipendenti dalla notifica corrente del contratto).
+            readBtn = '<button class="notif-action" title="Segna come letta" onclick="markNotificaStoricaLetta(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>';
+            delBtn = '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotificaStorica(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>';
+        } else {
+            readBtn = '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>';
+            delBtn = '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>';
+        }
         return '<div class="' + itemClass + '">' +
             '<div class="notif-icon ' + it.cls + '"><i class="fas ' + it.icon + '"></i></div>' +
             '<div class="notif-content"><p>' + it.txt + '</p>' +
             '<div class="notif-time">' + it.meta + '</div></div>' +
-            '<div class="notif-actions">' +
-            '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>' +
-            '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>' +
-            '</div></div>';
+            '<div class="notif-actions">' + readBtn + delBtn + '</div></div>';
     }).join('');
+}
+
+// --- Azioni sulle notifiche storiche ---
+// Il ✓ schiarisce PERMANENTEMENTE la voce storica (non torna non letta il
+// giorno successivo: non rappresenta un appuntamento del calendario, ma
+// una notifica già arrivata che è stata conservata); la ✕ la elimina
+// definitivamente.
+function markNotificaStoricaLetta(key, refDate) {
+    var store = getNotifStoriche();
+    var g = store[key] && store[key][refDate];
+    if (!g || g.read) return;
+    g.read = true;
+    g.readDate = toLocalDateStr(new Date());
+    saveNotifStoriche(store);
+    renderNotifications();
+}
+
+function deleteNotificaStorica(key, refDate) {
+    var store = getNotifStoriche();
+    var perContratto = store[key];
+    if (perContratto && perContratto[refDate]) {
+        delete perContratto[refDate];
+        if (Object.keys(perContratto).length === 0) delete store[key];
+        saveNotifStoriche(store);
+    }
+    renderNotifications();
 }
 
 // Segna una singola notifica come letta: la notifica viene SCHIARITA ma
