@@ -1255,13 +1255,6 @@ document.getElementById('notifBtn').addEventListener('click', function(e) {
     e.stopPropagation();
     document.getElementById('notifPanel').classList.toggle('show');
 });
-document.getElementById('notifClear').addEventListener('click', function() {
-    appData.scadenze.forEach(function(s) { markNotifSeen('scadenza_' + s.id); });
-    appData.contratti.forEach(function(c) { markNotifSeen('contratto_' + c.id); });
-    notificationShownWith.clear();
-    notificationReadThisSession.clear();
-    renderNotifications();
-});
 document.addEventListener('click', function() {
     document.getElementById('notifPanel').classList.remove('show');
 });

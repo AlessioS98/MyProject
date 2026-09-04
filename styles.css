@@ -418,12 +418,6 @@ input, select, textarea { font-family: inherit; }
 
 .notif-header h3 { font-size: 0.95rem; font-weight: 600; }
 
-.notif-clear {
-    font-size: 0.75rem;
-    color: var(--primary);
-    font-weight: 500;
-}
-
 .notif-list {
     max-height: 380px;
     overflow-y: auto;
