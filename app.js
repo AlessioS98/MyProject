@@ -2195,6 +2195,10 @@ async function saveContratto(editId) {
             var notifKey = 'contratto_' + targetId;
             localStorage.removeItem('notifSeen_' + notifKey);
             localStorage.removeItem('notifDismissed_' + notifKey);
+            // La notifica per la nuova data torna in stato non letto
+            // (pallino non letto), anche se quella precedente era stata
+            // segnata come letta nella stessa sessione.
+            notificationReadThisSession.delete(notifKey);
         }
     } else {
         var { data, error } = await db.from('contratti').insert(contrattoData).select('id').single();
@@ -2633,15 +2637,23 @@ function renderNotifications() {
     // prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno prima
     // della scadenza).
     appData.contratti.forEach(function(c) {
-        if (!getContrattoNotifica(c)) return;
+        var n = getContrattoNotifica(c);
+        if (!n) return;
         var refDate = getContrattoScadenzaEffettiva(c);
+        var gg = n.days;
+        // Il testo include il numero di giorni mancanti, così la notifica
+        // dei 30 gg, quella dei 15 gg e quelle degli ultimi 7 giorni sono
+        // riconoscibili: cambiando la data di scadenza il messaggio cambia
+        // e la nuova notifica risulta subito evidente.
+        var quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
         items.push({
             key: 'contratto_' + c.id,
             date: refDate,
             icon: 'fa-file-contract',
             cls: 'info',
-            txt: 'In data ' + formatDate(refDate) + ' scade il contratto tra ' +
-                 getLocatoriLabel(c.id) + ' e ' + getConduttoriLabel(c.id),
+            txt: quando + ' scade il contratto tra ' +
+                 getLocatoriLabel(c.id) + ' e ' + getConduttoriLabel(c.id) +
+                 ' (' + formatDate(refDate) + ')',
             meta: 'Contratto ' + c.identificativo
         });
     });
