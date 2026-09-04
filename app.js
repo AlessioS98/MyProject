@@ -52,7 +52,7 @@ function getScadenzaIcon(t) {
     return { canone: 'fa-euro-sign', imposta: 'fa-file-invoice', bolletta: 'fa-bolt', sicurezza: 'fa-shield-alt', rinnovo: 'fa-sync-alt', versamento: 'fa-landmark' }[t] || 'fa-calendar';
 }
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
-function showToast(msg, type) {
+function showToast(msg, type, durataMs) {
     type = type || 'info';
     var c = document.getElementById('toastContainer');
     var t = document.createElement('div');
@@ -60,7 +60,9 @@ function showToast(msg, type) {
     var icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
     t.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i><span>' + msg + '</span>';
     c.appendChild(t);
-    setTimeout(function() { t.remove(); }, 3000);
+    // Durata standard 5 secondi; chi chiama showToast può passarne una
+    // maggiore (es. gli annunci di nuove notifiche, più lunghi da leggere)
+    setTimeout(function() { t.remove(); }, durataMs || 5000);
 }
 
 // --- Toggle Locatore Type ---
@@ -2613,7 +2615,9 @@ var lastRenderedNotifs = {};
 
 function announceNotificationArrivals(arrivals) {
     arrivals.forEach(function(it) {
-        showToast('Nuova notifica · ' + it.txt, 'info');
+        // Toast più lungo (8 secondi): il messaggio contiene il contratto,
+        // i giorni mancanti e la data, e va letto con calma
+        showToast('Nuova notifica · ' + it.txt, 'info', 8000);
     });
     var badgeEl = document.getElementById('notifBadge');
     if (badgeEl) {
@@ -2670,8 +2674,10 @@ function renderNotifications() {
             date: refDate,
             icon: 'fa-file-contract',
             cls: 'info',
+            // Nelle notifiche i nomi sono ordinati COGNOME + NOME
             txt: quando + ' scade il contratto tra ' +
-                 getLocatoriLabel(c.id) + ' e ' + getConduttoriLabel(c.id) +
+                 getLocatoriCognomeNomeLabel(c.id) + ' e ' +
+                 getConduttoriCognomeNomeLabel(c.id) +
                  ' (' + formatDate(refDate) + ')',
             meta: 'Contratto ' + c.identificativo
         });
