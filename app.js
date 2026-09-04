@@ -9,8 +9,6 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- Data Cache ---
 var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
-// Notifiche già mostrate in questa sessione (ricominciano le ripetizioni a ogni ricarica)
-var notificationShownWith = new Set();
 // Notifiche segnate come lette in questa sessione (schiarite, non eliminate)
 var notificationReadThisSession = new Set();
 
@@ -2187,18 +2185,16 @@ async function saveContratto(editId) {
         var idx = appData.contratti.findIndex(function(c) { return c.id === targetId; });
         if (idx >= 0) Object.assign(appData.contratti[idx], contrattoData);
         // Se cambia la data di scadenza (o la scadenza rinnovo), lo stato
-        // della notifica del contratto viene azzerato (snooze del giorno,
-        // eventuale 'Elimina' e voce già mostrata in sessione): la notifica
-        // per la NUOVA data viene considerata nuova e torna visibile anche
-        // lo stesso giorno, a qualunque data si passi (anche tornando a una
-        // data già provata).
+        // della notifica del contratto viene azzerato (snooze del giorno ed
+        // eventuale 'Elimina'): la notifica per la NUOVA data viene
+        // considerata nuova e torna visibile anche lo stesso giorno, a
+        // qualunque data si passi (anche tornando a una data già provata).
         if (vecchioContratto &&
             (vecchioContratto.data_scadenza !== contrattoData.data_scadenza ||
              vecchioContratto.data_scadenza_rinnovo !== contrattoData.data_scadenza_rinnovo)) {
             var notifKey = 'contratto_' + targetId;
             localStorage.removeItem('notifSeen_' + notifKey);
             localStorage.removeItem('notifDismissed_' + notifKey);
-            notificationShownWith.delete(notifKey);
         }
     } else {
         var { data, error } = await db.from('contratti').insert(contrattoData).select('id').single();
@@ -2590,9 +2586,10 @@ function markNotifSeen(key, deadline) {
     localStorage.setItem('notifSeen_' + key, v);
 }
 
-// True se la notifica è già stata mostrata OGGI con la stessa data di
-// riferimento. Formati salvati da markNotifSeen: 'YYYY-MM-DD' (solo data,
-// vecchio formato o 'Segna come letta') oppure 'YYYY-MM-DD|AAAA-MM-GG'.
+// True se la notifica è già stata segnata come letta OGGI con la stessa
+// data di riferimento. Formati salvati da markNotifSeen: 'YYYY-MM-DD'
+// (solo data, vecchio formato o 'Segna come letta') oppure
+// 'YYYY-MM-DD|YYYY-MM-DD' (data odierna + data di riferimento).
 function isNotifSeenToday(key, deadline) {
     var v = localStorage.getItem('notifSeen_' + key);
     if (!v) return false;
@@ -2649,28 +2646,22 @@ function renderNotifications() {
         });
     });
 
-    // Snooze: mostra solo le notifiche non eliminate.
-    // Ogni notifica si mostra una volta al giorno; il giorno successivo,
-    // se il calendario prevede ancora una notifica (es. ultimi 7 giorni
-    // prima della scadenza del contratto), torna a comparire. Se la data
-    // di riferimento cambia (es. nuova scadenza del contratto) lo snooze
-    // si azzera e la notifica ricompare subito, anche lo stesso giorno.
+    // Filtro: mostra le notifiche non eliminate che oggi non sono ancora
+    // state segnate come lette (con la stessa data di riferimento). Una
+    // notifica NON viene marcata come vista al solo rendering: resta nella
+    // campanella anche dopo un refresh finché l'utente non la segna come
+    // letta o non la elimina. Segnandola come letta sparisce per il resto
+    // della giornata; il giorno successivo, se il calendario prevede
+    // ancora una notifica (es. ultimi 7 giorni prima della scadenza),
+    // torna a comparire. Se la data di riferimento cambia (es. nuova
+    // scadenza del contratto) lo snooze si azzera e la notifica ricompare
+    // subito, anche lo stesso giorno.
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
-        // Se la notifica è già stata mostrata in questa sessione,
-        // visualizzala sempre: solo markNotificationRead può rimuoverla
-        // (rimuovendola da notificationShownWith).
-        if (notificationShownWith.has(it.key)) {
-            daMostrare.push(it);
-            return;
-        }
-        // Notifica nuova: applica lo snooze (una volta al giorno, salvo
-        // cambio della data di riferimento)
+        // Letta oggi con la stessa data di riferimento: nascosta per oggi
         if (isNotifSeenToday(it.key, it.date)) return false;
         daMostrare.push(it);
-        notificationShownWith.add(it.key);
-        markNotifSeen(it.key, it.date);
     });
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
@@ -2696,14 +2687,11 @@ function renderNotifications() {
     }).join('');
 }
 
-// Segna una singola notifica come letta (non verrà più mostrata fino al
-// prossimo giorno di notifica; con una nuova data di riferimento ricompare)
+// Segna una singola notifica come letta: sparisce per il resto della
+// giornata e ricompare il giorno successivo se il calendario prevede
+// ancora una notifica (o subito, se la data di riferimento cambia).
 function markNotificationRead(key, deadline) {
     notificationReadThisSession.add(key);
-    // Rimuove la voce mostrata in questa sessione (come previsto dal
-    // commento in renderNotifications): la notifica sparisce subito dal
-    // pannello e il badge si aggiorna, senza dover ricaricare la pagina.
-    notificationShownWith.delete(key);
     markNotifSeen(key, deadline);
     renderNotifications();
 }
