@@ -26,7 +26,11 @@ function formatDate(d) {
 function daysUntil(d) {
     var n = new Date(); n.setHours(0,0,0,0);
     var t = new Date(d); t.setHours(0,0,0,0);
-    return Math.ceil((t - n) / 864e5);
+    // Math.round (non Math.ceil): le due mezzanotti locali possono distare
+    // 23 o 25 ore quando nel mezzo cade un cambio ora legale/solare; con
+    // ceil una scadenza a +30 gg (o negli ultimi 7 gg) verrebbe calcolata
+    // come 31 (o 8) giorni e la notifica non scattarebbe.
+    return Math.round((t - n) / 864e5);
 }
 function getStatusLabel(s) {
     return { attivo: 'Attivo', scaduto: 'Scaduto', chiuso: 'Chiuso', sospeso: 'Sospeso', completato: 'Completato', completata: 'Completata', scaduta: 'Scaduta', 'in-attesa': 'In Attesa' }[s] || s;
@@ -1191,6 +1195,10 @@ async function refreshPage(page) {
         case 'scadenze': await renderScadenze(); break;
 
     }
+    // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
+    // dopo una modifica al contratto (es. nuova data di scadenza) il badge
+    // del campanello si aggiorna subito, senza dover ricaricare la pagina.
+    renderNotifications();
 }
 
 // --- Event Delegation ---
@@ -2173,10 +2181,25 @@ async function saveContratto(editId) {
 
     var targetId = editId;
     if (targetId) {
+        var vecchioContratto = appData.contratti.find(function(c) { return c.id === targetId; });
         var { error } = await db.from('contratti').update(contrattoData).eq('id', targetId);
         if (error) { console.error('Errore update contratto:', error); showToast('Errore salvataggio', 'error'); return; }
         var idx = appData.contratti.findIndex(function(c) { return c.id === targetId; });
         if (idx >= 0) Object.assign(appData.contratti[idx], contrattoData);
+        // Se cambia la data di scadenza (o la scadenza rinnovo), lo stato
+        // della notifica del contratto viene azzerato (snooze del giorno,
+        // eventuale 'Elimina' e voce già mostrata in sessione): la notifica
+        // per la NUOVA data viene considerata nuova e torna visibile anche
+        // lo stesso giorno, a qualunque data si passi (anche tornando a una
+        // data già provata).
+        if (vecchioContratto &&
+            (vecchioContratto.data_scadenza !== contrattoData.data_scadenza ||
+             vecchioContratto.data_scadenza_rinnovo !== contrattoData.data_scadenza_rinnovo)) {
+            var notifKey = 'contratto_' + targetId;
+            localStorage.removeItem('notifSeen_' + notifKey);
+            localStorage.removeItem('notifDismissed_' + notifKey);
+            notificationShownWith.delete(notifKey);
+        }
     } else {
         var { data, error } = await db.from('contratti').insert(contrattoData).select('id').single();
         if (error) { console.error('Errore insert contratto:', error); showToast('Errore salvataggio', 'error'); return; }
@@ -2556,8 +2579,29 @@ function getContrattoNotifica(c) {
     return null;                         // fuori dalle finestre (31+, 29..16, 14..8)
 }
 
-function markNotifSeen(key) {
-    localStorage.setItem('notifSeen_' + key, toLocalDateStr(new Date()));
+// Lo snooze salva la data odierna insieme alla DATA DI RIFERIMENTO della
+// notifica (scadenza del contratto / prossima_scadenza di pagamento): se la
+// data cambia (es. modifica della scadenza del contratto) la notifica si
+// considera NUOVA e torna subito visibile lo stesso giorno, così si può
+// testare più volte al giorno senza svuotare localStorage.
+function markNotifSeen(key, deadline) {
+    var v = toLocalDateStr(new Date());
+    if (deadline) v += '|' + deadline;
+    localStorage.setItem('notifSeen_' + key, v);
+}
+
+// True se la notifica è già stata mostrata OGGI con la stessa data di
+// riferimento. Formati salvati da markNotifSeen: 'YYYY-MM-DD' (solo data,
+// vecchio formato o 'Segna come letta') oppure 'YYYY-MM-DD|AAAA-MM-GG'.
+function isNotifSeenToday(key, deadline) {
+    var v = localStorage.getItem('notifSeen_' + key);
+    if (!v) return false;
+    var parts = v.split('|');
+    if (parts[0] !== toLocalDateStr(new Date())) return false;
+    // Senza data di riferimento (es. 'Segna come letta'): vale lo snooze del giorno.
+    if (!deadline) return true;
+    // Vecchio formato (solo data) oppure scadenza cambiata: notifica nuova.
+    return parts[1] === deadline;
 }
 
 function renderNotifications() {
@@ -2606,9 +2650,11 @@ function renderNotifications() {
     });
 
     // Snooze: mostra solo le notifiche non eliminate.
-    // Ogni notifica si mostra una volta al giorno: il giorno successivo,
+    // Ogni notifica si mostra una volta al giorno; il giorno successivo,
     // se il calendario prevede ancora una notifica (es. ultimi 7 giorni
-    // prima della scadenza del contratto), torna a comparire.
+    // prima della scadenza del contratto), torna a comparire. Se la data
+    // di riferimento cambia (es. nuova scadenza del contratto) lo snooze
+    // si azzera e la notifica ricompare subito, anche lo stesso giorno.
     var daMostrare = [];
     items.forEach(function(it) {
         if (isNotificationDismissed(it.key)) return false;
@@ -2619,11 +2665,12 @@ function renderNotifications() {
             daMostrare.push(it);
             return;
         }
-        // Notifica nuova: applica lo snooze (una volta al giorno)
-        if (localStorage.getItem('notifSeen_' + it.key) === toLocalDateStr(new Date())) return false;
+        // Notifica nuova: applica lo snooze (una volta al giorno, salvo
+        // cambio della data di riferimento)
+        if (isNotifSeenToday(it.key, it.date)) return false;
         daMostrare.push(it);
         notificationShownWith.add(it.key);
-        markNotifSeen(it.key);
+        markNotifSeen(it.key, it.date);
     });
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
@@ -2643,16 +2690,21 @@ function renderNotifications() {
             '<div class="notif-content"><p>' + it.txt + '</p>' +
             '<div class="notif-time">' + it.meta + '</div></div>' +
             '<div class="notif-actions">' +
-            '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\')"><i class="fas fa-check"></i></button>' +
+            '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>' +
             '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\')"><i class="fas fa-times"></i></button>' +
             '</div></div>';
     }).join('');
 }
 
-// Segna una singola notifica come letta (non verrà più mostrata fino al prossimo giorno di notifica)
-function markNotificationRead(key) {
+// Segna una singola notifica come letta (non verrà più mostrata fino al
+// prossimo giorno di notifica; con una nuova data di riferimento ricompare)
+function markNotificationRead(key, deadline) {
     notificationReadThisSession.add(key);
-    markNotifSeen(key);
+    // Rimuove la voce mostrata in questa sessione (come previsto dal
+    // commento in renderNotifications): la notifica sparisce subito dal
+    // pannello e il badge si aggiorna, senza dover ricaricare la pagina.
+    notificationShownWith.delete(key);
+    markNotifSeen(key, deadline);
     renderNotifications();
 }
 
