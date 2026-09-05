@@ -1,11 +1,14 @@
 /* ============================================
-   Gestione Contratti di Affitto - Supabase
+   Gestione Contratti di Affitto - MySQL
+   (API locale Node.js/Express + database MySQL)
    ============================================ */
 
-// --- Supabase Init ---
-const SUPABASE_URL = 'https://djqbrwlbjctloxspepnc.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqcWJyd2xiamN0bG94c3BlcG5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0ODc5NDAsImV4cCI6MjEwMzA2Mzk0MH0.ah9cvekaWwu9PkamgkhlTroy6z5Hd9gGgoo77W4uI3c';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// --- DB Init (MySQL) ---
+// Sostituisce il vecchio client Supabase (PostgreSQL): MySqlDb
+// (definito in db-client.js) parla con server.js, che esegue le
+// query su MySQL mantenendo la stessa interfaccia di supabase-js
+// usata dal resto dell'app ({ data, error } e catena .eq/.in/...).
+const db = new MySqlDb();
 
 // --- Data Cache ---
 var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
@@ -1140,7 +1143,7 @@ function addDaysToDateStr(dateStr, days) {
 // --- Data Loading ---
 async function loadAllData() {
     try {
-        var [persone, immobili, contratti, scadenze, canoni, locRel, condRel] = await Promise.all([
+        var results = await Promise.all([
             db.from('anagrafica_persona').select('*'),
             db.from('immobili').select('*'),
             db.from('contratti').select('*'),
@@ -1149,6 +1152,18 @@ async function loadAllData() {
             db.from('contratto_locatori').select('*'),
             db.from('contratto_conduttori').select('*')
         ]);
+        // Se una delle letture iniziali e' fallita non ha senso proseguire
+        // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
+        // su un server che non espone il backend, o MySQL non raggiungibile).
+        for (var ri = 0; ri < results.length; ri++) {
+            if (results[ri].error) {
+                console.error('Errore caricamento dati:', results[ri].error);
+                showToast('Errore nel caricamento dei dati: ' + (results[ri].error.message || 'errore sconosciuto'), 'error', 12000);
+                return;
+            }
+        }
+        var persone = results[0], immobili = results[1], contratti = results[2],
+            scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -2042,7 +2057,7 @@ function closeModal() {
 }
 
 // ============================================
-// CRUD OPERATIONS (Supabase)
+// CRUD OPERATIONS (MySQL API)
 // ============================================
 
 // --- Save/Update Persona ---
