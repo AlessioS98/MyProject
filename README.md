@@ -59,6 +59,38 @@ npm start
 
 Poi apri il browser su: **http://localhost:3000**
 
+### Avvio con doppio clic (Windows)
+
+Nella cartella dell'app:
+
+| File | Ruolo |
+| --- | --- |
+| `Avvia Gestione Contratti.cmd` | avvia il servizio MySQL se spento, avvia il server in background e apre il browser |
+| `Ferma Gestione Contratti.cmd` | ferma il server (MySQL resta attivo) |
+
+Entrambi funzionano **da qualunque posizione della cartella**: se la sposti su
+un'altra unità, la copi in un percorso con spazi o la apri da una condivisione
+di rete, percorsi e configurazione (`.env`) vengono ricavati dalla cartella
+dei file stessi, non dalla cartella di lavoro corrente.
+
+Il **log del server** viene scritto fuori dalla cartella dell'app, in:
+
+```
+%LOCALAPPDATA%\Gestione Contratti Affitto\server.log
+```
+
+così l'avvio funziona anche se l'app sta in una cartella protetta come
+`C:\Program Files` (dove un utente normale ha solo lettura e la scrittura del
+log nella cartella dell'app farebbe fallire l'avvio del server senza spiegazioni).
+Se `%LOCALAPPDATA%` non è disponibile il log finisce in
+`%TEMP%\gestione-contratti-server.log`.
+
+> In `C:\Program Files` l'installazione delle dipendenze (`npm install`, serve
+> solo la prima volta o se manca la cartella `node_modules`) richiede di
+> eseguire il file come amministratore; in alternativa sposta la cartella in
+> una posizione utente (es. `C:\Gestione Contratti`), dove tutto funziona
+> senza permessi speciali.
+
 All'avvio il server verifica la connessione a MySQL: se il database non
 esiste ancora lo crea da solo, ma **senza** lo schema importato (punto 1)
 l'app segnalerà che le tabelle mancano.

@@ -17,7 +17,11 @@
 const path = require('path');
 const express = require('express');
 const mysql = require('mysql2/promise');
-require('dotenv').config();
+// Il file .env viene letto dalla cartella dello script (__dirname), non dalla
+// cartella di lavoro corrente: il server funziona cosi' anche se avviato da
+// una posizione diversa (scorciatoia, altro terminale, npm start con path
+// assoluto, unita' di rete).
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DB_HOST = process.env.DB_HOST || '127.0.0.1';
