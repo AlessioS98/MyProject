@@ -175,8 +175,20 @@ Cose da tenere presenti:
 - Il trigger MySQL `trg_scadenze_calc_dates_ins/upd` ricalcola
   `prossima_scadenza = data_decorrenza + 1 anno + 30 giorni`, come il
   vecchio trigger PostgreSQL.
-- La colonna "Prossima Scadenza" della pagina Scadenze mostra, per scelta,
-  il giorno **prima** della scadenza effettiva (es. scadenza 11/11 mostrata
-  come 10/11): è solo una regola di visualizzazione
-  (`getScadenzaDataMostrata`), il calcolo memorizzato resta invariato, così
-  come le notifiche, i badge di urgenza e le date del PDF F24.
+- La colonna "Prossima Scadenza" della lista **Pagamenti** della pagina
+  Scadenze mostra, per scelta, il giorno **prima** della scadenza effettiva
+  (es. scadenza 11/11 mostrata come 10/11): il calcolo memorizzato nel
+  database resta invariato (`getScadenzaDataMostrata`). Questa data è il
+  riferimento anche per le **notifiche** della campanella e per la data in
+  alto nel Modello F24, quindi il conto alla rovescia dei promemoria arriva
+  fino al giorno mostrato in lista; i badge di urgenza della lista
+  (`getScadenzaUrgenza`) continuano invece a usare la data effettiva del
+  database. La lista **Contratti** non ha questo scarto: la colonna mostra la
+  scadenza effettiva del contratto, la stessa usata dalle notifiche dei
+  contratti.
+- Le notifiche della campanella (promemoria a 30 giorni, 15 giorni e ultimi
+  7 giorni, sia per le scadenze di pagamento sia per quelle dei contratti)
+  non hanno pulsanti: si apre il pannello, si leggono e alla **chiusura del
+  pannello** le notifiche mostrate vengono eliminate automaticamente.
+  L'eliminazione resta legata alla data di riferimento e alla fascia: se la
+  scadenza cambia, la notifica per la nuova data arriva regolarmente.

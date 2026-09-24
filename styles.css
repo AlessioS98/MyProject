@@ -449,8 +449,6 @@ input, select, textarea { font-family: inherit; }
 
 .notif-item.unread { background: var(--primary-bg); }
 
-.notif-item.notif-read { opacity: 0.45; }
-
 .notif-icon {
     width: 36px;
     height: 36px;
@@ -467,31 +465,9 @@ input, select, textarea { font-family: inherit; }
 .notif-icon.info { background: var(--info-bg); color: var(--info); }
 .notif-icon.success { background: var(--success-bg); color: var(--success); }
 
-.notif-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.notif-action {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-full);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-muted);
-    font-size: 0.7rem;
-    cursor: pointer;
-    transition: all var(--transition);
-}
-
-.notif-action:hover { color: var(--success); border-color: var(--success); }
-.notif-action-delete:hover { color: var(--danger); border-color: var(--danger); }
+/* Il pannello notifiche non ha più i pulsanti ✓ ("Segna come letta") e
+   ✕ ("Elimina"): le notifiche vengono eliminate automaticamente quando
+   l'utente chiude il pannello. */
 
 .notif-content { flex: 1; }
 .notif-content p { font-size: 0.8rem; line-height: 1.4; }
@@ -1205,11 +1181,12 @@ input, select, textarea { font-family: inherit; }
     margin: 0 auto;
 }
 
-/* Azioni scadenza (tabella) */
+/* Azioni scadenza (tabella): i pulsanti partono dal bordo sinistro della
+   cella, allineati sotto l'intestazione "Azioni" come le altre colonne */
 .scadenza-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 6px;
 }
 
@@ -1250,9 +1227,12 @@ input, select, textarea { font-family: inherit; }
     color: var(--text-muted);
 }
 
-/* Scadenze: la colonna Azioni non viene mai tagliata dai pulsanti */
+/* Scadenze: l'ultima colonna non viene mai tagliata dai pulsanti. Il testo
+   resta allineato a sinistra come le altre colonne: quando la lista non ha
+   la colonna Azioni (lista Contratti) l'ultima colonna e' "Prossima
+   Scadenza", che deve partire sotto la propria intestazione. */
 #scadenzeTable .data-table td:last-child {
-    text-align: center;
+    text-align: left;
     white-space: normal;
     max-width: none;
     min-width: 170px;
