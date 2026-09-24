@@ -1140,6 +1140,18 @@ function addDaysToDateStr(dateStr, days) {
     return toLocalDateStr(d);
 }
 
+// --- Data di pagamento MOSTRATA nella lista Scadenze ---
+// Il calcolo resta quello del database (prossima_scadenza = decorrenza +
+// 1 anno + 30 giorni): solo nella lista Scadenze si mostra il giorno PRIMA
+// della scadenza effettiva (es. scadenza 11/11 -> mostrata 10/11).
+// Notifiche, badge di urgenza e conteggi giorni continuano a usare la data
+// reale; la stessa data mostrata in lista compare anche in alto nel Modello
+// F24 (unica eccezione, oltre alla lista stessa).
+function getScadenzaDataMostrata(s) {
+    if (!s || !s.prossima_scadenza) return null;
+    return addDaysToDateStr(s.prossima_scadenza, -1);
+}
+
 // --- Data Loading ---
 async function loadAllData() {
     try {
@@ -1798,13 +1810,12 @@ function openModal(type, id) {
             html += '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
         } else {
             html += '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
-            html += '<table class="list-table"><thead><tr><th>Cognome / Ragione Sociale</th><th>Nome</th><th>Codice Fiscale</th><th>Tipo</th><th>Azioni</th></tr></thead><tbody>';
+            html += '<table class="list-table"><thead><tr><th>Cognome / Ragione Sociale</th><th>Nome</th><th>Codice Fiscale</th><th>Azioni</th></tr></thead><tbody>';
             personeList.forEach(function(p) {
                 var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
                 html += '<tr><td><strong>' + getPersonaCognomeNomeLabel(p) + '</strong></td>' +
                     '<td>' + (isAzienda ? '-' : (p.nome || '-')) + '</td>' +
                     '<td>' + (p.codice_fiscale || '-') + '</td>' +
-                    '<td><span class="status-badge ' + (isAzienda ? 'tipo-azienda' : 'tipo-fisica') + '">' + (isAzienda ? 'Azienda' : 'Persona Fisica') + '</span></td>' +
                     '<td><div class="td-actions">' +
                     '<button type="button" data-action="edit-persona" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
                     '<button type="button" class="danger" data-action="delete-persona" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
@@ -1853,14 +1864,13 @@ function openModal(type, id) {
             html += '<div class="empty-state"><i class="fas fa-building"></i><p>Nessun immobile presente</p></div>';
         } else {
             html += '<div class="table-container" style="overflow-y:auto;max-height:55vh">';
-            html += '<table class="list-table"><thead><tr><th>Indirizzo</th><th>Città</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>APE</th><th>Azioni</th></tr></thead><tbody>';
+            html += '<table class="list-table"><thead><tr><th>Indirizzo</th><th>Città</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Azioni</th></tr></thead><tbody>';
             immobiliList.forEach(function(i) {
                 html += '<tr><td><strong>' + i.indirizzo + '</strong></td>' +
                     '<td>' + i.citta + '</td>' +
                     '<td>' + (i.foglio || '-') + '</td>' +
                     '<td>' + (i.particella || '-') + '</td>' +
                     '<td>' + (i.sub || '-') + '</td>' +
-                    '<td>' + (i.ape ? '<span class="status-badge attivo">SI</span>' : '<span class="status-badge chiuso">NO</span>') + '</td>' +
                     '<td><div class="td-actions">' +
                     '<button type="button" data-action="edit-immobile" data-id="' + i.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
                     '<button type="button" class="danger" data-action="delete-immobile" data-id="' + i.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
@@ -2562,13 +2572,30 @@ function getScadenzaUrgenza(s) {
     return null;
 }
 
+// --- Notifiche: fasce dei promemoria ---
+// I promemoria seguono tre fasce: 30 giorni prima, 15 giorni prima e ultimi
+// 7 giorni (ogni giorno da 7 a 1). notifPhaseForDays restituisce la fascia
+// corrente in base ai giorni mancanti. La fascia è usata come identità del
+// promemoria (lettura ed eliminazione separate per fascia): così segnare
+// come letta la fascia dei 30 giorni NON cancella quelle dei 15 e degli
+// ultimi 7, che arrivano comunque. Se un contratto viene creato quando una
+// fascia è già iniziata (es. a 27 giorni), il promemoria di quella fascia
+// NON viene saltato: compare subito e poi arrivano regolarmente le fasce
+// successive.
+function notifPhaseForDays(gg) {
+    if (gg <= 7) return '7';
+    if (gg <= 15) return '15';
+    if (gg <= 30) return '30';
+    return null;
+}
+
 // --- Notifiche: scadenze di pagamento ---
-// Il calendario è identico a quello dei contratti: una notifica 30 giorni
-// prima della scadenza di pagamento, una 15 giorni prima e poi ogni giorno
-// negli ultimi 7 giorni (da 7 a 1 giorno prima). A scadenza avvenuta non
-// vengono più inviate notifiche, TRANNE se il contratto ha una data di
-// chiusura: la scadenza continua a essere notificata (anche dopo la sua
-// data) fino alla data di chiusura del contratto. I contratti invece si
+// I promemoria seguono le tre fasce (30 gg, 15 gg, ultimi 7 gg). La fascia
+// corrente è sempre attiva: se la scadenza è stata inserita dopo l'inizio
+// della fascia, il promemoria viene comunque mostrato (recupero). A scadenza
+// avvenuta non vengono più inviate notifiche, TRANNE se il contratto ha una
+// data di chiusura: la scadenza continua a essere notificata (anche dopo la
+// sua data) fino alla data di chiusura del contratto. I contratti invece si
 // fermano appena viene inserita la data di chiusura.
 function getScadenzaNotifica(s) {
     if (isScadenzaArchiviata(s)) return null;
@@ -2580,30 +2607,30 @@ function getScadenzaNotifica(s) {
     // Chiusura già passata: oltre il termine non si notifica più
     if (c.data_chiusura && daysUntil(c.data_chiusura) < 0) return null;
     var gg = daysUntil(s.prossima_scadenza);
-    // Finestra identica ai contratti: 30 gg prima, 15 gg prima e ogni
-    // giorno negli ultimi 7 gg prima della scadenza.
-    if (gg === 30 || gg === 15 || (gg >= 1 && gg <= 7)) return { days: gg };
+    // Entro 30 giorni: sempre attiva la fascia corrente (recupero incluso)
+    if (gg >= 1 && gg <= 30) return { days: gg, phase: notifPhaseForDays(gg) };
     // Differenza dai contratti: con una data di chiusura la scadenza di
     // pagamento continua a essere notificata fino alla chiusura del
     // contratto, anche dopo la sua data.
-    if (c.data_chiusura && gg <= 0) return { days: gg };
+    if (c.data_chiusura && gg <= 0) return { days: gg, phase: notifPhaseForDays(gg) };
     return null;                              // oltre la scadenza: stop
 }
 
 // --- Notifiche: contratti in scadenza ---
-// La notifica anticipata segue la data di scadenza del contratto (o la data
-// di scadenza rinnovo, se presente): una notifica 30 giorni prima, una 15
-// giorni prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno
-// prima della scadenza). A scadenza avvenuta, o con una data di chiusura
-// inserita, non viene inviata nessuna notifica.
+// Vale la stessa logica delle scadenze di pagamento: fasce a 30 gg, 15 gg e
+// ultimi 7 giorni, con la fascia corrente sempre attiva (quindi recuperata
+// anche se il contratto è stato creato dopo l'inizio della fascia). La data
+// di riferimento è la scadenza del contratto (o la scadenza rinnovo, se
+// presente). A scadenza avvenuta, o con una data di chiusura inserita, non
+// viene inviata nessuna notifica.
 function getContrattoNotifica(c) {
     if (c.data_chiusura) return null;
     var refDate = getContrattoScadenzaEffettiva(c);
     if (!refDate) return null;
     var gg = daysUntil(refDate);
     if (gg <= 0) return null;            // scaduto o scade oggi: nessuna notifica
-    if (gg === 30 || gg === 15 || gg <= 7) return { days: gg };
-    return null;                         // fuori dalle finestre (31+, 29..16, 14..8)
+    if (gg <= 30) return { days: gg, phase: notifPhaseForDays(gg) };
+    return null;                         // più di 30 giorni: nessuna fascia attiva
 }
 
 // --- Notifiche storiche dei contratti ---
@@ -2637,14 +2664,17 @@ function buildContrattoNotifItem(c) {
     if (!n) return null;
     var refDate = getContrattoScadenzaEffettiva(c);
     var gg = n.days;
-    // Il testo include il numero di giorni mancanti, così la notifica dei
-    // 30 gg, quella dei 15 gg e quelle degli ultimi 7 giorni sono
-    // riconoscibili: cambiando la data di scadenza il messaggio cambia e
-    // la nuova notifica risulta subito evidente.
-    var quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
+    // Il testo mostra l'etichetta della fascia (30 o 15) invece dei giorni
+    // reali rimanenti, così resta riconoscibile come promemoria dei 30/15
+    // giorni; negli ultimi 7 giorni si mantiene il conto alla rovescia vero.
+    var quando;
+    if (n.phase === '30') quando = 'Tra 30 giorni';
+    else if (n.phase === '15') quando = 'Tra 15 giorni';
+    else quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
     return {
         key: 'contratto_' + c.id,
         date: refDate,
+        phase: n.phase,
         icon: 'fa-file-contract',
         cls: 'info',
         // Nelle notifiche i nomi sono ordinati COGNOME + NOME
@@ -2665,19 +2695,19 @@ function conservaNotificaContrattoVisibile(c) {
     if (!it) return;               // nessuna notifica visibile oggi: nulla da conservare
     var store = getNotifStoriche();
     var perContratto = store[it.key] || {};
-    if (isNotificationDismissed(it.key, it.date)) {
+    if (isNotificationDismissed(it.key, it.date, it.phase)) {
         // Eliminata in precedenza con la ✕: resta eliminata anche per la
         // data di riferimento originale (niente riesumazioni).
         delete perContratto[it.date];
     } else {
-        var lettaOggi = isNotifSeenToday(it.key, it.date);
+        var letta = isNotifSeen(it.key, it.date, it.phase);
         perContratto[it.date] = {
             txt: it.txt,
             meta: it.meta,
             icon: it.icon,
             cls: it.cls,
-            read: lettaOggi,
-            readDate: lettaOggi ? toLocalDateStr(new Date()) : null,
+            read: letta,
+            readDate: letta ? toLocalDateStr(new Date()) : null,
             dismissed: false
         };
     }
@@ -2685,31 +2715,47 @@ function conservaNotificaContrattoVisibile(c) {
     saveNotifStoriche(store);
 }
 
-// 'Segna come letta' salva la data odierna insieme alla DATA DI RIFERIMENTO
-// della notifica (scadenza del contratto / prossima_scadenza di pagamento):
-// la notifica risulta letta OGGI per quella scadenza. Se la data cambia
-// (es. modifica della scadenza del contratto) il segno di lettura viene
-// azzerato e la notifica torna non letta anche lo stesso giorno, così si
-// può testare più volte al giorno senza svuotare localStorage.
-function markNotifSeen(key, deadline) {
+// 'Segna come letta' salva la DATA DI RIFERIMENTO della notifica (scadenza
+// del contratto / prossima_scadenza di pagamento) e la FASCIA del promemoria
+// (30/15/7): la notifica risulta letta per quella scadenza e quella fascia.
+// La lettura NON scade più a fine giornata: resta valida anche riaprendo il
+// programma nei giorni successivi, così la notifica già letta continua a non
+// essere contata nel badge (non viene risegnalata a ogni avvio). La lettura
+// decade se cambia la data di riferimento (es. nuova scadenza del contratto)
+// o al passaggio di fascia: leggere il promemoria dei 30 giorni non cancella
+// quello dei 15 e quello degli ultimi 7 giorni.
+function markNotifSeen(key, deadline, phase) {
     var v = toLocalDateStr(new Date());
     if (deadline) v += '|' + deadline;
+    if (phase) v += '|' + phase;
     localStorage.setItem('notifSeen_' + key, v);
 }
 
-// True se la notifica è già stata segnata come letta OGGI con la stessa
-// data di riferimento. Formati salvati da markNotifSeen: 'YYYY-MM-DD'
-// (solo data, vecchio formato o 'Segna come letta') oppure
-// 'YYYY-MM-DD|YYYY-MM-DD' (data odierna + data di riferimento).
-function isNotifSeenToday(key, deadline) {
+// True se la notifica è già stata segnata come letta con la stessa data di
+// riferimento e la stessa fascia. La lettura non è limitata alla sola
+// giornata: vale anche nei giorni successivi e dopo un riavvio del programma,
+// così il badge conta solo le notifiche ancora da leggere. Formati salvati da
+// markNotifSeen: 'YYYY-MM-DD' (vecchissimo formato) oppure
+// 'YYYY-MM-DD|YYYY-MM-DD|FASCIA' (data della lettura + data di riferimento +
+// fascia); la data della lettura è ignorata. I record senza fascia (versione
+// precedente) non valgono: i promemoria delle fasce tornano disponibili.
+function isNotifSeen(key, deadline, phase) {
     var v = localStorage.getItem('notifSeen_' + key);
     if (!v) return false;
     var parts = v.split('|');
-    if (parts[0] !== toLocalDateStr(new Date())) return false;
-    // Senza data di riferimento (es. 'Segna come letta'): vale lo snooze del giorno.
+    // Vecchio formato (solo data, nessuna scadenza salvata): considerata letta.
+    if (parts.length < 2) return true;
+    // Senza data di riferimento (es. 'Segna come letta'): letta.
     if (!deadline) return true;
-    // Vecchio formato (solo data) oppure scadenza cambiata: notifica nuova.
-    return parts[1] === deadline;
+    // Data di riferimento cambiata: la notifica è nuova e torna non letta.
+    if (parts[1] !== deadline) return false;
+    var savedPhase = parts[2];
+    // Lettura registrata prima delle fasce (nessuna fase salvata): la ignoro,
+    // così col nuovo sistema i promemoria delle fasce tornano disponibili.
+    if (savedPhase === undefined) return false;
+    // La lettura vale solo per la fascia a cui si riferiva: leggere il
+    // promemoria dei 30 giorni non cancella quelli dei 15 e degli ultimi 7.
+    return savedPhase === (phase || '');
 }
 
 // --- Annuncio nuove notifiche ---
@@ -2722,6 +2768,11 @@ function isNotifSeenToday(key, deadline) {
 // "vecchi", ma solo le novità che capitano da quel momento in poi.
 var notifSnapshotReady = false;
 var lastRenderedNotifs = {};
+
+// Identità del promemoria usata per confrontare i render: data di riferimento
+// + fascia. Così un passaggio di fascia (es. dai 30 ai 15 giorni) è rilevato
+// come nuovo arrivo (toast + pulsazione del badge).
+function notifToken(it) { return (it.date || '') + '#' + (it.phase || ''); }
 
 function announceNotificationArrivals(arrivals) {
     arrivals.forEach(function(it) {
@@ -2741,8 +2792,9 @@ function announceNotificationArrivals(arrivals) {
 function renderNotifications() {
     var items = [];
 
-    // Scadenze di pagamento: calendario identico ai contratti (30 gg prima,
-    // 15 gg prima e ogni giorno negli ultimi 7 gg prima della scadenza).
+    // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg e
+    // ultimi 7 giorni). La fascia corrente è sempre mostrata, anche se la
+    // scadenza è stata inserita quando la fascia era già iniziata (recupero).
     // Con una data di chiusura la scadenza continua a essere notificata,
     // anche dopo la sua data, fino alla chiusura del contratto.
     appData.scadenze.forEach(function(s) {
@@ -2753,8 +2805,14 @@ function renderNotifications() {
         var gg = n.days;
         // Come nelle notifiche dei contratti, la scadenza di pagamento indica
         // anche le parti, con COGNOME prima del NOME.
+        // Il testo usa l'etichetta della fascia (30 o 15), non i giorni reali
+        // rimanenti: entrando nella fascia dei 30 gg il messaggio dice sempre
+        // "30 giorni" (non 28, 27, ...), e cosi' per i 15. Negli ultimi 7
+        // giorni resta invece il conto alla rovescia vero (domani, fra N gg).
         var quando;
-        if (gg > 1) quando = 'fra ' + gg + ' giorni';
+        if (n.phase === '30') quando = 'fra 30 giorni';
+        else if (n.phase === '15') quando = 'fra 15 giorni';
+        else if (gg > 1) quando = 'fra ' + gg + ' giorni';
         else if (gg === 1) quando = 'domani';
         else if (gg === 0) quando = 'oggi';
         else quando = 'da ' + (-gg) + ' giorni';
@@ -2764,6 +2822,7 @@ function renderNotifications() {
         items.push({
             key: 'scadenza_' + s.id,
             date: s.prossima_scadenza,
+            phase: n.phase,
             icon: gg > 0 ? 'fa-hourglass-half' : 'fa-exclamation-circle',
             cls: gg > 0 ? 'warning' : 'danger',
             txt: txt,
@@ -2771,9 +2830,9 @@ function renderNotifications() {
         });
     });
 
-    // Contratti in scadenza: una notifica 30 giorni prima, una 15 giorni
-    // prima e poi ogni giorno negli ultimi 7 giorni (da 7 a 1 giorno prima
-    // della scadenza).
+    // Contratti in scadenza: stesse fasce (30 gg, 15 gg, ultimi 7 giorni),
+    // con la fascia corrente sempre attiva (recuperata se il contratto è
+    // stato creato tardi).
     appData.contratti.forEach(function(c) {
         var it = buildContrattoNotifItem(c);
         if (it) items.push(it);
@@ -2836,28 +2895,29 @@ function renderNotifications() {
     // calendario: un refresh NON le fa sparire. La ✕ elimina SOLO la
     // notifica per la data di riferimento corrente: se la scadenza cambia,
     // la notifica per la nuova data arriva regolarmente. Il segno ✓ ("Segna
-    // come letta") NON rimuove la notifica: la schiarisce per il resto
-    // della giornata (e la schiarita resiste anche al refresh). Il giorno
-    // successivo, se il calendario prevede ancora una notifica (es. ultimi
-    // 7 giorni prima della scadenza), torna non letta. Se la data di
-    // riferimento cambia (es. nuova scadenza del contratto) il segno di
-    // lettura si azzera e la notifica torna subito non letta.
+    // come letta") NON rimuove la notifica: la schiarisce (e la schiarita
+    // resiste al refresh). La lettura non scade più a fine giornata: una
+    // notifica segnata come letta resta schiarita anche nei giorni successivi
+    // e a ogni riavvio del programma, quindi non viene più conteggiata né
+    // risegnalata. Se la data di riferimento cambia (es. nuova scadenza del
+    // contratto) il segno di lettura si azzera e la notifica torna non letta.
     var daMostrare = [];
     items.forEach(function(it) {
         // Le voci storiche hanno uno stato di eliminazione proprio
         // (campo 'dismissed' nell'archivio), già filtrato sopra.
-        if (!it.storico && isNotificationDismissed(it.key, it.date)) return false;
+        if (!it.storico && isNotificationDismissed(it.key, it.date, it.phase)) return false;
         daMostrare.push(it);
     });
 
-    // Letta oggi (con la stessa data di riferimento) = schiarita, non eliminata.
-    // Le notifiche storiche hanno uno stato di lettura proprio e permanente.
-    function isReadNotif(it) { return it.storico ? !!it.storicoRead : isNotifSeenToday(it.key, it.date); }
+    // Letta (con la stessa data di riferimento e la stessa fascia) =
+    // schiarita, non eliminata. Le notifiche storiche hanno uno stato di
+    // lettura proprio e permanente.
+    function isReadNotif(it) { return it.storico ? !!it.storicoRead : isNotifSeen(it.key, it.date, it.phase); }
 
     // Rilevamento nuove notifiche rispetto al render precedente
     var arrivals = [];
     if (!notifSnapshotReady) {
-        daMostrare.forEach(function(it) { if (!it.storico) lastRenderedNotifs[it.key] = it.date || ''; });
+        daMostrare.forEach(function(it) { if (!it.storico) lastRenderedNotifs[it.key] = notifToken(it); });
         notifSnapshotReady = true;
     } else {
         var chiaviCorrenti = {};
@@ -2867,8 +2927,8 @@ function renderNotifications() {
             // mai annunciate come nuove né confrontate col render passato.
             if (it.storico) return;
             var dataPrec = lastRenderedNotifs[it.key];
-            var dataNuova = it.date || '';
-            // Arrivo: chiave mai vista oppure data di riferimento cambiata
+            var dataNuova = notifToken(it);
+            // Arrivo: chiave mai vista oppure data di riferimento/fascia cambiata
             if (dataPrec === undefined || dataPrec !== dataNuova) arrivals.push(it);
             lastRenderedNotifs[it.key] = dataNuova;
         });
@@ -2900,8 +2960,8 @@ function renderNotifications() {
             readBtn = '<button class="notif-action" title="Segna come letta" onclick="markNotificaStoricaLetta(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>';
             delBtn = '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotificaStorica(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>';
         } else {
-            readBtn = '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-check"></i></button>';
-            delBtn = '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\',\'' + (it.date || '') + '\')"><i class="fas fa-times"></i></button>';
+            readBtn = '<button class="notif-action" title="Segna come letta" onclick="markNotificationRead(\'' + it.key + '\',\'' + (it.date || '') + '\',\'' + (it.phase || '') + '\')"><i class="fas fa-check"></i></button>';
+            delBtn = '<button class="notif-action notif-action-delete" title="Elimina" onclick="deleteNotification(\'' + it.key + '\',\'' + (it.date || '') + '\',\'' + (it.phase || '') + '\')"><i class="fas fa-times"></i></button>';
         }
         return '<div class="' + itemClass + '">' +
             '<div class="notif-icon ' + it.cls + '"><i class="fas ' + it.icon + '"></i></div>' +
@@ -2938,13 +2998,11 @@ function deleteNotificaStorica(key, refDate) {
 }
 
 // Segna una singola notifica come letta: la notifica viene SCHIARITA ma
-// resta visibile nella campanella (il badge non la conta più). La
-// schiarita vale per il resto della giornata e resiste al refresh; il
-// giorno successivo, se il calendario prevede ancora una notifica (es.
-// ultimi 7 giorni prima della scadenza), torna non letta (o subito, se la
-// data di riferimento cambia).
-function markNotificationRead(key, deadline) {
-    markNotifSeen(key, deadline);
+// resta visibile nella campanella (il badge non la conta più). La lettura è
+// permanente per quella data di riferimento: resiste al refresh e ai riavvii
+// del programma. Torna non letta solo se la data di riferimento cambia.
+function markNotificationRead(key, deadline, phase) {
+    markNotifSeen(key, deadline, phase);
     renderNotifications();
 }
 
@@ -2952,22 +3010,28 @@ function markNotificationRead(key, deadline) {
 // riferimento (la scadenza a cui la notifica si riferiva). Se la data di
 // scadenza cambia, la notifica per la NUOVA data non è eliminata e torna
 // ad arrivare normalmente.
-function deleteNotification(key, deadline) {
+function deleteNotification(key, deadline, phase) {
     localStorage.removeItem('notifSeen_' + key);
-    localStorage.setItem('notifDismissed_' + key, deadline || '1');
+    localStorage.setItem('notifDismissed_' + key, (deadline || '1') + '|' + (phase || ''));
     renderNotifications();
 }
 
 // True se la notifica è stata eliminata con la ✕. L'eliminazione vale per
-// quella specifica data di riferimento: con una scadenza diversa la
-// notifica non è eliminata e ricompare.
-function isNotificationDismissed(key, deadline) {
+// quella specifica data di riferimento E per la fascia: eliminare il
+// promemoria dei 30 giorni non cancella quelli dei 15 e degli ultimi 7
+// giorni. Con una scadenza diversa la notifica non è eliminata e ricompare.
+function isNotificationDismissed(key, deadline, phase) {
     var v = localStorage.getItem('notifDismissed_' + key);
     if (!v) return false;
     // Vecchio formato '1' (senza data): per sicurezza vale come eliminata
     // per qualunque data (i flag vecchi vengono comunque ripuliti all'avvio)
     if (v === '1') return true;
-    return v === (deadline || '1');
+    var parts = v.split('|');
+    // Vecchio formato (solo data, senza fascia): vale per tutte le fasce di
+    // quella scadenza (eliminazione fatta prima delle fasce).
+    if (parts.length < 2) return parts[0] === (deadline || '1');
+    if (parts[0] !== deadline) return false;
+    return parts[1] === (phase || '');
 }
 
 // --- Bottone Completa: apre una finestra per inserire la data di completamento ---
@@ -3209,6 +3273,10 @@ function generateF24Pdf(scadenzaId) {
         importo = parseFloat(s.importo) || 0;
     }
 
+    // Data mostrata in alto nel Modello F24: la stessa della colonna
+    // "Prossima Scadenza" nella sezione Scadenze (vedi getScadenzaDataMostrata).
+    var scadenzaMostrata = getScadenzaDataMostrata(s) || s.prossima_scadenza || s.data_decorrenza;
+
     // L'anno di versamento deve corrispondere all'anno della scadenza
     // (prossima_scadenza = data di pagamento), non all'anno corrente.
     var annoVersamento = s.prossima_scadenza ? new Date(s.prossima_scadenza).getFullYear()
@@ -3260,7 +3328,7 @@ function generateF24Pdf(scadenzaId) {
     doc.setFontSize(11);
     doc.setTextColor(203, 213, 225);
     doc.text('Versamento Imposta di Registro - Contratti di Locazione', M, 68);
-    doc.text('Scadenza: ' + formatDate(s.data_decorrenza) + '  -  Contratto: ' + (c.identificativo || '#' + c.id), M, 84);
+    doc.text('Scadenza: ' + formatDate(scadenzaMostrata) + '  -  Contratto: ' + (c.identificativo || '#' + c.id), M, 84);
     y = 120;
 
     // Locatore
@@ -3693,7 +3761,9 @@ async function renderScadenze() {
                 return {
                     locLabel: c ? getLocatoriCognomeNomeLabel(c.id) : 'N/A',
                     condLabel: c ? getConduttoriCognomeNomeLabel(c.id) : 'N/A',
-                    scadenza: s.prossima_scadenza,
+                    // Nella lista si mostra il giorno prima della scadenza
+                    // effettiva (solo visualizzazione: vedi getScadenzaDataMostrata)
+                    scadenza: getScadenzaDataMostrata(s),
                     urg: getScadenzaUrgenza(s),
                     completata: isCompletata,
                     scaduta: s.stato === 'scaduta',
