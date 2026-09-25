@@ -3393,6 +3393,10 @@ function generateF24Pdf(scadenzaId) {
         } else {
             field('Importo versamento', formatCurrency(importo));
         }
+        // "A carico di" ha senso solo se c'è l'imposta di registro
+        if (percentuale > 0 || parseFloat(canone.valore_assoluto) > 0) {
+            field('A carico di', getCanoneACaricoDiLabel(canone.a_carico_di));
+        }
     }
 
     // Footer
