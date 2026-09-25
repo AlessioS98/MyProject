@@ -84,6 +84,30 @@ async function loadMeta() {
 }
 
 // ------------------------------------------------------------------
+// Migrazioni leggere: colonne aggiunte dopo la prima versione dello schema
+// ------------------------------------------------------------------
+// I database gia' in uso non vengono ricreati da schema.sql (che fa DROP):
+// le colonne nuove vengono aggiunte automaticamente all'avvio, se mancano.
+// La cache delle colonne (meta) viene svuotata dopo un ALTER, cosi' il
+// controllo dei nomi di colonna in /api/query vede subito la novita'.
+const COLONNE_AGGIUNTE = [
+  ['canoni_annuali', 'a_carico_di', "VARCHAR(20) NOT NULL DEFAULT '50'"]
+];
+
+async function ensureColonna(tabella, colonna, definizione) {
+  const [rows] = await pool.query(
+    'SELECT COUNT(*) AS n FROM information_schema.columns ' +
+    'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+    [DB_NAME, tabella, colonna]
+  );
+  if (rows[0] && rows[0].n > 0) return false;
+  await pool.query('ALTER TABLE `' + tabella + '` ADD COLUMN `' + colonna + '` ' + definizione);
+  meta = null;
+  metaPromise = null;
+  return true;
+}
+
+// ------------------------------------------------------------------
 // Errori "amichevoli" (il messaggio arriva al frontend in error.message)
 // ------------------------------------------------------------------
 function apiErr(status, message) {
@@ -333,6 +357,17 @@ app.listen(PORT, () => {
     await boot.end();
     const [[r]] = await pool.query('SELECT VERSION() AS v');
     console.log('Connesso a MySQL ' + r.v + ' (database: ' + DB_NAME + ')');
+    // Aggiunge le colonne introdotte dopo l'importazione iniziale dello schema
+    for (const [tabella, colonna, definizione] of COLONNE_AGGIUNTE) {
+      try {
+        if (await ensureColonna(tabella, colonna, definizione)) {
+          console.log('Aggiunta colonna ' + tabella + '.' + colonna + ' al database.');
+        }
+      } catch (e) {
+        console.warn('ATTENZIONE: impossibile aggiungere ' + tabella + '.' + colonna +
+          '. Importa lo schema aggiornato (' + (e.message || e) + ')');
+      }
+    }
     try {
       const m = await loadMeta();
       const nTables = Object.keys(m).length;

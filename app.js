@@ -280,6 +280,25 @@ function getCanoneTaxLabel(ca) {
     }
     return 'Ordinaria';
 }
+// --- "A carico di" del canone (imposta di registro) ---
+// Soggetto su cui grava l'imposta: Locatore, Conduttore o 50% (metà ciascuno,
+// selezione predefinita). Il valore è informativo: non incide sui calcoli.
+var CANONE_A_CARICO_DI_OPTIONS = [
+    { value: 'locatore', label: 'Locatore' },
+    { value: 'conduttore', label: 'Conduttore' },
+    { value: '50', label: '50%' }
+];
+function getCanoneACaricoDiValue(aCaricoDi) {
+    var v = (aCaricoDi == null ? '' : String(aCaricoDi)).trim().toLowerCase();
+    var opt = CANONE_A_CARICO_DI_OPTIONS.find(function(o) { return o.value === v; });
+    return opt ? opt.value : '50';
+}
+function getCanoneACaricoDiLabel(aCaricoDi) {
+    var v = getCanoneACaricoDiValue(aCaricoDi);
+    var opt = CANONE_A_CARICO_DI_OPTIONS.find(function(o) { return o.value === v; });
+    return opt ? opt.label : '50%';
+}
+
 function getCanoneAttuale(contrattoId) {
     var today = new Date().toISOString().slice(0, 10);
     var canoni = getCanoniByContratto(contrattoId);
@@ -532,6 +551,7 @@ function toggleCanoneCedolare(el) {
     var active = !!(siEl && siEl.checked);
     var percentuale = row.querySelector('.canone-percentuale');
     var valoreAssoluto = row.querySelector('.canone-valore-assoluto');
+    var aCaricoDi = row.querySelector('.canone-a-carico-di');
     [percentuale, valoreAssoluto].forEach(function(field) {
         if (!field) return;
         var group = field.closest('.form-group');
@@ -546,6 +566,13 @@ function toggleCanoneCedolare(el) {
             if (group) group.style.opacity = '1';
         }
     });
+    // "A carico di" segue la stessa logica (a cedolare secca non c'è imposta di
+    // registro) ma conserva la selezione: senza scelta resta il 50% predefinito.
+    if (aCaricoDi) {
+        aCaricoDi.disabled = active;
+        var aCaricoGroup = aCaricoDi.closest('.form-group');
+        if (aCaricoGroup) aCaricoGroup.style.opacity = active ? '0.4' : '1';
+    }
 }
 // --- Copertura del periodo del contratto da parte dei canoni ---
 // Restituisce un messaggio di avviso se i canoni non coprono l'intero
@@ -613,7 +640,7 @@ function removeCanoneRow(btn) {
     updateCanoniCoverageWarning();
 }
 
-function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale, valoreAssoluto) {
+function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale, valoreAssoluto, aCaricoDi) {
     canoneRowCounter++;
     var container = document.getElementById('canoniRowsContainer');
     if (!container) return;
@@ -621,6 +648,12 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
     row.className = 'canone-row';
     var cedChecked = cedolare ? ' checked' : '';
     var cedNoChecked = cedolare ? '' : ' checked';
+    // Soggetto su cui grava l'imposta di registro: Locatore, Conduttore o 50%
+    // (50% = metà ciascuno, selezione predefinita)
+    var aCaricoSel = getCanoneACaricoDiValue(aCaricoDi);
+    var aCaricoOptions = CANONE_A_CARICO_DI_OPTIONS.map(function(o) {
+        return '<option value="' + o.value + '"' + (o.value === aCaricoSel ? ' selected' : '') + '>' + o.label + '</option>';
+    }).join('');
     row.innerHTML = `
         <div class="canone-header">
             <span class="canone-label"><i class="fas fa-euro-sign"></i> Canone ${canoneRowCounter}</span>
@@ -637,6 +670,7 @@ function addCanoneRow(importo, dataInizio, dataFine, note, cedolare, percentuale
         </div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Percentuale (%) <span class="req">*</span></label><input type="number" class="canone-percentuale" value="${percentuale || ''}" min="0" max="100" step="0.01" required></div>
         <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>Valore Assoluto (EUR) <span class="req">*</span></label><input type="text" inputmode="decimal" class="canone-valore-assoluto" value="${formatImportoInput(parseImporto(valoreAssoluto))}" required></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>A carico di</label><select class="canone-a-carico-di">${aCaricoOptions}</select></div>
     `;
     container.appendChild(row);
     // Applica il toggle iniziale in base alla cedolare secca scelta
@@ -1747,6 +1781,10 @@ function openModal(type, id) {
         if (canoniCv.length > 0) {
             canoniCv.forEach(function(ca) {
                 html += '<div class="contract-detail"><label>Canone ' + formatDate(ca.data_inizio) + ' → ' + formatDate(ca.data_fine) + '</label><span>' + formatCurrency(ca.importo) + '</span></div>';
+                // "A carico di" ha senso solo se c'è l'imposta di registro
+                if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
+                    html += '<div class="contract-detail"><label>A carico di</label><span>' + getCanoneACaricoDiLabel(ca.a_carico_di) + '</span></div>';
+                }
             });
         } else {
             html += '<div class="contract-detail"><label>Canone Annuale</label><span>-</span></div>';
@@ -1998,7 +2036,7 @@ function openModal(type, id) {
         if (type === 'editContratto' && id) {
             var existingCanoni = getCanoniByContratto(id);
             existingCanoni.forEach(function(ca) {
-                addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '', ca.tassazione_cedolare_secca, ca.percentuale, ca.valore_assoluto);
+                addCanoneRow(ca.importo, ca.data_inizio, ca.data_fine, ca.note || '', ca.tassazione_cedolare_secca, ca.percentuale, ca.valore_assoluto, ca.a_carico_di);
             });
             // Populate existing locatori (con le date salvate nel legame)
             var existingLocRels = appData.contratto_locatori.filter(function(r) { return r.contratto_id === id; });
@@ -2275,6 +2313,8 @@ async function saveContratto(editId) {
         var taxCedolare = cedolareSi ? cedolareSi.checked : false;
         var taxPercentuale = parseImporto(row.querySelector('.canone-percentuale').value);
         var taxValoreAssoluto = parseImporto(row.querySelector('.canone-valore-assoluto').value);
+        var aCaricoEl = row.querySelector('.canone-a-carico-di');
+        var aCaricoDi = getCanoneACaricoDiValue(aCaricoEl ? aCaricoEl.value : null);
         newCanoni.push({
             contratto_id: targetId,
             importo: importo,
@@ -2283,7 +2323,8 @@ async function saveContratto(editId) {
             note: noteCanone,
             tassazione_cedolare_secca: taxCedolare,
             percentuale: taxPercentuale,
-            valore_assoluto: taxValoreAssoluto
+            valore_assoluto: taxValoreAssoluto,
+            a_carico_di: aCaricoDi
         });
     });
     // Insert new canoni
@@ -3504,6 +3545,7 @@ function generateContrattoPdf(contrattoId) {
             fieldRow(['Importo', 'Tassazione'], [formatCurrency(ca.importo), getCanoneTaxLabel(ca)]);
             if (parseFloat(ca.percentuale) > 0 || parseFloat(ca.valore_assoluto) > 0) {
                 fieldRow(['Percentuale', 'Valore Assoluto'], [(parseFloat(ca.percentuale) || 0) + '%', parseFloat(ca.valore_assoluto) > 0 ? formatCurrency(ca.valore_assoluto) : '-']);
+                fieldRow(['A carico di'], [getCanoneACaricoDiLabel(ca.a_carico_di)]);
             }
         });
     }

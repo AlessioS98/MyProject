@@ -172,6 +172,11 @@ Cose da tenere presenti:
 - `server.js` accetta solo le 7 tabelle dell'app e valida ogni nome di
   colonna contro `information_schema`; tutti i valori passano da query SQL
   parametrizzate (niente concatenazione di valori utente).
+- I database già in uso **non** vanno ricreati da `schema.sql` (che fa DROP):
+  le colonne aggiunte dopo la prima versione dello schema (oggi
+  `canoni_annuali.a_carico_di`, il soggetto su cui grava l'imposta di
+  registro: Locatore, Conduttore o 50%) vengono aggiunte automaticamente dal
+  server all'avvio, se mancano.
 - Il trigger MySQL `trg_scadenze_calc_dates_ins/upd` ricalcola
   `prossima_scadenza = data_decorrenza + 1 anno + 30 giorni`, come il
   vecchio trigger PostgreSQL.

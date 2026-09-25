@@ -98,6 +98,9 @@ CREATE TABLE canoni_annuali (
   tassazione_cedolare_secca TINYINT(1) NOT NULL DEFAULT 0,
   percentuale DECIMAL(14,2) NOT NULL DEFAULT 0,
   valore_assoluto DECIMAL(14,2) NOT NULL DEFAULT 0,
+  -- Soggetto su cui grava l'imposta di registro del canone:
+  -- 'locatore', 'conduttore' oppure '50' (meta' ciascuno, predefinito).
+  a_carico_di VARCHAR(20) NOT NULL DEFAULT '50',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   CONSTRAINT fk_canoni_contratto FOREIGN KEY (contratto_id) REFERENCES contratti (id) ON DELETE CASCADE
@@ -207,25 +210,25 @@ INSERT INTO contratti (identificativo, data_decorrenza, data_scadenza, data_chiu
 ('AFF-2024-009', '2024-06-01', '2025-05-31', NULL, 4, 7, 9, 'Attico Largo Augusto - scaduto');
 
 -- Canoni annuali
-INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine, tassazione_cedolare_secca, percentuale, valore_assoluto) VALUES
-(1, 7500, '2025-01-15', '2026-01-14', 0, 10, 750),
-(1, 7875, '2026-01-15', '2027-01-14', 1, 0, 0),
-(2, 24000, '2025-06-01', '2026-05-31', 1, 0, 0),
-(2, 25200, '2026-06-01', '2027-05-31', 1, 0, 0),
-(2, 26460, '2027-06-01', '2028-05-31', 1, 0, 0),
-(3, 4200, '2024-03-01', '2025-02-28', 0, 15, 420),
-(3, 4410, '2025-03-01', '2026-02-28', 0, 15, 420),
-(4, 3600, '2025-09-01', '2026-08-31', 0, 12, 300),
-(4, 3780, '2026-09-01', '2027-08-31', 0, 12, 300),
-(5, 14400, '2025-11-01', '2026-10-31', 1, 0, 0),
-(5, 15120, '2026-11-01', '2027-10-31', 1, 0, 0),
-(5, 15876, '2027-11-01', '2028-10-31', 1, 0, 0),
-(6, 2160, '2024-01-01', '2024-12-31', 0, 8, 180),
-(6, 2200, '2025-01-01', '2025-12-31', 0, 8, 180),
-(7, 11250, '2025-03-01', '2026-02-28', 0, 15, 1125),
-(7, 11812, '2026-03-01', '2027-02-28', 0, 15, 1125),
-(8, 6000, '2025-08-01', '2026-07-31', 0, 10, 600),
-(9, 4800, '2024-06-01', '2025-05-31', 0, 12, 480);
+INSERT INTO canoni_annuali (contratto_id, importo, data_inizio, data_fine, tassazione_cedolare_secca, percentuale, valore_assoluto, a_carico_di) VALUES
+(1, 7500, '2025-01-15', '2026-01-14', 0, 10, 750, '50'),
+(1, 7875, '2026-01-15', '2027-01-14', 1, 0, 0, '50'),
+(2, 24000, '2025-06-01', '2026-05-31', 1, 0, 0, '50'),
+(2, 25200, '2026-06-01', '2027-05-31', 1, 0, 0, '50'),
+(2, 26460, '2027-06-01', '2028-05-31', 1, 0, 0, '50'),
+(3, 4200, '2024-03-01', '2025-02-28', 0, 15, 420, 'conduttore'),
+(3, 4410, '2025-03-01', '2026-02-28', 0, 15, 420, 'conduttore'),
+(4, 3600, '2025-09-01', '2026-08-31', 0, 12, 300, 'locatore'),
+(4, 3780, '2026-09-01', '2027-08-31', 0, 12, 300, 'locatore'),
+(5, 14400, '2025-11-01', '2026-10-31', 1, 0, 0, '50'),
+(5, 15120, '2026-11-01', '2027-10-31', 1, 0, 0, '50'),
+(5, 15876, '2027-11-01', '2028-10-31', 1, 0, 0, '50'),
+(6, 2160, '2024-01-01', '2024-12-31', 0, 8, 180, '50'),
+(6, 2200, '2025-01-01', '2025-12-31', 0, 8, 180, '50'),
+(7, 11250, '2025-03-01', '2026-02-28', 0, 15, 1125, 'conduttore'),
+(7, 11812, '2026-03-01', '2027-02-28', 0, 15, 1125, 'conduttore'),
+(8, 6000, '2025-08-01', '2026-07-31', 0, 10, 600, '50'),
+(9, 4800, '2024-06-01', '2025-05-31', 0, 12, 480, 'locatore');
 
 -- Scadenze di esempio: prossima_scadenza viene calcolata dal trigger
 INSERT INTO scadenze (contratto_id, data_decorrenza, importo, stato) VALUES

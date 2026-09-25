@@ -103,6 +103,91 @@ a { color: inherit; text-decoration: none; }
 button { cursor: pointer; border: none; background: none; font-family: inherit; }
 input, select, textarea { font-family: inherit; }
 
+/* Menu a tendina e campi data: il puntatore diventa la manina con l'indice,
+   per far capire che si tratta di campi da aprire/selezionare.
+   Nei campi data la manina vale per tutto il campo: il testo gg/mm/aaaa
+   (le sue parti interne: giorno, mese, anno) e l'icona del calendario
+   (l'indicatore del selettore, quello a sinistra dentro il campo).
+   cursor: !important perche' le regole interne del browser (e la regola
+   .filter-field input piu' sotto) altrimenti rimettono il cursore di testo. */
+select,
+option,
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-year-field,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper,
+input[type="datetime-local"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit-fields-wrapper,
+input[type="month"]::-webkit-datetime-edit-month-field,
+input[type="month"]::-webkit-datetime-edit-year-field,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-datetime-edit,
+input[type="week"]::-webkit-datetime-edit-fields-wrapper,
+input[type="week"]::-webkit-calendar-picker-indicator {
+    cursor: pointer !important;
+}
+
+/* Nella lista aperta di un <select> Chromium ignora "cursor" sulle <option>
+   (il menu e' disegnato fuori dalla pagina: bug noto 40539138). Dove il
+   browser supporta "appearance: base-select" il menu viene disegnato nella
+   pagina e la manina funziona anche sfogliando le voci; negli altri browser
+   (es. Firefox, che rispetta gia' il cursore sulle option) resta il menu
+   nativo di prima. */
+@supports (appearance: base-select) {
+    select,
+    select::picker(select) {
+        appearance: base-select;
+    }
+    select::picker(select) {
+        cursor: pointer;
+        margin-top: 4px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    }
+    select option {
+        cursor: pointer;
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 0.85rem;
+    }
+    select option:hover,
+    select option:focus,
+    select option:checked {
+        background: var(--primary-bg);
+        color: var(--primary);
+    }
+    select::picker-icon {
+        color: var(--text-secondary);
+    }
+}
+
 /* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -973,7 +1058,9 @@ input, select, textarea { font-family: inherit; }
 }
 
 .filter-field select { cursor: pointer; }
-.filter-field input { cursor: text; }
+/* Nei filtri il cursore di testo vale per i campi digitabili; i campi data
+   (che si aprono col calendario) restano con la manina. */
+.filter-field input:not([type="date"]):not([type="time"]):not([type="datetime-local"]):not([type="month"]):not([type="week"]) { cursor: text; }
 
 .filter-field input[type="text"]:hover {
     border-color: var(--primary);
