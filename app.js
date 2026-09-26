@@ -3727,22 +3727,23 @@ async function renderScadenze() {
         } else {
             scadenzeFiltro = scadenzeFiltro.filter(function(s) { return s.stato === 'in-attesa' && !isScadenzaCedolare(s) && !isScadenzaOltreTermine(s); });
         }
-        // Ordinamento alfabetico per locatore e poi per conduttore (come nella
-        // lista contratti); a parità di locatore e conduttore si ordina per
-        // prossima scadenza.
+        // Ordinamento per data di scadenza (la più vicina per prima); nella
+        // lista "Archiviate" dalla più recente all'indietro, come per i
+        // contratti scaduti/chiusi. A parità di data, ordine alfabetico per
+        // locatore e poi per conduttore.
         items = scadenzeFiltro
             .sort(function(a, b) {
                 var ca = getContrattoById(a.contratto_id);
                 var cb = getContrattoById(b.contratto_id);
                 var la = ca ? getLocatoriCognomeNomeLabel(ca.id) : 'N/A';
                 var lb = cb ? getLocatoriCognomeNomeLabel(cb.id) : 'N/A';
-                var cmp = la.localeCompare(lb, 'it');
+                var da = a.prossima_scadenza, db2 = b.prossima_scadenza; var cmp = (!da || !db2) ? (!da && !db2 ? 0 : (!da ? 1 : -1)) : ((statoFiltro === 'archiviate') ? db2.localeCompare(da) : da.localeCompare(db2));
                 if (cmp !== 0) return cmp;
                 var coa = ca ? getConduttoriCognomeNomeLabel(ca.id) : 'N/A';
                 var cob = cb ? getConduttoriCognomeNomeLabel(cb.id) : 'N/A';
-                cmp = coa.localeCompare(cob, 'it');
+                cmp = la.localeCompare(lb, 'it');
                 if (cmp !== 0) return cmp;
-                return (a.prossima_scadenza || '9999-12-31').localeCompare(b.prossima_scadenza || '9999-12-31');
+                return coa.localeCompare(cob, 'it');
             })
             .map(function(s) {
                 var c = getContrattoById(s.contratto_id);
