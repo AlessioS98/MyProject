@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=28">
+    <link rel="stylesheet" href="styles.css?v=30">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -61,6 +61,10 @@
             </button>
             <div class="topbar-actions">
                 <span class="topbar-title">Gestione dei contratti di affitto</span>
+                <button class="topbar-backup-btn" id="backupBtn" title="Scarica il backup completo del database (.sql)">
+                    <i class="fas fa-download"></i>
+                    <span>Effettua Backup</span>
+                </button>
                 <button class="topbar-btn" id="notifBtn" title="Notifiche">
                     <i class="fas fa-bell"></i>
                     <span class="notif-badge" id="notifBadge">3</span>
@@ -81,6 +85,7 @@
             </div>
         </div>
 
+
         <!-- Page: Contratti -->
         <section class="page active" id="page-contratti">
             <div class="page-header">
@@ -89,9 +94,6 @@
                     <p class="page-subtitle">Gestisci tutti i contratti di locazione</p>
                 </div>
                 <div class="header-actions">
-                    <button class="btn btn-outline" onclick="exportData('contratti')">
-                        <i class="fas fa-download"></i> Esporta
-                    </button>
                     <button class="btn btn-primary" onclick="openModal('newContratto')">
                         <i class="fas fa-plus"></i> Nuovo Contratto
                     </button>

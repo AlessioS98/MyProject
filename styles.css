@@ -505,6 +505,34 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 
 .notification-panel.show { display: block; }
 
+/* ---------- Pulsante "Effettua Backup" nella topbar ---------- */
+.topbar-backup-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all var(--transition);
+}
+
+.topbar-backup-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-bg);
+}
+
+.topbar-backup-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 .notif-header {
     display: flex;
     align-items: center;
@@ -1968,6 +1996,10 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     .page-header h1 { font-size: 1.45rem; }
 
     .topbar-title { font-size: 0.95rem; }
+
+    /* Su schermi stretti resta solo l'icona, per non rubare spazio al titolo */
+    .topbar-backup-btn span { display: none; }
+    .topbar-backup-btn { padding: 0 12px; }
 
     .payment-summary { grid-template-columns: 1fr; }
 

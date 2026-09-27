@@ -1344,6 +1344,54 @@ document.getElementById('notifPanel').addEventListener('click', function(e) {
     e.stopPropagation();
 });
 
+// --- Backup dei dati ---
+// Il pulsante scarica il backup completo del database in un unico file .sql
+// (tutte le tabelle, tutti i dati e i trigger), pronto per il ripristino.
+// Il file arriva dal server tramite fetch, cosi' un errore (MySQL spento,
+// ecc.) diventa un avviso invece di far aprire nel browser una pagina di errore.
+function nomeFileDaRisposta(resp) {
+    var cd = resp.headers.get('Content-Disposition') || '';
+    var m = /filename="?([^"]+)"?/.exec(cd);
+    return m ? m[1] : '';
+}
+
+async function effettuaBackup() {
+    var btn = document.getElementById('backupBtn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+        var resp = await fetch('/api/backup/sql');
+        if (!resp.ok) {
+            var msg = 'Backup non eseguito.';
+            try {
+                var j = await resp.json();
+                if (j && j.error) msg = j.error;
+            } catch (e) { /* risposta non JSON */ }
+            showToast(msg, 'error', 8000);
+            return;
+        }
+
+        // Il nome del file (con data e ora) lo suggerisce il server
+        var nome = nomeFileDaRisposta(resp) || 'backup.sql';
+        var blob = await resp.blob();
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = nome;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast('Backup completato: il file ' + nome + ' e\' nella cartella Download.', 'success', 8000);
+    } catch (e) {
+        showToast('Impossibile contattare il server per il backup.', 'error', 8000);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.getElementById('backupBtn').addEventListener('click', effettuaBackup);
+
 // --- Sidebar Shortcuts: Anagrafiche & Immobili ---
 document.getElementById('btnAnagrafiche').addEventListener('click', function() {
     openModal('listaPersone');
@@ -1653,25 +1701,6 @@ function applyFilterModal() {
 
     closeFilterModal();
     renderContrattiList(f);
-}
-
-// --- Export ---
-function exportData(type) {
-    var csv = '';
-    if (type === 'contratti') {
-        csv = 'Identificativo,Locatore,Conduttore,Immobile,Canone Annuale,Decorrenza,Scadenza,Stato,Cedolare Secca\n';
-        appData.contratti.forEach(function(c) {
-            var stato = calcContrattoStato(c);
-            var caExp = getCanoneAttuale(c.id);
-            csv += '"' + c.identificativo + '","' + getLocatoriLabel(c.id) + '","' + getConduttoriLabel(c.id) + '","' + getImmobileLabel(c.immobile_id) + '",' + (caExp ? caExp.importo : 0) + ',"' + (c.data_decorrenza||'') + '","' + (getContrattoScadenzaEffettiva(c)||'') + '","' + getStatusLabel(stato) + '",' + (caExp && caExp.tassazione_cedolare_secca ? 'SI' : 'NO') + '\n';
-        });
-    }
-    var blob = new Blob([csv], { type: 'text/csv' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = type + '_export.csv'; a.click();
-    URL.revokeObjectURL(url);
-    showToast('Esportazione completata!', 'success');
 }
 
 // ============================================

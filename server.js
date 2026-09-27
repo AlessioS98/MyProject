@@ -298,6 +298,145 @@ async function handleQuery(body) {
 }
 
 // ------------------------------------------------------------------
+// Backup del database
+// ------------------------------------------------------------------
+// Il backup e' un unico file .sql (dump completo: struttura, dati e trigger),
+// che il pulsante "Effettua Backup" dell'app scarica dal browser.
+
+function nomeTabella(id) {
+  return '`' + String(id).replace(/`/g, '') + '`';
+}
+
+// Nome del file scaricato, es. backup_gestione-contratti_2026-09-27_1530.sql
+function nomeFileBackup(estensione) {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const data = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  const ora = p(d.getHours()) + p(d.getMinutes());
+  return 'backup_gestione-contratti_' + data + '_' + ora + '.' + estensione;
+}
+
+async function elencoTabelle() {
+  const [rows] = await pool.query(
+    "SELECT TABLE_NAME FROM information_schema.tables " +
+    "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
+    [DB_NAME]
+  );
+  return rows.map((r) => r.TABLE_NAME);
+}
+
+// Valore trasformato in letterale SQL, con l'escape corretto per MySQL.
+function letteraleSql(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+  if (typeof v === 'boolean') return v ? '1' : '0';
+  if (Buffer.isBuffer(v)) return '0x' + v.toString('hex');
+  if (v instanceof Date) {
+    const p = (n) => String(n).padStart(2, '0');
+    return "'" + v.getFullYear() + '-' + p(v.getMonth() + 1) + '-' + p(v.getDate()) + ' ' +
+      p(v.getHours()) + ':' + p(v.getMinutes()) + ':' + p(v.getSeconds()) + "'";
+  }
+  return "'" + String(v)
+    .replace(/\\/g, '\\\\')
+    .replace(/\0/g, '\\0')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\x1a/g, '\\Z')
+    .replace(/'/g, "\\'") + "'";
+}
+
+// Dump .sql: per ogni tabella DROP + CREATE (da SHOW CREATE TABLE) + INSERT.
+async function buildSqlDump() {
+  const tabelle = await elencoTabelle();
+  const out = [];
+
+  out.push('-- ============================================================');
+  out.push('-- Backup database `' + DB_NAME + '`');
+  out.push('-- Generato il ' + new Date().toLocaleString('it-IT'));
+  out.push('--');
+  out.push('-- Per ripristinare i dati importa questo file in MySQL:');
+  out.push('--   riga di comando:  mysql -u root -p < ' + nomeFileBackup('sql'));
+  out.push('--   oppure:          phpMyAdmin / MySQL Workbench -> Importa');
+  out.push('-- Il database viene creato automaticamente se non esiste.');
+  out.push('-- Contiene tutte le tabelle del database con tutti i loro dati e i trigger.');
+  out.push('-- ATTENZIONE: le tabelle esistenti vengono sostituite dai dati del backup.');
+  out.push('-- ============================================================');
+  out.push('');
+  out.push('SET NAMES utf8mb4;');
+  // Crea (se manca) e seleziona il database: cosi' il file si importa anche
+  // su un server nuovo, con un solo comando.
+  out.push('CREATE DATABASE IF NOT EXISTS ' + nomeTabella(DB_NAME) +
+    ' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+  out.push('USE ' + nomeTabella(DB_NAME) + ';');
+  out.push('');
+  out.push('SET FOREIGN_KEY_CHECKS = 0;');
+  out.push('');
+
+  for (const t of tabelle) {
+    const [ddlRows] = await pool.query('SHOW CREATE TABLE ' + nomeTabella(t));
+    const ddl = ddlRows[0] && (ddlRows[0]['Create Table'] || ddlRows[0]['Create View']);
+    if (!ddl) continue;
+
+    out.push('-- ------------------------------------------------------------');
+    out.push('-- Tabella `' + t + '`');
+    out.push('-- ------------------------------------------------------------');
+    out.push('DROP TABLE IF EXISTS ' + nomeTabella(t) + ';');
+    out.push(ddl + ';');
+
+    const [righe] = await pool.query('SELECT * FROM ' + nomeTabella(t));
+    if (righe.length > 0) {
+      const colonne = Object.keys(righe[0]);
+      const colList = colonne.map(nomeTabella).join(', ');
+      const CHUNK = 100; // blocchi da 100 righe, file piu' leggibile
+      for (let i = 0; i < righe.length; i += CHUNK) {
+        const blocco = righe.slice(i, i + CHUNK);
+        out.push('INSERT INTO ' + nomeTabella(t) + ' (' + colList + ') VALUES');
+        out.push(blocco
+          .map((r) => '(' + colonne.map((c) => letteraleSql(r[c])).join(', ') + ')')
+          .join(',\n') + ';');
+      }
+    }
+    out.push('');
+  }
+
+  // Trigger: non sono inclusi in SHOW CREATE TABLE, quindi vanno salvati a
+  // parte. Vengono ricreati DOPO i dati, cosi' le INSERT del backup non li
+  // fanno scattare (i valori salvati restano quelli del momento del backup).
+  let trigger = [];
+  try {
+    const [rows] = await pool.query('SHOW TRIGGERS FROM ' + nomeTabella(DB_NAME));
+    trigger = rows;
+  } catch (e) {
+    console.warn('Backup: impossibile leggere i trigger (' + (e.message || e) + ')');
+  }
+  if (trigger.length > 0) {
+    out.push('-- ------------------------------------------------------------');
+    out.push('-- Trigger (' + trigger.length + ')');
+    out.push('-- ------------------------------------------------------------');
+    // Il corpo del trigger contiene ';', quindi serve un delimitatore diverso
+    // (come fa mysqldump): capito da mysql da riga di comando e da phpMyAdmin.
+    out.push('DELIMITER $$');
+    for (const t of trigger) {
+      // Il nome del trigger puo' arrivare con maiuscole diverse (Trigger/TRIGGER)
+      const nome = t.Trigger || t.TRIGGER || t.trigger;
+      let crea = t['SQL Original Statement'] || t['Create Trigger'] || t['CREATE TRIGGER'] || '';
+      // Il DEFINER (es. `root`@`localhost`) viene tolto: cosi' il backup si
+      // importa anche con un utente MySQL diverso da quello che l'ha creato.
+      crea = crea.replace(/DEFINER=\S+\s*/i, '');
+      if (!nome || !crea) continue;
+      out.push('DROP TRIGGER IF EXISTS ' + nomeTabella(nome) + '$$');
+      out.push(crea + '$$');
+    }
+    out.push('DELIMITER ;');
+    out.push('');
+  }
+
+  out.push('SET FOREIGN_KEY_CHECKS = 1;');
+  out.push('');
+  return out.join('\n');
+}
+
+// ------------------------------------------------------------------
 // App Express
 // ------------------------------------------------------------------
 const app = express();
@@ -320,6 +459,20 @@ app.post('/api/query', async (req, res) => {
   } catch (e) {
     if (e.status !== 503 && e.status !== 400) console.error('Errore API /api/query:', e);
     res.status(e.status || 500).json({ error: e.message || String(e) });
+  }
+});
+
+// Backup: scarica il dump .sql completo del database (struttura + dati)
+app.get('/api/backup/sql', async (req, res) => {
+  try {
+    const dump = await buildSqlDump();
+    res.setHeader('Content-Type', 'application/sql; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + nomeFileBackup('sql') + '"');
+    res.send(dump);
+  } catch (e) {
+    console.error('Errore backup SQL:', e);
+    const d = dbError(e);
+    res.status(d.status || 503).json({ error: d.message });
   }
 });
 
