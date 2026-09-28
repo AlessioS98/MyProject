@@ -38,7 +38,8 @@ const TABLES = new Set([
   'scadenze',
   'canoni_annuali',
   'contratto_locatori',
-  'contratto_conduttori'
+  'contratto_conduttori',
+  'contratto_immobili'
 ]);
 
 // Pool di connessioni verso il database dell'app.
@@ -93,6 +94,37 @@ async function loadMeta() {
 const COLONNE_AGGIUNTE = [
   ['canoni_annuali', 'a_carico_di', "VARCHAR(20) NOT NULL DEFAULT '50'"]
 ];
+
+// Tabelle introdotte dopo la prima versione dello schema: vengono create
+// automaticamente all'avvio, cosi' un database gia' in uso non deve essere
+// reinizializzato con schema.sql (che fa DROP di tutto).
+const TABELLE_AGGIUNTE = [
+  {
+    nome: 'contratto_immobili',
+    sql: 'CREATE TABLE IF NOT EXISTS `contratto_immobili` (' +
+      '  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,' +
+      '  `contratto_id` BIGINT UNSIGNED NULL,' +
+      '  `immobile_id` BIGINT UNSIGNED NULL,' +
+      '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
+      '  PRIMARY KEY (`id`),' +
+      '  CONSTRAINT `fk_contratto_immobili_contratto` FOREIGN KEY (`contratto_id`) REFERENCES `contratti` (`id`) ON DELETE CASCADE,' +
+      '  CONSTRAINT `fk_contratto_immobili_immobile` FOREIGN KEY (`immobile_id`) REFERENCES `immobili` (`id`) ON DELETE CASCADE' +
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+  }
+];
+
+async function ensureTabella(tabella, sql) {
+  const [rows] = await pool.query(
+    'SELECT COUNT(*) AS n FROM information_schema.tables ' +
+    'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+    [DB_NAME, tabella]
+  );
+  if (rows[0] && rows[0].n > 0) return false;
+  await pool.query(sql);
+  meta = null;
+  metaPromise = null;
+  return true;
+}
 
 async function ensureColonna(tabella, colonna, definizione) {
   const [rows] = await pool.query(
@@ -518,6 +550,17 @@ app.listen(PORT, () => {
         }
       } catch (e) {
         console.warn('ATTENZIONE: impossibile aggiungere ' + tabella + '.' + colonna +
+          '. Importa lo schema aggiornato (' + (e.message || e) + ')');
+      }
+    }
+    // Crea le tabelle introdotte dopo l'importazione iniziale dello schema
+    for (const t of TABELLE_AGGIUNTE) {
+      try {
+        if (await ensureTabella(t.nome, t.sql)) {
+          console.log('Creata tabella ' + t.nome + ' nel database.');
+        }
+      } catch (e) {
+        console.warn('ATTENZIONE: impossibile creare la tabella ' + t.nome +
           '. Importa lo schema aggiornato (' + (e.message || e) + ')');
       }
     }

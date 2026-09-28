@@ -11,12 +11,16 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
     if (n == null) return '€0';
-    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(n);
+    // useGrouping: 'always' forza il separatore delle migliaia anche sui
+    // numeri di 4 cifre: la locale it-IT (CLDR, minimumGroupingDigits=2)
+    // raggrupperebbe solo da 5 cifre in su (1000 -> "1000,00 €",
+    // 10000 -> "10.000,00 €"). Cosi' 1000 diventa "1.000,00 €".
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' }).format(n);
 }
 function formatDate(d) {
     if (!d) return '-';
@@ -134,10 +138,23 @@ function getPersonaLabel(id) {
 function getImmobile(id) {
     return appData.immobili.find(function(i) { return i.id === id; }) || null;
 }
-function getImmobileLabel(id) {
-    var i = getImmobile(id);
-    if (!i) return 'N/A';
-    return i.indirizzo + ', ' + i.citta;
+// --- Multi-immobile helpers (tabella ponte contratto_immobili) ---
+// Come per locatori/conduttori: la tabella ponte ha la precedenza, ma se un
+// contratto non ha righe (creato prima di questa funzione) si usa il vecchio
+// contratti.immobile_id come singolo immobile.
+function getImmobiliRelsByContratto(contrattoId) {
+    var rels = appData.contratto_immobili.filter(function(r) { return r.contratto_id === contrattoId; });
+    if (rels.length === 0) {
+        var c = appData.contratti.find(function(x) { return x.id === contrattoId; });
+        var i = c && c.immobile_id ? getImmobile(c.immobile_id) : null;
+        return i ? [i] : [];
+    }
+    return rels.map(function(r) { return getImmobile(r.immobile_id); }).filter(Boolean);
+}
+function getImmobiliLabel(contrattoId) {
+    var imms = getImmobiliRelsByContratto(contrattoId);
+    if (imms.length === 0) return 'N/A';
+    return imms.map(function(i) { return i.indirizzo + ', ' + i.citta; }).join(' | ');
 }
 
 // --- Multi-person helpers (tabelle ponte) ---
@@ -886,8 +903,16 @@ function indirizzoSortLabel(s) {
 // --- Immobile Suggestions nel form contratto (stessa logica dei campi persona) ---
 // Digitando in Indirizzo/Città/Foglio/Particella/Sub compaiono i valori degli
 // immobili già presenti; la scelta compila l'intero blocco immobile.
-function setupImmobileSuggestions(inputEl, fieldKey) {
+function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
     inputEl.parentNode.style.position = 'relative';
+    function fillRow(imm, key) {
+        if (!rowEl) return;
+        var el = rowEl.querySelector('.imm-' + key);
+        if (el) el.value = imm[key] || '';
+    }
+    function fillImmobile(imm) {
+        ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(k) { fillRow(imm, k); });
+    }
     setupFilterAutocomplete(inputEl, function() {
         var seen = {};
         var out = [];
@@ -906,13 +931,7 @@ function setupImmobileSuggestions(inputEl, fieldKey) {
             out.push({ label: label, sub: sub, data: imm });
         });
         return out;
-    }, function(imm) {
-        document.getElementById('cf_imm_indirizzo').value = imm.indirizzo || '';
-        document.getElementById('cf_imm_citta').value = imm.citta || '';
-        document.getElementById('cf_imm_foglio').value = imm.foglio || '';
-        document.getElementById('cf_imm_particella').value = imm.particella || '';
-        document.getElementById('cf_imm_sub').value = imm.sub || '';
-    }, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
+    }, fillImmobile, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
 }
 
 // --- Locatore / Conduttore Row Helpers ---
@@ -932,6 +951,47 @@ function setupPersonFieldAutocomplete(inputEl, fieldKey) {
         });
         return out;
     }, null);
+}
+
+// --- Immobile Row Helpers (piu' immobili per contratto) ---
+// Ogni riga e' indipendente (stessa logica di locatori/conduttori): si puo'
+// aggiungere un immobile con "Aggiungi Immobile" ed eliminarlo con il cestino.
+// Una riga completamente vuota viene ignorata al salvataggio.
+var immobileRowCounter = 0;
+function addImmobileRow(immobile) {
+    immobileRowCounter++;
+    var container = document.getElementById('immobiliRowsContainer');
+    if (!container) return;
+    var idx = immobileRowCounter;
+    var m = immobile || {};
+    var row = document.createElement('div');
+    row.className = 'immobile-row';
+    row.style.cssText = 'padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:8px;position:relative';
+    row.innerHTML = `
+        <button type="button" class="btn btn-sm btn-outline" style="position:absolute;top:8px;right:8px;color:var(--danger);z-index:5" onclick="this.closest('.immobile-row').remove()"><i class="fas fa-trash"></i></button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding-right:44px">
+        <div class="form-group" style="flex:2;min-width:180px;margin:0"><label>Indirizzo <span class="req">*</span></label><input type="text" class="imm-indirizzo" value="${m.indirizzo || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Città <span class="req">*</span></label><input type="text" class="imm-citta" value="${m.citta || ''}"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio <span class="req">*</span></label><input type="text" class="imm-foglio" value="${m.foglio || ''}" style="max-width:100px"></div>
+        <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella <span class="req">*</span></label><input type="text" class="imm-particella" value="${m.particella || ''}" style="max-width:100px"></div>
+        <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub <span class="req">*</span></label><input type="text" class="imm-sub" value="${m.sub || ''}" style="max-width:100px"></div>
+        <div class="form-group" style="flex:1;min-width:130px;margin:0"><label>APE</label>
+        <div class="radio-group" style="display:flex;gap:16px;margin-top:6px">
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape_${idx}" value="true"${m.ape ? ' checked' : ''}> Sì</label>
+        <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape_${idx}" value="false"${m.ape ? '' : ' checked'}> No</label>
+        </div></div>
+        </div>
+    `;
+    container.appendChild(row);
+    // Campi di testo della riga inclusi nel toggle maiuscolo/minuscolo
+    setupContrattoCaseFields(row);
+    // Suggerimenti degli immobili gia' presenti (la scelta compila la sola riga)
+    ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(f) {
+        var el = row.querySelector('.imm-' + f);
+        if (el) setupImmobileSuggestions(el, f, row);
+    });
 }
 
 var locatoreRowCounter = 0;
@@ -1198,7 +1258,8 @@ async function loadAllData() {
             db.from('scadenze').select('*'),
             db.from('canoni_annuali').select('*'),
             db.from('contratto_locatori').select('*'),
-            db.from('contratto_conduttori').select('*')
+            db.from('contratto_conduttori').select('*'),
+            db.from('contratto_immobili').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1211,7 +1272,8 @@ async function loadAllData() {
             }
         }
         var persone = results[0], immobili = results[1], contratti = results[2],
-            scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6];
+            scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
+            immRel = results[7];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1219,6 +1281,7 @@ async function loadAllData() {
         appData.canoni_annuali = canoni.data || [];
         appData.contratto_locatori = locRel.data || [];
         appData.contratto_conduttori = condRel.data || [];
+        appData.contratto_immobili = immRel.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1665,9 +1728,12 @@ function applyFilterModal() {
     var particella = document.getElementById('ffParticella').value;
     var sub = document.getElementById('ffSub').value;
     f = f.filter(function(c) {
-        var i = getImmobile(c.immobile_id);
-        if (!i) return false;
-        return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta) && matchField(i.foglio, foglio) && matchField(i.particella, particella) && matchField(i.sub, sub);
+        // Corrisponde se ALMENO UNO degli immobili del contratto soddisfa i filtri
+        var imms = getImmobiliRelsByContratto(c.id);
+        if (imms.length === 0) return false;
+        return imms.some(function(i) {
+            return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta) && matchField(i.foglio, foglio) && matchField(i.particella, particella) && matchField(i.sub, sub);
+        });
     });
 
     // Contratto
@@ -1718,9 +1784,6 @@ function openModal(type, id) {
         var c = type === 'editContratto' ? appData.contratti.find(function(x) { return x.id === id; }) : null;
         title.textContent = c ? 'Modifica Contratto' : 'Nuovo Contratto';
 
-        // Get immobile data for edit
-        var imm = c ? getImmobile(c.immobile_id) : null;
-
         html = '<form id="contrattoForm" class="form-grid">';
 
         // --- SEZIONE CONTRATTO ---
@@ -1750,21 +1813,10 @@ function openModal(type, id) {
         html += '<div class="form-group full"><div id="conduttoriRowsContainer"></div>';
         html += '<button type="button" class="btn btn-sm btn-outline" onclick="addConduttoreRow()"><i class="fas fa-plus"></i> Aggiungi Conduttore</button></div>';
 
-        // --- SEZIONE IMMOBILE ---
-        html += '<div class="form-section-title full"><i class="fas fa-home"></i> Immobile</div>';
-        html += '<div class="form-group"><label>Indirizzo <span class="req">*</span></label><input type="text" id="cf_imm_indirizzo" value="' + (imm ? imm.indirizzo : '') + '" required></div>';
-        html += '<div class="form-group"><label>Città <span class="req">*</span></label><input type="text" id="cf_imm_citta" value="' + (imm ? imm.citta : '') + '" required></div>';
-        var apeChecked = imm && imm.ape;
-        html += '<div class="form-group"><label>APE</label>';
-        html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape" value="true"' + (!apeChecked ? ' checked' : '') + '> Sì</label>';
-        html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape" value="false"' + (apeChecked ? ' checked' : '') + '> No</label>';
-        html += '</div></div>';
-        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio <span class="req">*</span></label><input type="text" id="cf_imm_foglio" value="' + (imm ? (imm.foglio || '') : '') + '" style="max-width:100px" required></div>';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella <span class="req">*</span></label><input type="text" id="cf_imm_particella" value="' + (imm ? (imm.particella || '') : '') + '" style="max-width:100px" required></div>';
-        html += '<div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub <span class="req">*</span></label><input type="text" id="cf_imm_sub" value="' + (imm ? (imm.sub || '') : '') + '" style="max-width:100px" required></div>';
-        html += '</div>';
+        // --- SEZIONE IMMOBILI ---
+        html += '<div class="form-section-title full"><i class="fas fa-home"></i> Immobili</div>';
+        html += '<div class="form-group full"><div id="immobiliRowsContainer"></div>';
+        html += '<button type="button" class="btn btn-sm btn-outline" onclick="addImmobileRow()"><i class="fas fa-plus"></i> Aggiungi Immobile</button></div>';
 
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
@@ -1797,8 +1849,6 @@ function openModal(type, id) {
         // chiusura del legame, se presente, viene indicata accanto al nome)
         var locRels = getLocatoriRelsByContratto(cv.id);
         var condRels = getConduttoriRelsByContratto(cv.id);
-        var imm = getImmobile(cv.immobile_id);
-
         html = '<div class="contract-details" style="margin-bottom:16px">';
         html += '<div class="contract-detail"><label>Identificativo</label><span>' + cv.identificativo + '</span></div>';
         // Mostra solo i canoni in corso alla data di sistema
@@ -1852,10 +1902,17 @@ function openModal(type, id) {
         }
         html += '</div>';
 
-        // Immobile
+        // Immobili
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:12px">';
-        html += '<strong><i class="fas fa-home"></i> Immobile:</strong> ';
-        html += imm ? imm.indirizzo + ', ' + imm.citta + (imm.foglio ? ' (Fg. ' + imm.foglio + ', Part. ' + imm.particella + ', Sub ' + imm.sub + ')' : '') + (imm.ape ? ' [APE]' : '') : 'N/A';
+        html += '<strong><i class="fas fa-home"></i> Immobili:</strong><br>';
+        var immsCv = getImmobiliRelsByContratto(cv.id);
+        if (immsCv.length > 0) {
+            immsCv.forEach(function(im) {
+                html += '<span style="display:inline-block;margin:4px 0">' + im.indirizzo + ', ' + im.citta + (im.foglio ? ' (Fg. ' + im.foglio + ', Part. ' + im.particella + ', Sub ' + im.sub + ')' : '') + (im.ape ? ' [APE]' : '') + '</span><br>';
+            });
+        } else {
+            html += 'N/A';
+        }
         html += '</div>';
 
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px"><strong>Note:</strong> ' + (cv.note || 'Nessuna nota') + '</div>';
@@ -2061,6 +2118,7 @@ function openModal(type, id) {
         canoneRowCounter = 0;
         locatoreRowCounter = 0;
         conduttoreRowCounter = 0;
+        immobileRowCounter = 0;
         // Populate existing canoni annuali for edit mode
         if (type === 'editContratto' && id) {
             var existingCanoni = getCanoniByContratto(id);
@@ -2079,12 +2137,15 @@ function openModal(type, id) {
                 var rel = existingCondRels.find(function(r) { return r.persona_id === p.id; }) || null;
                 addConduttoreRow(p, true, rel);
             });
+            // Populate existing immobili del contratto
+            getImmobiliRelsByContratto(id).forEach(function(m) { addImmobileRow(m); });
         }
         // If new contract, add one empty row for each section
         if (type === 'newContratto') {
             addCanoneRow();
             addLocatoreRow();
             addConduttoreRow();
+            addImmobileRow();
         }
         // Le date di locatori/conduttori seguono quelle del contratto in tempo reale
         var decoInput = document.getElementById('cf_decorrenza');
@@ -2103,11 +2164,6 @@ function openModal(type, id) {
         if (scadInput) scadInput.addEventListener('input', updateCanoniCoverageWarning);
         if (scadRinnovoInput) scadRinnovoInput.addEventListener('input', updateCanoniCoverageWarning);
         updateCanoniCoverageWarning();
-        // Setup immobile field autocomplete (stessa logica dei campi persona)
-        ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(f) {
-            var immFieldEl = document.getElementById('cf_imm_' + f);
-            if (immFieldEl) setupImmobileSuggestions(immFieldEl, f);
-        });
     }
     var iqf = document.getElementById('inquilinoForm');
     if (iqf) iqf.addEventListener('submit', function(e) { e.preventDefault(); saveInquilino(); });
@@ -2261,14 +2317,39 @@ async function saveContratto(editId) {
     }
     var condIds = condData.map(function(d) { return d.persona_id; });
 
-    var immId = await upsertImmobile({
-        indirizzo: document.getElementById('cf_imm_indirizzo').value.trim(),
-        citta: document.getElementById('cf_imm_citta').value.trim(),
-        foglio: document.getElementById('cf_imm_foglio').value.trim(),
-        particella: document.getElementById('cf_imm_particella').value.trim(),
-        sub: document.getElementById('cf_imm_sub').value.trim(),
-        ape: document.querySelector('input[name="cf_imm_ape"]:checked').value === 'true'
-    });
+    // Collect all immobili from dynamic rows: una riga completamente vuota
+    // (es. quella aggiunta con "Aggiungi Immobile" e mai compilata) viene
+    // ignorata; per le righe compilate Indirizzo e Citta' sono obbligatori.
+    function immValue(row, cls) {
+        var el = row.querySelector(cls);
+        return el ? el.value.trim() : '';
+    }
+    var immRows = document.querySelectorAll('#immobiliRowsContainer .immobile-row');
+    var immIds = [];
+    for (var k = 0; k < immRows.length; k++) {
+        var immRow = immRows[k];
+        var immDati = {
+            indirizzo: immValue(immRow, '.imm-indirizzo'),
+            citta: immValue(immRow, '.imm-citta'),
+            foglio: immValue(immRow, '.imm-foglio'),
+            particella: immValue(immRow, '.imm-particella'),
+            sub: immValue(immRow, '.imm-sub'),
+            ape: ((immRow.querySelector('input[type="radio"]:checked') || {}).value || 'false') === 'true'
+        };
+        var immVuota = !immDati.indirizzo && !immDati.citta && !immDati.foglio &&
+                       !immDati.particella && !immDati.sub;
+        if (immVuota) continue;
+        if (!immDati.indirizzo || !immDati.citta) {
+            showToast('Completa Indirizzo e Città di ogni immobile (o elimina la riga vuota).', 'error');
+            return;
+        }
+        var nuovoImmId = await upsertImmobile(immDati);
+        if (nuovoImmId) immIds.push(nuovoImmId);
+    }
+    if (immIds.length === 0) {
+        showToast('Inserisci almeno un immobile per salvare il contratto.', 'error');
+        return;
+    }
 
     var scadRinnovoEl = document.getElementById('cf_scadenza_rinnovo');
 
@@ -2280,7 +2361,8 @@ async function saveContratto(editId) {
         data_chiusura: document.getElementById('cf_chiusura').value || null,
         locatore_id: locIds.length > 0 ? locIds[0] : null,
         conduttore_id: condIds.length > 0 ? condIds[0] : null,
-        immobile_id: immId,
+        // Primo immobile anche nel vecchio campo singolo (compatibilita')
+        immobile_id: immIds.length > 0 ? immIds[0] : null,
         note: document.getElementById('cf_note').value.trim()
     };
 
@@ -2407,6 +2489,21 @@ async function saveContratto(editId) {
         if (!errCond && insCond) appData.contratto_conduttori = appData.contratto_conduttori.concat(insCond);
     }
 
+    // --- Gestione Immobili (tabella ponte) ---
+    var oldImmRels = appData.contratto_immobili.filter(function(r) { return r.contratto_id === targetId; });
+    if (oldImmRels.length > 0) {
+        var oldImmRelIds = oldImmRels.map(function(r) { return r.id; });
+        await db.from('contratto_immobili').delete().in('id', oldImmRelIds);
+        appData.contratto_immobili = appData.contratto_immobili.filter(function(r) { return r.contratto_id !== targetId; });
+    }
+    if (immIds.length > 0) {
+        var immInserts = immIds.map(function(iId) {
+            return { contratto_id: targetId, immobile_id: iId };
+        });
+        var { data: insImm, error: errImm } = await db.from('contratto_immobili').insert(immInserts).select();
+        if (!errImm && insImm) appData.contratto_immobili = appData.contratto_immobili.concat(insImm);
+    }
+
     closeModal();
     showToast(editId ? 'Contratto aggiornato!' : 'Contratto creato!', 'success');
     await refreshPage('contratti');
@@ -2526,6 +2623,9 @@ async function deleteImmobile(id) {
     var { error } = await db.from('immobili').delete().eq('id', id);
     if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
     appData.immobili = appData.immobili.filter(function(i) { return i.id !== id; });
+    // La riga nella tabella ponte viene rimossa dal DB (ON DELETE CASCADE):
+    // qui si aggiorna solo la cache locale
+    appData.contratto_immobili = appData.contratto_immobili.filter(function(r) { return r.immobile_id !== id; });
     closeModal();
     openModal('listaImmobili');
     showToast('Immobile eliminato', 'info');
@@ -2535,6 +2635,7 @@ async function deleteContratto(id) {
     // 1. Elimina prima i record collegati nelle tabelle figlie
     await db.from('contratto_locatori').delete().eq('contratto_id', id);
     await db.from('contratto_conduttori').delete().eq('contratto_id', id);
+    await db.from('contratto_immobili').delete().eq('contratto_id', id);
     await db.from('scadenze').delete().eq('contratto_id', id);
     await db.from('canoni_annuali').delete().eq('contratto_id', id);
     // 2. Elimina il contratto
@@ -2546,6 +2647,7 @@ async function deleteContratto(id) {
     appData.canoni_annuali = appData.canoni_annuali.filter(function(ca) { return ca.contratto_id !== id; });
     appData.contratto_locatori = appData.contratto_locatori.filter(function(r) { return r.contratto_id !== id; });
     appData.contratto_conduttori = appData.contratto_conduttori.filter(function(r) { return r.contratto_id !== id; });
+    appData.contratto_immobili = appData.contratto_immobili.filter(function(r) { return r.contratto_id !== id; });
     // Rimuove anche le eventuali notifiche storiche conservate per il contratto
     var storicoStore = getNotifStoriche();
     if (storicoStore['contratto_' + id]) {
@@ -2632,7 +2734,7 @@ function renderContrattiList(list) {
         tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div></td></tr>';
     } else {
         tbody.innerHTML = filtered.map(function(c) {
-            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobileLabel(c.immobile_id) + '</td><td><div class="td-actions"><button data-action="pdf-contratto" data-id="' + c.id + '" title="PDF Completo"><i class="fas fa-file-pdf"></i></button><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobiliLabel(c.id) + '</td><td><div class="td-actions"><button data-action="pdf-contratto" data-id="' + c.id + '" title="PDF Completo"><i class="fas fa-file-pdf"></i></button><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
         }).join('');
     }
 }
@@ -2985,7 +3087,6 @@ function renderNotifications() {
         Object.keys(lastRenderedNotifs).forEach(function(k) {
             if (!chiaviCorrenti[k]) delete lastRenderedNotifs[k];
         });
-        if (arrivals.length > 0) announceNotificationArrivals(arrivals);
     }
 
     daMostrare.sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
@@ -2998,6 +3099,10 @@ function renderNotifications() {
     // Il badge conta le notifiche presenti nel pannello: sono tutte da vedere
     // finché l'utente non chiude il pannello (e vengono eliminate).
     badge.textContent = daMostrare.length > 0 ? daMostrare.length : '';
+    // Toast + pulsazione del badge DOPO aver aggiornato il suo contenuto:
+    // quando le notifiche arrivano il pallino e' appena comparso (prima era
+    // display:none) e un elemento nascosto non animerebbe.
+    if (arrivals.length > 0) announceNotificationArrivals(arrivals);
     if (daMostrare.length === 0) {
         list.innerHTML = '<div class="notif-item"><div class="notif-content"><p>Nessuna notifica</p></div></div>';
         return;
@@ -3521,15 +3626,17 @@ function generateContrattoPdf(contrattoId) {
     var rimanenzaPdf = c.data_chiusura ? 'Chiuso' : (dlPdf === null ? '-' : (dlPdf > 0 ? dlPdf + ' giorni alla scadenza' : (dlPdf === 0 ? 'Scade oggi' : 'Scaduto da ' + Math.abs(dlPdf) + ' giorni')));
     field('Rimanenza', rimanenzaPdf);
 
-    // Immobile
-    sectionTitle('IMMOBILE');
-    var immPdf = getImmobile(c.immobile_id);
-    if (immPdf) {
-        field('Indirizzo', immPdf.indirizzo + ', ' + immPdf.citta);
-        fieldRow(['Foglio', 'Particella', 'Sub'], [immPdf.foglio || '-', immPdf.particella || '-', immPdf.sub || '-']);
-        field('APE', immPdf.ape ? 'Presente' : 'Non presente');
-    } else {
+    // Immobili (tutti)
+    sectionTitle('IMMOBILI');
+    var immsPdf = getImmobiliRelsByContratto(c.id);
+    if (immsPdf.length === 0) {
         field('Immobile', 'N/A');
+    } else {
+        immsPdf.forEach(function(im) {
+            field('Indirizzo', im.indirizzo + ', ' + im.citta);
+            fieldRow(['Foglio', 'Particella', 'Sub'], [im.foglio || '-', im.particella || '-', im.sub || '-']);
+            field('APE', im.ape ? 'Presente' : 'Non presente');
+        });
     }
 
     // Locatori (tutti, anche cessati)

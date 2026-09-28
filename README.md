@@ -191,14 +191,16 @@ Cose da tenere presenti:
 - `db-client.js` replica, solo per le operazioni usate dall'app
   (`select`/`insert`/`update`/`delete`, filtri `eq`/`in`, `.single()`),
   l'interfaccia di supabase-js: ogni chiamata risolve `{ data, error }`.
-- `server.js` accetta solo le 7 tabelle dell'app e valida ogni nome di
+- `server.js` accetta solo le 8 tabelle dell'app e valida ogni nome di
   colonna contro `information_schema`; tutti i valori passano da query SQL
   parametrizzate (niente concatenazione di valori utente).
 - I database già in uso **non** vanno ricreati da `schema.sql` (che fa DROP):
   le colonne aggiunte dopo la prima versione dello schema (oggi
   `canoni_annuali.a_carico_di`, il soggetto su cui grava l'imposta di
-  registro: Locatore, Conduttore o 50%) vengono aggiunte automaticamente dal
-  server all'avvio, se mancano.
+  registro: Locatore, Conduttore o 50%) e le tabelle aggiunte dopo (oggi
+  `contratto_immobili`, gli immobili multipli del contratto, come
+  `contratto_locatori`/`contratto_conduttori`) vengono create/aggiunte
+  automaticamente dal server all'avvio, se mancano.
 - Il trigger MySQL `trg_scadenze_calc_dates_ins/upd` ricalcola
   `prossima_scadenza = data_decorrenza + 1 anno + 30 giorni`, come il
   vecchio trigger PostgreSQL.

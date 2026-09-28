@@ -476,6 +476,13 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     justify-content: center;
 }
 
+/* Il pallino compare solo quando c'e' almeno una notifica: quando la lista
+   e' vuota il badge non ha testo (vedi renderNotifications in app.js) e
+   viene nascosto del tutto invece di restare come cerchietto bianco. */
+.notif-badge:empty {
+    display: none;
+}
+
 /* Pulsazione del badge quando arriva una nuova notifica */
 @keyframes notifPulse {
     0% { transform: scale(1); }

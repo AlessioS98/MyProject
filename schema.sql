@@ -20,6 +20,7 @@ CREATE DATABASE IF NOT EXISTS gestione_contratti_affitto
 USE gestione_contratti_affitto;
 
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS contratto_immobili;
 DROP TABLE IF EXISTS contratto_conduttori;
 DROP TABLE IF EXISTS contratto_locatori;
 DROP TABLE IF EXISTS canoni_annuali;
@@ -129,6 +130,19 @@ CREATE TABLE contratto_conduttori (
   PRIMARY KEY (id),
   CONSTRAINT fk_conduttori_contratto FOREIGN KEY (contratto_id) REFERENCES contratti (id) ON DELETE CASCADE,
   CONSTRAINT fk_conduttori_persona   FOREIGN KEY (persona_id)   REFERENCES anagrafica_persona (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 7. Tabella ponte per Immobili multipli
+-- (il vecchio contratti.immobile_id resta per compatibilita' ed e' usato
+--  come immobile principale / fallback per i contratti creati prima)
+CREATE TABLE contratto_immobili (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  contratto_id BIGINT UNSIGNED NULL,
+  immobile_id BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT fk_contratto_immobili_contratto FOREIGN KEY (contratto_id) REFERENCES contratti (id) ON DELETE CASCADE,
+  CONSTRAINT fk_contratto_immobili_immobile  FOREIGN KEY (immobile_id)  REFERENCES immobili (id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
@@ -247,6 +261,19 @@ INSERT INTO contratto_locatori (contratto_id, persona_id, data_decorrenza, data_
 (7, 1, '2025-03-01', NULL),
 (8, 5, '2025-08-01', NULL),
 (9, 4, '2024-06-01', NULL);
+
+-- Immobili dei contratti (stesso contenuto di contratti.immobile_id, che
+-- resta come immobile principale: qui si possono aggiungere gli altri)
+INSERT INTO contratto_immobili (contratto_id, immobile_id) VALUES
+(1, 1),
+(2, 2),
+(3, 3),
+(4, 4),
+(5, 5),
+(6, 6),
+(7, 7),
+(8, 8),
+(9, 9);
 
 INSERT INTO contratto_conduttori (contratto_id, persona_id, data_decorrenza, data_chiusura) VALUES
 (1, 2, '2025-01-15', NULL),
