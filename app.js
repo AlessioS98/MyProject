@@ -274,11 +274,18 @@ function dedupPersone(list) {
 function dedupImmobili(list) {
     var seen = {};
     return list.filter(function(i) {
-        // Chiave catastale (foglio/particella/sub) se presente, altrimenti indirizzo+città
-        var key = '';
-        if (i.foglio && i.particella) key = 'C:' + i.foglio + '|' + i.particella + '|' + (i.sub || '');
-        if (!key) key = 'A:' + (i.indirizzo + '|' + i.citta).trim().toLowerCase();
-        if (!key || seen[key]) return false;
+        // Chiave = tutti i dati dell'immobile: solo i record identici (stesso
+        // indirizzo, città, foglio, particella, sub e APE) vengono mostrati una
+        // volta sola. Un immobile che differisce anche in un solo campo resta
+        // distinto, anche se ha gli stessi foglio/particella/sub di un altro.
+        var parts = ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].map(function(k) {
+            return String(i[k] == null ? '' : i[k]).trim().toLowerCase();
+        });
+        // Record completamente vuoto: non mostrato.
+        if (parts.every(function(v) { return v === ''; })) return false;
+        parts.push(i.ape ? '1' : '0');
+        var key = parts.join('|');
+        if (seen[key]) return false;
         seen[key] = true;
         return true;
     });
@@ -900,6 +907,27 @@ function indirizzoSortLabel(s) {
     return String(s == null ? '' : s).replace(STREET_PREFIX_RE, '').trim();
 }
 
+// --- Cascata dati catastali ---
+// Foglio, particella e sub identificano univocamente un immobile: ogni campo
+// viene proposto solo tra i valori compatibili con quelli già inseriti negli
+// ALTRI due campi, qualunque sia l'ordine di compilazione (es. con particella e
+// sub già inseriti, i fogli proposti sono solo quelli di un immobile con quella
+// particella e quel sub). Un valore vuoto non restringe la ricerca.
+function sameCatastale(a, b) {
+    return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase();
+}
+var CATASTALI_KEYS = ['foglio', 'particella', 'sub'];
+function catastaleCompatibile(imm, fieldKey, valori) {
+    // Il campo che si sta digitando viene ignorato: si guardano solo gli altri.
+    if (CATASTALI_KEYS.indexOf(fieldKey) === -1) return true;
+    return CATASTALI_KEYS.every(function(k) {
+        if (k === fieldKey) return true;
+        var v = valori[k];
+        if (!v) return true;
+        return sameCatastale(imm[k], v);
+    });
+}
+
 // --- Immobile Suggestions nel form contratto (stessa logica dei campi persona) ---
 // Digitando in Indirizzo/Città/Foglio/Particella/Sub compaiono i valori degli
 // immobili già presenti; la scelta compila l'intero blocco immobile.
@@ -910,13 +938,25 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
         var el = rowEl.querySelector('.imm-' + key);
         if (el) el.value = imm[key] || '';
     }
+    function rowVal(key) {
+        if (!rowEl) return '';
+        var el = rowEl.querySelector('.imm-' + key);
+        return el ? String(el.value || '').trim() : '';
+    }
     function fillImmobile(imm) {
         ['indirizzo', 'citta', 'foglio', 'particella', 'sub'].forEach(function(k) { fillRow(imm, k); });
     }
+    // Scegliendo una città si compila solo il campo Città: gli altri campi
+    // dell'immobile (indirizzo, foglio, particella, sub) restano invariati.
+    var onPickImmobile = fieldKey === 'citta' ? function(imm) { fillRow(imm, 'citta'); } : fillImmobile;
     setupFilterAutocomplete(inputEl, function() {
         var seen = {};
         var out = [];
+        // Ogni campo catastale si filtra con i valori già inseriti negli altri
+        // campi della riga, in qualunque ordine siano stati compilati.
+        var valoriCatastali = { foglio: rowVal('foglio'), particella: rowVal('particella'), sub: rowVal('sub') };
         appData.immobili.forEach(function(imm) {
+            if (!catastaleCompatibile(imm, fieldKey, valoriCatastali)) return;
             var v = imm[fieldKey];
             if (v == null || String(v).trim() === '') return;
             var label = String(v).trim();
@@ -928,10 +968,13 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
             var sub = ind + (ind && cit ? ', ' : '') + cit;
             if (sub && cad) sub += ' · ' + cad;
             if (!sub) sub = cad;
+            // Nel campo Città i suggerimenti mostrano solo il nome della città,
+            // senza indirizzo e dati catastali dell'immobile sotto.
+            if (fieldKey === 'citta') sub = '';
             out.push({ label: label, sub: sub, data: imm });
         });
         return out;
-    }, fillImmobile, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
+    }, onPickImmobile, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
 }
 
 // --- Locatore / Conduttore Row Helpers ---
@@ -970,10 +1013,6 @@ function addImmobileRow(immobile) {
     row.innerHTML = `
         <button type="button" class="btn btn-sm btn-outline" style="position:absolute;top:8px;right:8px;color:var(--danger);z-index:5" onclick="this.closest('.immobile-row').remove()"><i class="fas fa-trash"></i></button>
         <div style="display:flex;gap:8px;flex-wrap:wrap;padding-right:44px">
-        <div class="form-group" style="flex:2;min-width:180px;margin:0"><label>Indirizzo <span class="req">*</span></label><input type="text" class="imm-indirizzo" value="${m.indirizzo || ''}"></div>
-        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Città <span class="req">*</span></label><input type="text" class="imm-citta" value="${m.citta || ''}"></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Foglio <span class="req">*</span></label><input type="text" class="imm-foglio" value="${m.foglio || ''}" style="max-width:100px"></div>
         <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Particella <span class="req">*</span></label><input type="text" class="imm-particella" value="${m.particella || ''}" style="max-width:100px"></div>
         <div class="form-group" style="flex:1;min-width:80px;margin:0"><label>Sub <span class="req">*</span></label><input type="text" class="imm-sub" value="${m.sub || ''}" style="max-width:100px"></div>
@@ -982,6 +1021,10 @@ function addImmobileRow(immobile) {
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape_${idx}" value="true"${m.ape ? ' checked' : ''}> Sì</label>
         <label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="cf_imm_ape_${idx}" value="false"${m.ape ? '' : ' checked'}> No</label>
         </div></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="form-group" style="flex:2;min-width:180px;margin:0"><label>Indirizzo <span class="req">*</span></label><input type="text" class="imm-indirizzo" value="${m.indirizzo || ''}"></div>
+        <div class="form-group" style="flex:1;min-width:140px;margin:0"><label>Città <span class="req">*</span></label><input type="text" class="imm-citta" value="${m.citta || ''}"></div>
         </div>
     `;
     container.appendChild(row);
@@ -1435,7 +1478,7 @@ async function effettuaBackup() {
         }
 
         // Il nome del file (con data e ora) lo suggerisce il server
-        var nome = nomeFileDaRisposta(resp) || 'backup.sql';
+        var nome = nomeFileDaRisposta(resp) || 'Gestione_Contratti_BackupDati.sql';
         var blob = await resp.blob();
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -1628,7 +1671,15 @@ function setupFilterInputs() {
     // sottotitolo = indirizzo completo + dati catastali; selezionandolo si
     // compila l'intero blocco immobile.
     function immobileSugg(fieldKey) {
+        // Ogni campo catastale si filtra con i valori già inseriti negli altri
+        // campi del filtro, in qualunque ordine siano stati compilati.
+        var valoriCatastali = {
+            foglio: (document.getElementById('ffFoglio') || {}).value || '',
+            particella: (document.getElementById('ffParticella') || {}).value || '',
+            sub: (document.getElementById('ffSub') || {}).value || ''
+        };
         return immobili.map(function(i) {
+            if (!catastaleCompatibile(i, fieldKey, valoriCatastali)) return null;
             var v = i[fieldKey];
             if (v == null || String(v).trim() === '') return null;
             var cad = [i.foglio ? ('Fg.' + i.foglio) : '', i.particella ? ('Part.' + i.particella) : '', i.sub ? ('Sub ' + i.sub) : ''].filter(Boolean).join(' - ');
@@ -1637,6 +1688,9 @@ function setupFilterInputs() {
             var sub = ind + (ind && cit ? ', ' : '') + cit;
             if (sub && cad) sub += ' · ' + cad;
             if (!sub) sub = cad;
+            // Nel campo Città i suggerimenti mostrano solo il nome della città,
+            // senza indirizzo e dati catastali dell'immobile sotto.
+            if (fieldKey === 'citta') sub = '';
             return { label: String(v).trim(), sub: sub, data: i };
         }).filter(Boolean);
     }
@@ -1647,7 +1701,12 @@ function setupFilterInputs() {
         var opts = {};
         // Per il campo indirizzo ordina per nome della strada (senza il tipo iniziale)
         if (fieldKey === 'indirizzo') opts.sortLabel = indirizzoSortLabel;
-        setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, fillImmobileFilter, opts);
+        // Scegliendo una città si compila solo il campo Città del filtro: gli
+        // altri campi (indirizzo, foglio, particella, sub) restano invariati.
+        var onPick = fieldKey === 'citta'
+            ? function(i) { document.getElementById('ffCitta').value = i.citta || ''; }
+            : fillImmobileFilter;
+        setupFilterAutocomplete(document.getElementById(inputId), function() { return immobileSugg(fieldKey); }, onPick, opts);
     }
     function fillImmobileFilter(i) {
         document.getElementById('ffIndirizzo').value = i.indirizzo || '';

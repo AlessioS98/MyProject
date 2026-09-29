@@ -339,13 +339,14 @@ function nomeTabella(id) {
   return '`' + String(id).replace(/`/g, '') + '`';
 }
 
-// Nome del file scaricato, es. backup_gestione-contratti_2026-09-27_1530.sql
+// Nome del file scaricato, es. Gestione_Contratti_BackupDati_2026-09-27_1530.sql
+// Data e ora restano nel nome per non sovrascrivere un backup precedente.
 function nomeFileBackup(estensione) {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   const data = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   const ora = p(d.getHours()) + p(d.getMinutes());
-  return 'backup_gestione-contratti_' + data + '_' + ora + '.' + estensione;
+  return 'Gestione_Contratti_BackupDati_' + data + '_' + ora + '.' + estensione;
 }
 
 async function elencoTabelle() {
