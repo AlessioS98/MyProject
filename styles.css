@@ -1247,6 +1247,26 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 .data-table tr.alert-completata td { background: var(--success-bg); }
 .data-table tr.alert-chiusa td { color: var(--text); font-weight: 600; }
 
+/* Contratti scaduti o chiusi nella tabella Contratti: la riga e' evidenziata
+   in rosso per riconoscerli subito tra i contratti ancora in corso.
+   I colori sono presi dalle variabili del tema, quindi restano leggibili
+   anche con il tema scuro. Lo sfondo sta sui <td> (non sulla riga): cosi'
+   copre lo sfondo della riga e l'evidenziazione non sparisce al passaggio
+   del mouse. */
+.data-table tbody tr.alert-contratto-scaduto td,
+.data-table tbody tr.alert-contratto-chiuso td {
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* Barra rossa sul bordo sinistro della riga: in una tabella larga rende
+   l'evidenziazione visibile anche di sfuggita. */
+.data-table tbody tr.alert-contratto-scaduto td:first-child,
+.data-table tbody tr.alert-contratto-chiuso td:first-child {
+    box-shadow: inset 3px 0 0 0 var(--danger);
+}
+
 .contract-title {
     font-size: 1.05rem;
     font-weight: 700;

@@ -167,24 +167,64 @@ exit /b 0
 
 rem ============================================================
 rem  Sotto-rotina: avvia il servizio MySQL80 se e' spento
+rem
+rem  Perche' il controllo NON usa piu' "net start":
+rem   - "net start" elenca i servizi con il NOME VISUALIZZATO, che
+rem     per MySQL e' "MYSQL80" tutto maiuscolo, mentre findstr senza
+rem     /i distingue maiuscole e minuscole: il servizio risultava
+rem     SEMPRE spento, anche quando era attivo;
+rem   - "net start <servizio>" su un servizio gia' avviato termina
+rem     con codice 2, non 0, quindi anche quel caso finiva nella
+rem     richiesta di amministratore.
+rem  Insieme facevano comparire la conferma di Windows a OGNI avvio
+rem  del programma. Lo stato si legge ora con "sc query": le parole
+rem  di stato (RUNNING) restano in inglese anche su Windows italiano.
+rem
+rem  Dopo l'avvio automatico impostato qui sotto, MySQL parte insieme
+rem  a Windows ma puo' essere ancora in partenza subito dopo
+rem  l'accesso: si aspetta qualche secondo prima di concludere che e'
+rem  spento e chiedere i permessi.
 rem ============================================================
 :avvia_mysql
-net start 2>nul | findstr /c:"MySQL80" >nul
+sc query MySQL80 >nul 2>nul
+if errorlevel 1 (
+    rem  Servizio assente (nome diverso o MySQL non installato come
+    rem  servizio): qui non c'e' niente da avviare.
+    echo  [MySQL] Servizio MySQL80 non presente: nessun avvio da fare.
+    exit /b 0
+)
+set /a attesa=0
+:mysql_attesa_avvio
+sc query MySQL80 2>nul | findstr /c:"RUNNING" >nul
 if not errorlevel 1 (
     echo  [MySQL] Servizio gia' attivo.
     exit /b 0
 )
+if %attesa% geq 8 goto mysql_avvio_manuale
+if %attesa%==0 echo  [MySQL] Servizio in avvio: attendo che sia pronto...
+timeout /t 1 /nobreak >nul 2>&1
+set /a attesa+=1
+goto mysql_attesa_avvio
+
+:mysql_avvio_manuale
 echo  [MySQL] Servizio spento: provo ad avviarlo...
 net start MySQL80 >nul 2>nul
 if not errorlevel 1 goto attesa_mysql
-echo  [MySQL] Servono i permessi di amministratore.
+echo  [MySQL] Servono i permessi di amministratore: una volta sola.
 echo  [MySQL] Conferma la richiesta di autorizzazione di Windows.
-powershell -NoProfile -Command "Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','net start MySQL80' -Verb RunAs -Wait"
+echo  [MySQL] Nello stesso passaggio MySQL viene impostato su avvio
+echo  [MySQL] automatico: da ora parte da solo con Windows e all'app
+echo  [MySQL] non verra' piu' chiesto niente.
+rem  Due comandi di cmd.exe in un unico passaggio elevato: avvia il
+rem  servizio e ne imposta il tipo di avvio. "&" separa i comandi per
+rem  cmd.exe e non e' speciale per PowerShell, che lo legge dentro una
+rem  stringa fra apici singoli: non ci sono virgolette da annidare.
+powershell -NoProfile -Command "$c='net start MySQL80 & sc config MySQL80 start= auto'; Start-Process -FilePath 'cmd.exe' -ArgumentList '/c',$c -Verb RunAs -Wait"
 rem Attende che il servizio risulti attivo, massimo circa 20 secondi
 :attesa_mysql
 set /a attesa=0
 :attesa_mysql_loop
-net start 2>nul | findstr /c:"MySQL80" >nul
+sc query MySQL80 2>nul | findstr /c:"RUNNING" >nul
 if not errorlevel 1 (
     echo  [MySQL] Servizio avviato.
     exit /b 0

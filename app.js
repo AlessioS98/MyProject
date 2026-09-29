@@ -2734,7 +2734,15 @@ function renderContrattiList(list) {
         tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-file-contract"></i><p>Nessun contratto trovato</p></div></td></tr>';
     } else {
         tbody.innerHTML = filtered.map(function(c) {
-            return '<tr><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobiliLabel(c.id) + '</td><td><div class="td-actions"><button data-action="pdf-contratto" data-id="' + c.id + '" title="PDF Completo"><i class="fas fa-file-pdf"></i></button><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
+            // Contratti scaduti o chiusi: l'intera riga viene evidenziata in
+            // rosso (stesse classi di avviso usate nella lista Scadenze), cosi'
+            // si distinguono subito da quelli ancora in corso. Il tooltip sulla
+            // riga dice se il contratto e' scaduto oppure chiuso.
+            var statoContratto = calcContrattoStato(c);
+            var rowAttr = '';
+            if (statoContratto === 'scaduto') rowAttr = ' class="alert-contratto-scaduto" title="Contratto scaduto"';
+            else if (statoContratto === 'chiuso') rowAttr = ' class="alert-contratto-chiuso" title="Contratto chiuso"';
+            return '<tr' + rowAttr + '><td>' + getLocatoriCognomeNomeLabel(c.id) + '</td><td>' + getConduttoriCognomeNomeLabel(c.id) + '</td><td>' + getImmobiliLabel(c.id) + '</td><td><div class="td-actions"><button data-action="pdf-contratto" data-id="' + c.id + '" title="PDF Completo"><i class="fas fa-file-pdf"></i></button><button data-action="view-contratto" data-id="' + c.id + '" title="Dettagli"><i class="fas fa-eye"></i></button><button data-action="edit-contratto" data-id="' + c.id + '" title="Modifica"><i class="fas fa-edit"></i></button><button class="danger" data-action="delete-contratto" data-id="' + c.id + '" title="Elimina"><i class="fas fa-trash"></i></button></div></td></tr>';
         }).join('');
     }
 }
