@@ -2778,14 +2778,19 @@ function resetContrattiFilter() {
 async function renderContratti() {
     renderContrattiList(appData.contratti);
 }
-function renderContrattiList(list) {
-    // Ordinamento alfabetico per locatore (cognome prima del nome) e, a
-    // parità di locatore, per conduttore
-    var filtered = list.slice().sort(function(a, b) {
+// Ordinamento dei contratti usato nella lista: alfabetico per locatore
+// (cognome prima del nome) e, a parita' di locatore, per conduttore. Usato sia
+// dalla tabella a video sia dall'esportazione Excel.
+function ordinaContrattiPerLista(list) {
+    return list.slice().sort(function(a, b) {
         var cmp = (getLocatoriCognomeNomeLabel(a.id) || '').localeCompare(getLocatoriCognomeNomeLabel(b.id) || '', 'it');
         if (cmp !== 0) return cmp;
         return (getConduttoriCognomeNomeLabel(a.id) || '').localeCompare(getConduttoriCognomeNomeLabel(b.id) || '', 'it');
     });
+}
+
+function renderContrattiList(list) {
+    var filtered = ordinaContrattiPerLista(list);
 
     // Table view
     var tbody = document.getElementById('contractsTableBody');
@@ -2810,6 +2815,372 @@ function renderContrattiList(list) {
 
 
 
+
+// ============================================
+// EXPORT EXCEL CONTRATTI
+// ============================================
+// Genera un vero file Excel (.xlsx) con TUTTI i contratti, anche quando la
+// lista a video e' filtrata da una ricerca: il filtro vale solo per la tabella
+// mostrata, non per l'esportazione. Per ogni contratto riporta le informazioni
+// principali e lo STATO (Attivo / Scaduto / Chiuso) evidenziato con un colore.
+// Nessuna libreria esterna e nessun bisogno di internet.
+
+// Data nel formato italiano gg/mm/aaaa (usata nel titolo del foglio Excel).
+function formatDateExcel(d) {
+    if (!d) return '';
+    var s = String(d);
+    var iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (iso) return iso[3] + '/' + iso[2] + '/' + iso[1];
+    var dt = new Date(s);
+    if (isNaN(dt.getTime())) return s;
+    var p = function(n) { return String(n).padStart(2, '0'); };
+    return p(dt.getDate()) + '/' + p(dt.getMonth() + 1) + '/' + dt.getFullYear();
+}
+
+// Data 'YYYY-MM-DD' -> numero seriale di Excel (giorni dal 30/12/1899): cosi'
+// Excel la tratta come VERA data (ordinabile e formattabile).
+function dataExcelSeriale(d) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+    if (!m) return null;
+    return Math.round(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 864e5) + 25569;
+}
+
+function escXml(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+// Lettera di colonna Excel da un indice 1-based (1 -> A, 27 -> AA)
+function colLetter(n) {
+    var s = '';
+    while (n > 0) {
+        var r = (n - 1) % 26;
+        s = String.fromCharCode(65 + r) + s;
+        n = Math.floor((n - 1) / 26);
+    }
+    return s;
+}
+
+// ============================================
+// Costruzione di un .xlsx senza librerie esterne
+// ============================================
+// Un file .xlsx e' in realta' un archivio ZIP di file XML. Qui lo ZIP viene
+// scritto a mano con il metodo "stored" (senza compressione): basta per Excel,
+// non richiede internet e non fa comparire l'avviso di formato non valido che
+// si vede aprendo un file HTML rinominato .xls.
+var CRC32_TABELLA = (function() {
+    var t = [];
+    for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        t[n] = c >>> 0;
+    }
+    return t;
+})();
+function crc32(bytes) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) c = CRC32_TABELLA[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function u16(arr, v) { arr.push(v & 0xFF, (v >>> 8) & 0xFF); }
+function u32(arr, v) { arr.push(v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF); }
+
+// files: [{ nome: '...', testo: '...' }] -> Blob del file .xlsx
+function creaXlsxBlob(files) {
+    var enc = new TextEncoder();
+    var ora = new Date();
+    var dosTime = ((ora.getHours() & 0x1F) << 11) | ((ora.getMinutes() & 0x3F) << 5) | ((ora.getSeconds() >> 1) & 0x1F);
+    var dosDate = (((ora.getFullYear() - 1980) & 0x7F) << 9) | (((ora.getMonth() + 1) & 0x0F) << 5) | (ora.getDate() & 0x1F);
+
+    var pezzi = [];
+    var centrali = [];
+    var offset = 0;
+
+    files.forEach(function(f) {
+        var nome = enc.encode(f.nome);
+        var dati = enc.encode(f.testo);
+        var crc = crc32(dati);
+
+        var loc = [];
+        u32(loc, 0x04034b50);
+        u16(loc, 20);          // versione necessaria
+        u16(loc, 0);           // flag
+        u16(loc, 0);           // metodo: stored
+        u16(loc, dosTime);
+        u16(loc, dosDate);
+        u32(loc, crc);
+        u32(loc, dati.length); // dimensione compressa
+        u32(loc, dati.length); // dimensione non compressa
+        u16(loc, nome.length);
+        u16(loc, 0);           // extra
+        var header = new Uint8Array(loc);
+        pezzi.push(header, nome, dati);
+
+        var cent = [];
+        u32(cent, 0x02014b50);
+        u16(cent, 20);         // versione che ha creato il file
+        u16(cent, 20);         // versione necessaria
+        u16(cent, 0);          // flag
+        u16(cent, 0);          // metodo
+        u16(cent, dosTime);
+        u16(cent, dosDate);
+        u32(cent, crc);
+        u32(cent, dati.length);
+        u32(cent, dati.length);
+        u16(cent, nome.length);
+        u16(cent, 0);          // extra
+        u16(cent, 0);          // commento
+        u16(cent, 0);          // disco
+        u16(cent, 0);          // attributi interni
+        u32(cent, 0);          // attributi esterni
+        u32(cent, offset);     // posizione dell'header locale
+        centrali.push(new Uint8Array(cent), nome);
+
+        offset += header.length + nome.length + dati.length;
+    });
+
+    var dimCentrali = centrali.reduce(function(s, a) { return s + a.length; }, 0);
+    var eocd = [];
+    u32(eocd, 0x06054b50);
+    u16(eocd, 0);              // disco
+    u16(eocd, 0);              // disco con la directory centrale
+    u16(eocd, files.length);   // voci su questo disco
+    u16(eocd, files.length);   // voci totali
+    u32(eocd, dimCentrali);
+    u32(eocd, offset);
+    u16(eocd, 0);              // commento
+
+    return new Blob(pezzi.concat(centrali, [new Uint8Array(eocd)]),
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+// --- Parti XML fisse del file .xlsx (tipi, relazioni, workbook, stili) ---
+var XLSX_CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '</Types>';
+
+var XLSX_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>';
+
+var XLSX_WORKBOOK = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="Contratti" sheetId="1" r:id="rId1"/></sheets>' +
+    '</workbook>';
+
+var XLSX_WORKBOOK_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+// Indici degli stili (cellXfs) usati nel foglio:
+//  0 normale | 1 intestazione | 2 titolo | 3 riepilogo
+//  4 testo | 5 valuta | 6 data | 7 numero intero
+//  8 stato Attivo | 9 stato Scaduto | 10 stato Chiuso
+var S_NORMALE = 0, S_HEAD = 1, S_TITOLO = 2, S_RIEPILOGO = 3, S_TESTO = 4,
+    S_EURO = 5, S_DATA = 6, S_INTERO = 7, S_ATTIVO = 8, S_SCADUTO = 9, S_CHIUSO = 10;
+
+var XLSX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="3">' +
+      '<numFmt numFmtId="164" formatCode="#,##0.00"/>' +
+      '<numFmt numFmtId="165" formatCode="dd/mm/yyyy"/>' +
+      '<numFmt numFmtId="166" formatCode="#,##0"/>' +
+    '</numFmts>' +
+    '<fonts count="7">' +
+      '<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="14"/><color rgb="FF0F172A"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FF0F172A"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FF166534"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FF991B1B"/><name val="Calibri"/><family val="2"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FF334155"/><name val="Calibri"/><family val="2"/></font>' +
+    '</fonts>' +
+    '<fills count="6">' +
+      '<fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF0F172A"/><bgColor indexed="64"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFDCFCE7"/><bgColor indexed="64"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFE2E8F0"/><bgColor indexed="64"/></patternFill></fill>' +
+    '</fills>' +
+    '<borders count="2">' +
+      '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right>' +
+        '<top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border>' +
+    '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="11">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+      '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>' +
+      '<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf>' +
+      '<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf>' +
+      '<xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="5" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="6" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normale" xfId="0" builtinId="0"/></cellStyles>' +
+    '</styleSheet>';
+
+// Una cella: { t: 's' testo | 'n' numero | 'd' data, v: valore, s: indice stile }
+function cellaXml(ref, cella) {
+    if (!cella) return '';
+    if (cella.t === 'n' || cella.t === 'd') {
+        if (cella.v == null || cella.v === '' || (typeof cella.v === 'number' && !isFinite(cella.v))) return '';
+        return '<c r="' + ref + '" s="' + cella.s + '"><v>' + cella.v + '</v></c>';
+    }
+    if (cella.v == null || String(cella.v) === '') return '';
+    return '<c r="' + ref + '" s="' + cella.s + '" t="inlineStr"><is><t xml:space="preserve">' +
+        escXml(cella.v) + '</t></is></c>';
+}
+function rigaXlsx(nRiga, celle) {
+    var xml = '';
+    for (var i = 0; i < celle.length; i++) {
+        xml += cellaXml(colLetter(i + 1) + nRiga, celle[i]);
+    }
+    if (xml === '') return '';
+    return '<row r="' + nRiga + '">' + xml + '</row>';
+}
+
+function exportContrattiExcel() {
+    // SEMPRE tutti i contratti (in ordine di lista), anche con un filtro attivo
+    var list = ordinaContrattiPerLista(appData.contratti);
+    if (!list || list.length === 0) {
+        showToast('Nessun contratto da esportare', 'error');
+        return;
+    }
+
+    // Stile della cella in base allo stato del contratto
+    var STILI_STATO = { attivo: S_ATTIVO, scaduto: S_SCADUTO, chiuso: S_CHIUSO };
+    var ETICHETTA_STATO = { attivo: 'Attivo', scaduto: 'Scaduto', chiuso: 'Chiuso' };
+
+    var COLONNE = [
+        'Identificativo', 'Stato', 'Rimanenza',
+        'Data Decorrenza', 'Data Scadenza', 'Scadenza Rinnovo', 'Data Chiusura',
+        'Locatori', 'Cod. Fiscale Locatori',
+        'Conduttori', 'Cod. Fiscale Conduttori',
+        'Immobili', 'Foglio/Particella/Sub',
+        'Canone Annuo Attuale (€)', 'Tassazione Attuale', 'N. Annualità Canone', 'Note'
+    ];
+    // Larghezza (in caratteri) delle colonne nel foglio Excel
+    var LARGHEZZE = [18, 12, 18, 14, 14, 16, 14, 30, 24, 30, 24, 44, 20, 20, 28, 14, 44];
+
+    var conteggi = { attivo: 0, scaduto: 0, chiuso: 0 };
+
+    // Una riga per contratto: t 's' testo, 'n' numero, 'd' data (seriale Excel)
+    var righeDati = list.map(function(c) {
+        var stato = calcContrattoStato(c);
+        var stileStato = STILI_STATO[stato] || S_CHIUSO;
+        conteggi[stato] = (conteggi[stato] || 0) + 1;
+
+        var scadEff = getContrattoScadenzaEffettiva(c);
+        var giorni = scadEff ? daysUntil(scadEff) : null;
+        var rimanenza;
+        if (c.data_chiusura) rimanenza = 'Chiuso';
+        else if (giorni === null) rimanenza = '';
+        else if (giorni > 0) rimanenza = giorni + ' giorni';
+        else if (giorni === 0) rimanenza = 'Scade oggi';
+        else rimanenza = 'Scaduto da ' + Math.abs(giorni) + ' giorni';
+
+        var locs = getLocatoriByContratto(c.id);
+        var conds = getConduttoriByContratto(c.id);
+        var imms = getImmobiliRelsByContratto(c.id);
+        var canone = getCanoneAttuale(c.id);
+        var cf = function(p) { return p.codice_fiscale || ''; };
+
+        return [
+            { t: 's', s: S_TESTO,    v: c.identificativo || '#' + c.id },
+            { t: 's', s: stileStato, v: ETICHETTA_STATO[stato] || stato },
+            { t: 's', s: stileStato, v: rimanenza },
+            { t: 'd', s: S_DATA,     v: dataExcelSeriale(c.data_decorrenza) },
+            { t: 'd', s: S_DATA,     v: dataExcelSeriale(c.data_scadenza) },
+            { t: 'd', s: S_DATA,     v: dataExcelSeriale(c.data_scadenza_rinnovo) },
+            { t: 'd', s: S_DATA,     v: dataExcelSeriale(c.data_chiusura) },
+            { t: 's', s: S_TESTO,    v: locs.length ? locs.map(getPersonaCognomeNomeLabel).join(', ') : 'N/A' },
+            { t: 's', s: S_TESTO,    v: locs.map(cf).filter(Boolean).join(', ') },
+            { t: 's', s: S_TESTO,    v: conds.length ? conds.map(getPersonaCognomeNomeLabel).join(', ') : 'N/A' },
+            { t: 's', s: S_TESTO,    v: conds.map(cf).filter(Boolean).join(', ') },
+            { t: 's', s: S_TESTO,    v: imms.length ? imms.map(function(i) { return i.indirizzo + ', ' + i.citta; }).join(' | ') : 'N/A' },
+            { t: 's', s: S_TESTO,    v: imms.map(function(i) {
+                return [i.foglio, i.particella, i.sub].filter(Boolean).join('/');
+            }).filter(Boolean).join(' | ') },
+            { t: 'n', s: S_EURO,     v: canone ? canone.importo : null },
+            { t: 's', s: S_TESTO,    v: canone ? getCanoneTaxLabel(canone) : '-' },
+            { t: 'n', s: S_INTERO,   v: getCanoniByContratto(c.id).length },
+            { t: 's', s: S_TESTO,    v: c.note || '' }
+        ];
+    });
+
+    var adesso = new Date();
+    var p = function(n) { return String(n).padStart(2, '0'); };
+    var istante = formatDateExcel(toLocalDateStr(adesso)) + ' ' + p(adesso.getHours()) + ':' + p(adesso.getMinutes());
+    var titolo = 'Elenco contratti - esportato il ' + istante + ' (tutti i contratti: ' + list.length + ')';
+    var riepilogo = 'Riepilogo: ' + conteggi.attivo + ' attivi · ' +
+        conteggi.scaduto + ' scaduti · ' + conteggi.chiuso + ' chiusi';
+
+    var nCol = COLONNE.length;
+
+    // Larghezza delle colonne del foglio
+    var colsXml = '';
+    for (var ci = 0; ci < nCol; ci++) {
+        colsXml += '<col min="' + (ci + 1) + '" max="' + (ci + 1) + '" width="' + LARGHEZZE[ci] + '" customWidth="1"/>';
+    }
+
+    // Foglio: riga 1 titolo, riga 2 intestazioni, poi i dati, poi il riepilogo
+    var righeXml = rigaXlsx(1, [{ t: 's', s: S_TITOLO, v: titolo }]);
+    righeXml += rigaXlsx(2, COLONNE.map(function(t) { return { t: 's', s: S_HEAD, v: t }; }));
+    righeDati.forEach(function(celle, i) { righeXml += rigaXlsx(3 + i, celle); });
+    var ultimaRigaDati = 2 + righeDati.length;
+    righeXml += rigaXlsx(ultimaRigaDati + 2, [{ t: 's', s: S_RIEPILOGO, v: riepilogo }]);
+
+    var sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<sheetViews><sheetView workbookViewId="0">' +
+          '<pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/>' +
+        '</sheetView></sheetViews>' +
+        '<sheetFormatPr defaultRowHeight="15"/>' +
+        '<cols>' + colsXml + '</cols>' +
+        '<sheetData>' + righeXml + '</sheetData>' +
+        '<autoFilter ref="A2:' + colLetter(nCol) + ultimaRigaDati + '"/>' +
+        '</worksheet>';
+
+    var blob = creaXlsxBlob([
+        { nome: '[Content_Types].xml', testo: XLSX_CONTENT_TYPES },
+        { nome: '_rels/.rels', testo: XLSX_RELS },
+        { nome: 'xl/workbook.xml', testo: XLSX_WORKBOOK },
+        { nome: 'xl/_rels/workbook.xml.rels', testo: XLSX_WORKBOOK_RELS },
+        { nome: 'xl/styles.xml', testo: XLSX_STYLES },
+        { nome: 'xl/worksheets/sheet1.xml', testo: sheetXml }
+    ]);
+
+    var nomeFile = 'Gestione_Contratti_Elenco_' + toLocalDateStr(adesso) + '_' +
+        p(adesso.getHours()) + p(adesso.getMinutes()) + '.xlsx';
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = nomeFile;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Elenco contratti esportato: ' + nomeFile + ' (nella cartella Download).', 'success', 8000);
+}
 
 // --- Urgenza scadenze (usata dalla pagina Scadenze, non dalle notifiche) ---
 // Anticipo fisso: 7 giorni prima della prossima scadenza
