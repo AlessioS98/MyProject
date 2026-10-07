@@ -949,8 +949,26 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
     // Scegliendo una città si compila solo il campo Città: gli altri campi
     // dell'immobile (indirizzo, foglio, particella, sub) restano invariati.
     var onPickImmobile = fieldKey === 'citta' ? function(imm) { fillRow(imm, 'citta'); } : fillImmobile;
+    // In Foglio/Particella/Sub ogni suggerimento è un singolo immobile: se più
+    // immobili hanno lo stesso foglio (o particella o sub) compaiono TUTTI,
+    // ognuno con il proprio indirizzo e i suoi dati catastali. Su Indirizzo e
+    // Città resta invece un solo suggerimento per valore (una Città una volta
+    // sola). Il filtro in cascata sugli altri campi catastali non cambia.
+    var opts = {};
+    if (CATASTALI_KEYS.indexOf(fieldKey) !== -1) {
+        opts.dedupeKey = function(item) {
+            var i = (item && item.data) ? item.data : {};
+            // I record identici (stesso indirizzo, città, dati catastali e APE)
+            // vengono mostrati una volta sola: gli altri immobili restano distinti.
+            return ['indirizzo', 'citta', 'foglio', 'particella', 'sub', 'ape'].map(function(k) {
+                return String(i[k] == null ? '' : i[k]).trim().toLowerCase();
+            }).join('|');
+        };
+    } else if (fieldKey === 'indirizzo') {
+        // Per il campo indirizzo ordina per nome della strada (senza il tipo iniziale)
+        opts.sortLabel = indirizzoSortLabel;
+    }
     setupFilterAutocomplete(inputEl, function() {
-        var seen = {};
         var out = [];
         // Ogni campo catastale si filtra con i valori già inseriti negli altri
         // campi della riga, in qualunque ordine siano stati compilati.
@@ -960,8 +978,6 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
             var v = imm[fieldKey];
             if (v == null || String(v).trim() === '') return;
             var label = String(v).trim();
-            if (seen[label]) return;
-            seen[label] = true;
             var cad = [imm.foglio ? ('Fg.' + imm.foglio) : '', imm.particella ? ('Part.' + imm.particella) : '', imm.sub ? ('Sub ' + imm.sub) : ''].filter(Boolean).join(' - ');
             var ind = imm.indirizzo ? imm.indirizzo : '';
             var cit = imm.citta ? imm.citta : '';
@@ -974,7 +990,7 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
             out.push({ label: label, sub: sub, data: imm });
         });
         return out;
-    }, onPickImmobile, fieldKey === 'indirizzo' ? { sortLabel: indirizzoSortLabel } : undefined);
+    }, onPickImmobile, opts);
 }
 
 // --- Locatore / Conduttore Row Helpers ---
@@ -1568,10 +1584,17 @@ function setupFilterAutocomplete(inputEl, getValues, onPick, opts) {
         // Suggerimenti in ordine alfabetico (ignora maiuscole e accenti).
         // Per gli indirizzi opts.sortLabel rimuove il tipo di strada iniziale
         // (Via, Piazza, Corso, ...) così l'ordine segue il nome della strada.
+        // A parità di etichetta (più immobili con lo stesso foglio/particella/
+        // sub) si ordina per il sottotitolo, cioè indirizzo e dati catastali.
+        function subOf(item) {
+            return (item && typeof item === 'object' && item.sub) ? String(item.sub) : '';
+        }
         matches.sort(function(a, b) {
             var la = opts.sortLabel ? opts.sortLabel(toLabel(a)) : toLabel(a);
             var lb = opts.sortLabel ? opts.sortLabel(toLabel(b)) : toLabel(b);
-            return la.localeCompare(lb, 'it', { sensitivity: 'base' });
+            var cmp = la.localeCompare(lb, 'it', { sensitivity: 'base' });
+            if (cmp === 0) cmp = subOf(a).localeCompare(subOf(b), 'it', { sensitivity: 'base' });
+            return cmp;
         });
         if (matches.length === 0) { suggestionsEl.classList.remove('show'); return; }
         suggestionsEl.innerHTML = matches.map(function(item, i) {
