@@ -1493,8 +1493,8 @@ async function effettuaBackup() {
             return;
         }
 
-        // Il nome del file (con data e ora) lo suggerisce il server
-        var nome = nomeFileDaRisposta(resp) || 'Gestione_Contratti_BackupDati.sql';
+        // Il nome del file lo suggerisce il server
+        var nome = nomeFileDaRisposta(resp) || 'Gestione_Contratti_Affitto_Backup.sql';
         var blob = await resp.blob();
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -1782,26 +1782,33 @@ function applyFilterModal() {
     var locCognome = document.getElementById('ffLocCognome').value;
     var locCF = document.getElementById('ffLocCF').value;
     var locRS = document.getElementById('ffLocRS').value;
-    f = f.filter(function(c) {
-        var locs = getLocatoriByContratto(c.id);
-        if (locs.length === 0) return false;
-        return locs.some(function(p) {
-            return matchField(p.nome, locNome) && matchField(p.cognome, locCognome) && matchField(p.codice_fiscale, locCF) && matchField(p.ragione_sociale, locRS);
+    // Il filtro locatore si applica solo se almeno un campo e' compilato:
+    // altrimenti un contratto senza locatori verrebbe sempre escluso.
+    if (locNome || locCognome || locCF || locRS) {
+        f = f.filter(function(c) {
+            var locs = getLocatoriByContratto(c.id);
+            if (locs.length === 0) return false;
+            return locs.some(function(p) {
+                return matchField(p.nome, locNome) && matchField(p.cognome, locCognome) && matchField(p.codice_fiscale, locCF) && matchField(p.ragione_sociale, locRS);
+            });
         });
-    });
+    }
 
     // Conduttore (check all conduttori of the contract)
     var conNome = document.getElementById('ffConNome').value;
     var conCognome = document.getElementById('ffConCognome').value;
     var conCF = document.getElementById('ffConCF').value;
     var conRS = document.getElementById('ffConRS').value;
-    f = f.filter(function(c) {
-        var conds = getConduttoriByContratto(c.id);
-        if (conds.length === 0) return false;
-        return conds.some(function(p) {
-            return matchField(p.nome, conNome) && matchField(p.cognome, conCognome) && matchField(p.codice_fiscale, conCF) && matchField(p.ragione_sociale, conRS);
+    // Come per il locatore: si filtra solo se almeno un campo e' compilato.
+    if (conNome || conCognome || conCF || conRS) {
+        f = f.filter(function(c) {
+            var conds = getConduttoriByContratto(c.id);
+            if (conds.length === 0) return false;
+            return conds.some(function(p) {
+                return matchField(p.nome, conNome) && matchField(p.cognome, conCognome) && matchField(p.codice_fiscale, conCF) && matchField(p.ragione_sociale, conRS);
+            });
         });
-    });
+    }
 
     // Immobile
     var indirizzo = document.getElementById('ffIndirizzo').value;
@@ -1809,14 +1816,19 @@ function applyFilterModal() {
     var foglio = document.getElementById('ffFoglio').value;
     var particella = document.getElementById('ffParticella').value;
     var sub = document.getElementById('ffSub').value;
-    f = f.filter(function(c) {
-        // Corrisponde se ALMENO UNO degli immobili del contratto soddisfa i filtri
-        var imms = getImmobiliRelsByContratto(c.id);
-        if (imms.length === 0) return false;
-        return imms.some(function(i) {
-            return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta) && matchField(i.foglio, foglio) && matchField(i.particella, particella) && matchField(i.sub, sub);
+    // Il filtro immobile si applica solo se almeno un campo e' compilato:
+    // cosi' un contratto senza immobili (etichetta "N/A") non viene piu'
+    // escluso dal filtro quando l'utente non sta cercando un immobile.
+    if (indirizzo || citta || foglio || particella || sub) {
+        f = f.filter(function(c) {
+            // Corrisponde se ALMENO UNO degli immobili del contratto soddisfa i filtri
+            var imms = getImmobiliRelsByContratto(c.id);
+            if (imms.length === 0) return false;
+            return imms.some(function(i) {
+                return matchField(i.indirizzo, indirizzo) && matchField(i.citta, citta) && matchField(i.foglio, foglio) && matchField(i.particella, particella) && matchField(i.sub, sub);
+            });
         });
-    });
+    }
 
     // Contratto
     var ident = document.getElementById('ffIdentificativo').value;
@@ -2034,7 +2046,10 @@ function openModal(type, id) {
             html += '<table class="list-table"><thead><tr><th>Cognome / Ragione Sociale</th><th>Nome</th><th>Codice Fiscale</th><th>Azioni</th></tr></thead><tbody>';
             personeList.forEach(function(p) {
                 var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
-                html += '<tr><td><strong>' + getPersonaCognomeNomeLabel(p) + '</strong></td>' +
+                // Colonna "Cognome / Ragione Sociale": per le persone fisiche
+                // compare solo il cognome, per le aziende la ragione sociale.
+                var cognomeOSociale = isAzienda ? (p.ragione_sociale || '') : (p.cognome || '');
+                html += '<tr><td><strong>' + (cognomeOSociale || '-') + '</strong></td>' +
                     '<td>' + (isAzienda ? '-' : (p.nome || '-')) + '</td>' +
                     '<td>' + (p.codice_fiscale || '-') + '</td>' +
                     '<td><div class="td-actions">' +
@@ -2323,6 +2338,97 @@ async function upsertImmobile(dati) {
     return data.id;
 }
 
+// --- Immobile esistente: proposta di modifica invece di un duplicato ---
+// Al salvataggio del contratto, se i dati catastali inseriti (Foglio /
+// Particella / Sub) coincidono in ALMENO UN valore con un immobile già
+// presente, si propone di MODIFICARE quell'immobile invece di crearne uno
+// nuovo. Serve a coprire il caso: immobile scelto dai suggerimenti e poi
+// modificato (indirizzo/citta) oppure dati catastali inseriti a mano.
+function descrizioneImmobile(i) {
+    var cad = [i.foglio ? ('Fg. ' + i.foglio) : '', i.particella ? ('Part. ' + i.particella) : '',
+               i.sub ? ('Sub ' + i.sub) : ''].filter(Boolean).join(', ');
+    return (i.indirizzo || '') + (i.citta ? (i.indirizzo ? ', ' : '') + i.citta : '') +
+           (cad ? ' (' + cad + ')' : '');
+}
+
+// Immobili già presenti con almeno un dato catastale uguale a quello inserito,
+// ordinati per somiglianza (piu' dati catastali coincidenti, poi indirizzo/citta).
+function trovaImmobiliConCatastaliSimili(dati) {
+    var out = [];
+    appData.immobili.forEach(function(i) {
+        var coincidenze = 0;
+        CATASTALI_KEYS.forEach(function(k) {
+            if (dati[k] && i[k] && sameCatastale(dati[k], i[k])) coincidenze++;
+        });
+        if (coincidenze > 0) {
+            var extra = (sameCatastale(dati.indirizzo, i.indirizzo) ? 1 : 0) +
+                        (sameCatastale(dati.citta, i.citta) ? 1 : 0);
+            out.push({ imm: i, coincidenze: coincidenze, extra: extra });
+        }
+    });
+    out.sort(function(a, b) {
+        if (b.coincidenze !== a.coincidenze) return b.coincidenze - a.coincidenze;
+        if (b.extra !== a.extra) return b.extra - a.extra;
+        return a.imm.id - b.imm.id;
+    });
+    return out;
+}
+
+async function aggiornaImmobileEsistente(id, dati) {
+    var d = {
+        indirizzo: dati.indirizzo,
+        citta: dati.citta,
+        foglio: dati.foglio || null,
+        particella: dati.particella || null,
+        sub: dati.sub || null,
+        ape: !!dati.ape
+    };
+    var { error } = await db.from('immobili').update(d).eq('id', id);
+    if (error) { console.error('Errore update immobile:', error); return false; }
+    var idx = appData.immobili.findIndex(function(x) { return x.id === id; });
+    if (idx >= 0) Object.assign(appData.immobili[idx], d);
+    return true;
+}
+
+// Restituisce l'id dell'immobile da collegare al contratto: se esiste un
+// immobile con dati catastali coincidenti propone di modificarlo, altrimenti
+// ne crea uno nuovo.
+async function risolviImmobileDaRiga(dati) {
+    var simili = trovaImmobiliConCatastaliSimili(dati);
+    if (simili.length === 0) return await upsertImmobile(dati);
+
+    var piuSimile = simili[0].imm;
+    if (simili.length === 1) {
+        var msg = 'Esiste già un immobile con dati catastali coincidenti:\n\n' +
+            descrizioneImmobile(piuSimile) + '\n\nDati inseriti nella riga:\n' +
+            descrizioneImmobile(dati) + '\n\n' +
+            'Vuoi MODIFICARE l\'immobile esistente con i dati inseriti?\n' +
+            'OK = modifica l\'esistente  ·  Annulla = crea un nuovo immobile';
+        if (window.confirm(msg) && await aggiornaImmobileEsistente(piuSimile.id, dati)) {
+            showToast('Immobile esistente aggiornato.', 'success');
+            return piuSimile.id;
+        }
+    } else {
+        // Piu' immobili simili: si chiede quale modificare (1 = il piu' simile).
+        var elenco = simili.map(function(s, n) { return (n + 1) + ') ' + descrizioneImmobile(s.imm); });
+        var scelta = window.prompt('Trovati ' + simili.length +
+            ' immobili con dati catastali simili:\n\n' + elenco.join('\n') +
+            '\n\nDigita il numero dell\'immobile da MODIFICARE con i dati inseriti' +
+            '\n(1 = il più simile) — lascia vuoto o Annulla per creare un nuovo immobile.', '1');
+        if (scelta !== null && String(scelta).trim() !== '') {
+            var n2 = parseInt(String(scelta).trim(), 10);
+            if (n2 >= 1 && n2 <= simili.length) {
+                var scelto = simili[n2 - 1].imm;
+                if (await aggiornaImmobileEsistente(scelto.id, dati)) {
+                    showToast('Immobile esistente aggiornato.', 'success');
+                    return scelto.id;
+                }
+            }
+        }
+    }
+    return await upsertImmobile(dati);
+}
+
 // --- Save/Update Contratto ---
 async function saveContratto(editId) {
     // Blocca il salvataggio se i canoni non coprono l'intero periodo del contratto
@@ -2425,8 +2531,10 @@ async function saveContratto(editId) {
             showToast('Completa Indirizzo e Città di ogni immobile (o elimina la riga vuota).', 'error');
             return;
         }
-        var nuovoImmId = await upsertImmobile(immDati);
-        if (nuovoImmId) immIds.push(nuovoImmId);
+        // Propone di modificare un immobile esistente con dati catastali
+        // coincidenti, invece di crearne un duplicato.
+        var immIdRiga = await risolviImmobileDaRiga(immDati);
+        if (immIdRiga) immIds.push(immIdRiga);
     }
     if (immIds.length === 0) {
         showToast('Inserisci almeno un immobile per salvare il contratto.', 'error');

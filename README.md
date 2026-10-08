@@ -114,7 +114,7 @@ nella cartella **Download** del browser un unico file:
 
 | File | A cosa serve |
 | --- | --- |
-| `backup_gestione-contratti_AAAA-MM-GG_HHMM.sql` | Copia completa del database: **tutte le tabelle con tutti i dati** e i **trigger**. Si ripristina con `mysql -u root -p < file.sql` oppure importandolo da phpMyAdmin / MySQL Workbench: il database viene creato se non esiste e le tabelle esistenti vengono sostituite dai dati del backup. |
+| `Gestione_Contratti_Affitto_Backup.sql` | Copia completa del database: **tutte le tabelle con tutti i dati** e i **trigger**. Si ripristina con `mysql -u root -p < file.sql` oppure importandolo da phpMyAdmin / MySQL Workbench: il database viene creato se non esiste e le tabelle esistenti vengono sostituite dai dati del backup. |
 
 Il backup è la fotografia del database al momento del clic: contiene **tutte** le
 tabelle e **tutte** le righe, non solo quelle visibili nell'app.
@@ -125,9 +125,10 @@ un utente MySQL diverso. Non sono inclusi viste, stored procedure/funzioni ed
 eventi (nel database dell'app non ce ne sono), né le altre eventuali banche dati
 presenti sullo stesso server MySQL.
 
-Il nome del file contiene data e ora, quindi backup successivi non si
-sovrascrivono. Se MySQL non è avviato, il clic mostra un avviso e non scarica
-niente.
+Il nome del file è fisso, quindi un nuovo backup scaricato sostituisce il
+precedente nella cartella Download (prima di scaricarne uno nuovo, sposta quello
+vecchio se vuoi conservarlo). Se MySQL non è avviato, il clic mostra un avviso e
+non scarica niente.
 
 ## Uso da più PC (ufficio)
 
