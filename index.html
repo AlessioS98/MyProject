@@ -222,8 +222,10 @@
     <!-- Confirm Dialog (immobile esistente) -->
     <div class="confirm-overlay" id="confirmOverlay">
         <div class="confirm-dialog" role="dialog" aria-modal="true">
+            <button type="button" class="confirm-close" id="confirmClose" title="Chiudi" aria-label="Chiudi"><i class="fas fa-times"></i></button>
             <div class="confirm-icon" id="confirmIcon"><i class="fas fa-home"></i></div>
             <h3 class="confirm-title" id="confirmTitle">Titolo</h3>
+            <div class="confirm-ref" id="confirmRef" hidden></div>
             <p class="confirm-text" id="confirmText">Testo</p>
             <div class="confirm-list" id="confirmList"></div>
             <div class="confirm-actions" id="confirmActions"></div>

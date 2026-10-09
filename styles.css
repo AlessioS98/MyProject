@@ -1726,6 +1726,7 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 .confirm-overlay.show { display: flex; }
 
 .confirm-dialog {
+    position: relative;
     background: var(--surface);
     border-radius: var(--radius-xl);
     width: 100%;
@@ -1738,6 +1739,27 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     text-align: center;
     animation: modalIn 0.28s ease;
 }
+
+/* X di chiusura della conferma: chiude senza scegliere, così l'utente può
+   ricontrollare i dati inseriti nel form */
+.confirm-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.confirm-close:hover { background: var(--bg); color: var(--text); }
 
 .confirm-icon {
     width: 56px;
@@ -1795,9 +1817,18 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     transform: translateY(-1px);
 }
 
-.confirm-item-top {
-    border-color: var(--primary-light);
-    background: var(--primary-bg);
+/* Riferimento all'immobile di cui parla la finestrella (es. "Immobile 2 di 3") */
+.confirm-ref {
+    align-self: center;
+    margin-bottom: 12px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--bg);
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
 .ci-label {
@@ -1827,7 +1858,17 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 .confirm-list .confirm-item {
     flex-direction: row;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
+}
+
+/* Azioni della singola card (es. "Usa così com'è"): rigo dedicato in fondo */
+.confirm-list .ci-azioni {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 .confirm-list .ci-valore { flex: 1; font-size: 0.84rem; font-weight: 600; min-width: 0; word-break: break-word; }

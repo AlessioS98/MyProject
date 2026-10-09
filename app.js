@@ -2415,16 +2415,39 @@ function apriDialogImmobile(opzioni) {
         var act = document.getElementById('confirmActions');
         var ico = document.getElementById('confirmIcon');
         var ttl = document.getElementById('confirmTitle');
+        var ref = document.getElementById('confirmRef');
+        var btnX = document.getElementById('confirmClose');
         ttl.textContent = opzioni.titolo || 'Conferma';
+        // Riga a cui si riferisce la finestrella (es. "Immobile 2 di 3")
+        if (ref) { ref.textContent = opzioni.riferimento || ''; ref.hidden = !opzioni.riferimento; }
         txt.textContent = opzioni.testo || '';
         txt.hidden = !opzioni.testo;
         ico.innerHTML = opzioni.icona || '<i class="fas fa-home"></i>';
         lst.innerHTML = '';
         (opzioni.elementi || []).forEach(function(e) {
             var div = document.createElement('div');
-            div.className = 'confirm-item' + (e.destacca ? ' confirm-item-top' : '');
+            div.className = 'confirm-item';
             div.innerHTML = e.html;
             if (e.onClick) { div.style.cursor = 'pointer'; div.onclick = function() { chiudi(); resolve(e.value); }; }
+            // Azioni proprie della singola card (es. "Usa così com'è"): su un
+            // rigo in fondo alla card, senza attivare il click sulla riga.
+            if ((e.azioni || []).length > 0) {
+                var azioni = document.createElement('div');
+                azioni.className = 'ci-azioni';
+                e.azioni.forEach(function(a) {
+                    var ba = document.createElement('button');
+                    ba.type = 'button';
+                    ba.className = 'btn btn-sm ' + (a.classe || 'btn-outline');
+                    ba.textContent = a.etichetta;
+                    ba.onclick = function(ev) {
+                        if (ev) ev.stopPropagation();
+                        chiudi();
+                        resolve(a.value);
+                    };
+                    azioni.appendChild(ba);
+                });
+                div.appendChild(azioni);
+            }
             lst.appendChild(div);
         });
         lst.hidden = (opzioni.elementi || []).length === 0;
@@ -2442,6 +2465,9 @@ function apriDialogImmobile(opzioni) {
         }
         function suEsc(ev) { if (ev.key === 'Escape') { chiudi(); resolve(null); } }
         overlay.onclick = function(ev) { if (ev.target === overlay) { chiudi(); resolve(null); } };
+        // La X chiude la finestrella senza scegliere nulla: l'utente torna al
+        // form per ricontrollare i dati inseriti (come Esc o click fuori).
+        if (btnX) btnX.onclick = function() { chiudi(); resolve(null); };
         document.addEventListener('keydown', suEsc);
         overlay.classList.add('show');
     });
@@ -2463,10 +2489,19 @@ async function aggiornaImmobileEsistente(id, dati) {
     return true;
 }
 
+// Valore restituito da risolviImmobileDaRiga quando l'utente chiude la
+// finestrella (X / Esc / click fuori) senza scegliere: il salvataggio va
+// annullato, così può tornare al form e ricontrollare i dati inseriti.
+var IMMOBILE_ANNULLATO = '__annullato__';
+
 // Restituisce l'id dell'immobile da collegare al contratto: se esiste un
-// immobile con dati catastali coincidenti propone di modificarlo, altrimenti
-// ne crea uno nuovo.
-async function risolviImmobileDaRiga(dati) {
+// immobile con dati catastali coincidenti propone di USARLO così com'è oppure
+// di modificarlo con i dati della riga; se nessuno corrisponde (o l'utente
+// sceglie "Crea un nuovo immobile") ne crea uno nuovo. Chiudendo la finestrella
+// senza scegliere restituisce IMMOBILE_ANNULLATO.
+// "riferimento" (opzionale) è il testo che identifica la riga del contratto
+// (es. "Immobile 2 di 3"), mostrato nella finestrella.
+async function risolviImmobileDaRiga(dati, riferimento) {
     var simili = trovaImmobiliConCatastaliSimili(dati);
     if (simili.length === 0) return await upsertImmobile(dati);
 
@@ -2477,50 +2512,75 @@ async function risolviImmobileDaRiga(dati) {
         var scelta = await apriDialogImmobile({
             titolo: 'Immobile già presente',
             icona: '<i class="fas fa-clone"></i>',
-            testo: 'Esiste già un immobile con dati catastali coincidenti. Vuoi modificarlo con i dati della riga?',
+            riferimento: riferimento,
+            testo: 'Esiste già un immobile con dati catastali coincidenti. Puoi usarlo così com\'è, modificarlo con i dati della riga oppure crearne uno nuovo.',
             elementi: [
                 { html: '<div class="ci-label">Immobile esistente</div><div class="ci-valore">' +
-                        descrHtml(piuSimile) + '</div>', destacca: true },
+                        descrHtml(piuSimile) + '</div>' },
                 { html: '<div class="ci-label">Dati inseriti nella riga</div><div class="ci-valore">' +
                         escapeHtml(datiRiga) + '</div>' }
             ],
             pulsanti: [
+                { etichetta: 'Usa l\'esistente', classe: 'btn-outline', value: 'usa' },
                 { etichetta: 'Modifica l\'esistente', classe: 'btn-primary', value: 'modifica' },
                 { etichetta: 'Crea un nuovo immobile', classe: 'btn-outline', value: 'nuovo' }
             ]
         });
-        if (scelta === 'modifica' && await aggiornaImmobileEsistente(piuSimile.id, dati)) {
-            showToast('Immobile esistente aggiornato.', 'success');
-            return piuSimile.id;
+        // "Usa l'esistente": il contratto viene collegato all'immobile già
+        // registrato senza toccarne i dati (la riga serve solo a sceglierlo).
+        if (scelta === 'usa') return piuSimile.id;
+        if (scelta === 'modifica') {
+            if (await aggiornaImmobileEsistente(piuSimile.id, dati)) {
+                showToast('Immobile esistente aggiornato.', 'success');
+                return piuSimile.id;
+            }
+            // Aggiornamento non riuscito: come prima si crea un nuovo immobile.
+            return await upsertImmobile(dati);
         }
+        if (scelta === 'nuovo') return await upsertImmobile(dati);
+        // Finestrella chiusa senza scegliere: annulla il salvataggio.
+        return IMMOBILE_ANNULLATO;
     } else {
-        // Piu' immobili simili: si sceglie direttamente dalla lista, senza
-        // digitare un numero. Ogni card è cliccabile.
+        // Piu' immobili simili: si sceglie direttamente dalla lista. Ogni card ha
+        // due azioni esplicite: USARE l'immobile così com'è (nessuna modifica)
+        // oppure MODIFICARLO con i dati della riga.
         var elementi = simili.map(function(s, n) {
             return {
                 html: '<div class="ci-num">' + (n + 1) + '</div>' +
                       '<div class="ci-valore">' + descrHtml(s.imm) + '</div>' +
                       '<div class="ci-badge">' + s.coincidenze + ' dat' + (s.coincidenze > 1 ? 'i' : 'o') +
                       ' catastal' + (s.coincidenze > 1 ? 'i' : 'e') + ' in comune</div>',
-                value: s.imm,
-                destacca: n === 0
+                azioni: [
+                    { etichetta: 'Usa così com\'è', classe: 'btn-outline', value: { imm: s.imm, usa: true } },
+                    { etichetta: 'Modifica con i dati della riga', classe: 'btn-primary', value: { imm: s.imm, usa: false } }
+                ]
             };
         });
         var scelto = await apriDialogImmobile({
             titolo: simili.length + ' immobili simili trovati',
             icona: '<i class="fas fa-layer-group"></i>',
-            testo: 'Scegli quale immobile esistente modificare con i dati della riga (dati inseriti: ' +
+            riferimento: riferimento,
+            testo: 'Scegli un immobile esistente: "Usa così com\'è" per collegarlo senza modificarlo, oppure "Modifica con i dati della riga" per aggiornarlo (dati inseriti: ' +
                    datiRiga + '). Se nessuno corrisponde, creane uno nuovo.',
             elementi: elementi,
             pulsanti: [
-                { etichetta: 'Crea un nuovo immobile', classe: 'btn-outline', value: null }
+                { etichetta: 'Crea un nuovo immobile', classe: 'btn-outline', value: 'nuovo' }
             ]
         });
-        if (scelto && await aggiornaImmobileEsistente(scelto.id, dati)) {
-            showToast('Immobile esistente aggiornato.', 'success');
-            return scelto.id;
+        if (scelto && scelto.usa) return scelto.imm.id;
+        if (scelto && scelto.imm) {
+            if (await aggiornaImmobileEsistente(scelto.imm.id, dati)) {
+                showToast('Immobile esistente aggiornato.', 'success');
+                return scelto.imm.id;
+            }
+            // Aggiornamento non riuscito: come prima si crea un nuovo immobile.
+            return await upsertImmobile(dati);
         }
+        if (scelto === 'nuovo') return await upsertImmobile(dati);
+        // Finestrella chiusa senza scegliere: annulla il salvataggio.
+        return IMMOBILE_ANNULLATO;
     }
+    // Nessun immobile simile: crea direttamente un nuovo immobile.
     return await upsertImmobile(dati);
 }
 
@@ -2608,7 +2668,10 @@ async function saveContratto(editId) {
         return el ? el.value.trim() : '';
     }
     var immRows = document.querySelectorAll('#immobiliRowsContainer .immobile-row');
-    var immIds = [];
+    // Prima si raccolgono le sole righe compilate (quelle del tutto vuote si
+    // ignorano): serve a sapere quante sono, così la finestrella degli immobili
+    // simili può indicare a quale riga si riferisce (es. "Immobile 2 di 3").
+    var immRighe = [];
     for (var k = 0; k < immRows.length; k++) {
         var immRow = immRows[k];
         var immDati = {
@@ -2626,9 +2689,17 @@ async function saveContratto(editId) {
             showToast('Completa Indirizzo e Città di ogni immobile (o elimina la riga vuota).', 'error');
             return;
         }
+        immRighe.push(immDati);
+    }
+    var immIds = [];
+    for (var r = 0; r < immRighe.length; r++) {
         // Propone di modificare un immobile esistente con dati catastali
-        // coincidenti, invece di crearne un duplicato.
-        var immIdRiga = await risolviImmobileDaRiga(immDati);
+        // coincidenti, invece di crearne un duplicato. Nella finestrella si
+        // indica sempre a quale riga si riferisce.
+        var riferimento = 'Immobile ' + (r + 1) + ' di ' + immRighe.length;
+        var immIdRiga = await risolviImmobileDaRiga(immRighe[r], riferimento);
+        // Finestrella chiusa senza scegliere: non salvare e torna al form.
+        if (immIdRiga === IMMOBILE_ANNULLATO) return;
         if (immIdRiga) immIds.push(immIdRiga);
     }
     if (immIds.length === 0) {
