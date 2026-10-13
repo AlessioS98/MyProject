@@ -114,7 +114,7 @@ nella cartella **Download** del browser un unico file:
 
 | File | A cosa serve |
 | --- | --- |
-| `Gestione_Contratti_Affitto_Backup.sql` | Copia completa del database: **tutte le tabelle con tutti i dati** e i **trigger**. Si ripristina con `mysql -u root -p < file.sql` oppure importandolo da phpMyAdmin / MySQL Workbench: il database viene creato se non esiste e le tabelle esistenti vengono sostituite dai dati del backup. |
+| `backup_gestione_contratti_affitto.sql` | Copia completa del database: **tutte le tabelle con tutti i dati** e i **trigger**. Si ripristina con `mysql -u root -p < file.sql` oppure importandolo da phpMyAdmin / MySQL Workbench: il database viene creato se non esiste e le tabelle esistenti vengono sostituite dai dati del backup. |
 
 Il backup è la fotografia del database al momento del clic: contiene **tutte** le
 tabelle e **tutte** le righe, non solo quelle visibili nell'app.

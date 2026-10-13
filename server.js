@@ -339,10 +339,10 @@ function nomeTabella(id) {
   return '`' + String(id).replace(/`/g, '') + '`';
 }
 
-// Nome del file scaricato, es. Gestione_Contratti_Affitto_Backup.sql
+// Nome del file scaricato, es. backup_gestione_contratti_affitto.sql
 // Il nome e' fisso: un nuovo backup sostituisce il precedente nella cartella Download.
 function nomeFileBackup(estensione) {
-  return 'Gestione_Contratti_Affitto_Backup.' + estensione;
+  return 'backup_gestione_contratti_affitto.' + estensione;
 }
 
 async function elencoTabelle() {

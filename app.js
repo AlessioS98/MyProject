@@ -1494,7 +1494,7 @@ async function effettuaBackup() {
         }
 
         // Il nome del file lo suggerisce il server
-        var nome = nomeFileDaRisposta(resp) || 'Gestione_Contratti_Affitto_Backup.sql';
+        var nome = nomeFileDaRisposta(resp) || 'backup_gestione_contratti_affitto.sql';
         var blob = await resp.blob();
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -2088,10 +2088,20 @@ function openModal(type, id) {
         modal._returnToList = 'listaPersone';
 
     } else if (type === 'listaImmobili') {
+        // Ordinamento: prima Città, poi Foglio, Particella e Sub (confronto
+        // numerico, così "10" viene dopo "9"; i valori mancanti finiscono in coda).
         var immobiliList = dedupImmobili(appData.immobili).slice().sort(function(a, b) {
-            var ka = (a.citta + ' ' + a.indirizzo).toLowerCase();
-            var kb = (b.citta + ' ' + b.indirizzo).toLowerCase();
-            return ka < kb ? -1 : ka > kb ? 1 : 0;
+            var campi = ['citta', 'foglio', 'particella', 'sub'];
+            for (var k = 0; k < campi.length; k++) {
+                var va = (a[campi[k]] || '').toString().trim();
+                var vb = (b[campi[k]] || '').toString().trim();
+                if (!va && !vb) continue;
+                if (!va) return 1;
+                if (!vb) return -1;
+                var cmp = va.localeCompare(vb, 'it', { numeric: true, sensitivity: 'base' });
+                if (cmp !== 0) return cmp;
+            }
+            return 0;
         });
         title.textContent = 'Immobili (' + immobiliList.length + ')';
         html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
