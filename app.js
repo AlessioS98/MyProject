@@ -2088,10 +2088,12 @@ function openModal(type, id) {
         modal._returnToList = 'listaPersone';
 
     } else if (type === 'listaImmobili') {
-        // Ordinamento: prima Città, poi Foglio, Particella e Sub (confronto
-        // numerico, così "10" viene dopo "9"; i valori mancanti finiscono in coda).
+        // Ordinamento: prima Città, poi Indirizzo (confronto numerico, così
+        // "10" viene dopo "9"; i valori mancanti finiscono in coda). Foglio,
+        // particella e sub restano come ulteriore criterio per le unità dello
+        // stesso edificio (stesso indirizzo, dati catastali diversi).
         var immobiliList = dedupImmobili(appData.immobili).slice().sort(function(a, b) {
-            var campi = ['citta', 'foglio', 'particella', 'sub'];
+            var campi = ['citta', 'indirizzo', 'foglio', 'particella', 'sub'];
             for (var k = 0; k < campi.length; k++) {
                 var va = (a[campi[k]] || '').toString().trim();
                 var vb = (b[campi[k]] || '').toString().trim();
