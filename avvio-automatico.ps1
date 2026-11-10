@@ -2,8 +2,8 @@
   Attiva o rimuove l'avvio automatico di "Gestione Contratti di Affitto".
 
   Crea un'attivita' pianificata di Windows che, a ogni accesso
-  dell'utente, avvia il server (Avvia Gestione Contratti.cmd /silent),
-  senza aprire il browser e senza chiedere conferme a ogni avvio.
+  dell'utente, avvia il server (Avvia Gestione Contratti.cmd /auto) e
+  apre la pagina nel browser, senza chiedere conferme a ogni avvio.
 
   Uso:
       avvio-automatico.ps1 installa [UTENTE]
@@ -48,9 +48,9 @@ if ([string]::IsNullOrWhiteSpace($Utente)) {
   $Utente = "$env:USERDOMAIN\$env:USERNAME"
 }
 
-# Riga di comando dell'attivita':  cmd /c "C:\percorso\Avvia ....cmd" /silent
+# Riga di comando dell'attivita':  cmd /c "C:\percorso\Avvia ....cmd" /auto
 $q = [char]34
-$azioneTask = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c ' + $q + $Avvio + $q + ' /silent')
+$azioneTask = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c ' + $q + $Avvio + $q + ' /auto')
 $innesco = New-ScheduledTaskTrigger -AtLogOn -User $Utente
 $account = New-ScheduledTaskPrincipal -UserId $Utente -LogonType Interactive -RunLevel Highest
 $opzioni = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
@@ -71,7 +71,8 @@ $definizione = New-ScheduledTask -Action $azioneTask -Trigger $innesco `
   -Principal $account -Settings $opzioni
 Register-ScheduledTask -TaskName $NomeAttivita -InputObject $definizione -Force | Out-Null
 
-Write-Host "[Avvio automatico] Fatto: il programma partira' da solo a ogni accesso a Windows."
+Write-Host "[Avvio automatico] Fatto: il programma partira' da solo a ogni accesso a Windows,"
+Write-Host "                   con la pagina aperta nel browser."
 Write-Host "                   PC: $env:COMPUTERNAME - utente: $Utente"
 Write-Host "                   Percorso: $Avvio"
 

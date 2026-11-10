@@ -68,10 +68,10 @@ Nella cartella dell'app:
 
 | File | Ruolo |
 | --- | --- |
-| `Avvia Gestione Contratti.cmd` | avvia il servizio MySQL se spento, avvia il server in background **senza finestra visibile** e apre il browser (con `/silent` non apre il browser) |
+| `Avvia Gestione Contratti.cmd` | avvia il servizio MySQL se spento, avvia il server in background **senza finestra visibile** e apre il browser (`/auto` è il modo usato dall'avvio automatico: nessuna finestra da tenere aperta e la pagina viene aperta; `/silent` è accettato come equivalente) |
 | `Ferma Gestione Contratti.cmd` | ferma il server (MySQL resta attivo) |
 | `Metti in rete.cmd` | prepara i collegamenti nella cartella condivisa e apre la porta nel firewall (vedi sotto) |
-| `Installa avvio automatico.cmd` | fa partire il programma da solo a ogni accesso a Windows |
+| `Installa avvio automatico.cmd` | fa partire il programma da solo a ogni accesso a Windows e apre la pagina nel browser |
 | `Rimuovi avvio automatico.cmd` | toglie l'avvio automatico (stesso effetto di `Installa avvio automatico.cmd rimuovi`) |
 
 Entrambi funzionano **da qualunque posizione della cartella**: se la sposti su
@@ -146,8 +146,9 @@ Sul **PC principale** (quello che ospita il programma), una volta sola:
      PC principale non risponde, prova a **svegliarlo** (Wake-on-LAN) e
      **aspetta** fino a due minuti che sia pronto, poi apre la pagina da solo;
 2. esegui `Installa avvio automatico.cmd` — crea un'attività di Windows che
-   avvia MySQL e il server **a ogni accesso a Windows**, senza aprire il browser
-   e senza chiedere conferme. Così gli altri PC lo trovano sempre pronto.
+   avvia MySQL e il server **a ogni accesso a Windows** e apre anche la pagina
+   nel browser, senza chiedere conferme. Così gli altri PC lo trovano sempre
+   pronto sul PC principale (che è quello dove si apre la pagina).
    Per toglierla fai **doppio clic su `Rimuovi avvio automatico.cmd`** (oppure,
    da un prompt dei comandi: `"Installa avvio automatico.cmd" rimuovi`).
 

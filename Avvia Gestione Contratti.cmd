@@ -24,9 +24,11 @@ rem  3000 nel firewall) e "Installa avvio automatico.cmd" (avvia il
 rem  programma da solo a ogni accesso a Windows). Da quel momento gli
 rem  altri PC aprono http://%COMPUTERNAME%:3000 quando serve.
 rem
-rem  Uso:  "Avvia Gestione Contratti.cmd" /silent
-rem        avvia il server senza aprire il browser (lo usa l'avvio
-rem        automatico di Windows).
+rem  Uso:  "Avvia Gestione Contratti.cmd" /auto
+rem        lo usa l'avvio automatico di Windows: avvia il server e
+rem        apre la pagina nel browser, senza finestra da tenere aperta.
+rem        /silent e' accettato come equivalente (lo usavano le
+rem        versioni precedenti dell'avvio automatico).
 rem ============================================================
 setlocal EnableExtensions
 
@@ -149,7 +151,8 @@ exit /b 1
 :server_pronto
 echo  [Server] Su questo PC:    http://localhost:3000
 echo  [Rete]   Dagli altri PC:  http://%COMPUTERNAME%:3000
-if /i "%~1"=="/silent" goto avvio_silenzioso
+if /i "%~1"=="/auto" goto avvio_automatico
+if /i "%~1"=="/silent" goto avvio_automatico
 start "" "http://localhost:3000"
 echo.
 echo  Fatto! Per chiudere l'app usa "Ferma Gestione Contratti.cmd".
@@ -158,10 +161,17 @@ timeout /t 5 /nobreak >nul 2>&1
 popd
 exit /b 0
 
-:avvio_silenzioso
-rem  Avvio automatico: nessun browser, il server resta attivo e
-rem  la finestra si chiude subito.
-echo  [Avvio automatico] Server attivo, nessun browser aperto.
+:avvio_automatico
+rem  Avvio automatico di Windows (attivita' pianificata creata da
+rem  "Installa avvio automatico.cmd"): il server e' attivo, si apre
+rem  la pagina nel browser e la finestra si chiude subito.
+rem  Vale solo per l'avvio automatico: chi lancia il programma a
+rem  mano vede il browser aprirsi nel flusso normale (piu' sotto).
+rem  explorer.exe e non "start": l'attivita' pianificata gira con i
+rem  permessi di amministratore e "start" aprirebbe il browser come
+rem  amministratore, cosa che Chrome/Edge sconsigliano.
+explorer.exe "http://localhost:3000"
+echo  [Avvio automatico] Server attivo, pagina aperta nel browser.
 popd
 exit /b 0
 

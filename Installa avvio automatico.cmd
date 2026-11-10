@@ -40,7 +40,8 @@ schtasks /query /tn "Gestione Contratti Affitto" >nul 2>nul
 if errorlevel 1 goto non_attivo
 
 echo.
-echo  [Avvio] Attivo: il programma parte da solo a ogni accesso a Windows.
+echo  [Avvio] Attivo: il programma parte da solo a ogni accesso a Windows
+echo  [Avvio] e apre la pagina nel browser.
 echo  [Avvio] Comando registrato:
 powershell -NoProfile -Command "(Get-ScheduledTask -TaskName 'Gestione Contratti Affitto').Actions | ForEach-Object { '          ' + $_.Execute + ' ' + $_.Arguments }"
 echo.
