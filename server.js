@@ -15,6 +15,9 @@
    ============================================================ */
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
 const express = require('express');
 const mysql = require('mysql2/promise');
 // Il file .env viene letto dalla cartella dello script (__dirname), non dalla
@@ -29,6 +32,54 @@ const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
 const DB_USER = process.env.DB_USER || 'root';
 const DB_PASSWORD = process.env.DB_PASSWORD || 'root';
 const DB_NAME = (process.env.DB_NAME || 'gestione_contratti_affitto').replace(/`/g, '');
+
+// ------------------------------------------------------------------
+// File con il PID del server (serve a "Ferma Gestione Contratti.cmd")
+// ------------------------------------------------------------------
+// L'arresto non puo' cercare il server per riga di comando: su diversi PC
+// Windows (questo compreso) Win32_Process restituisce CommandLine VUOTA,
+// quindi il vecchio filtro "*server.js*" non trovava nessun processo e lo
+// script stampava "Fatto" lasciando il server attivo. All'avvio il server
+// scrive percio' il proprio PID in questo file, che lo script di arresto
+// legge per chiudere esattamente quel processo. Il percorso e' lo stesso
+// calcolato da "Ferma Gestione Contratti.cmd": fuori dalla cartella
+// dell'app, perche' in C:\Program Files l'utente non puo' scrivere.
+const PID_FILE = path.join(
+  process.env.LOCALAPPDATA || process.env.TEMP || os.tmpdir(),
+  'Gestione Contratti Affitto',
+  'server.pid'
+);
+let pidFileScritto = false;
+
+// Token casuale, nuovo a ogni avvio: e' la chiave che "Ferma Gestione
+// Contratti.cmd" usa per chiedere al server di chiudersi da solo
+// (POST /api/shutdown). Senza token la richiesta viene rifiutata, cosi' una
+// pagina web qualsiasi non puo' spegnere l'app.
+const TOKEN_ARRESTO = crypto.randomBytes(16).toString('hex');
+
+function scriviPidFile() {
+  try {
+    fs.mkdirSync(path.dirname(PID_FILE), { recursive: true });
+    // Contenuto: "<pid> <token>"
+    fs.writeFileSync(PID_FILE, process.pid + ' ' + TOKEN_ARRESTO, 'utf8');
+    pidFileScritto = true;
+    console.log('PID del server (' + process.pid + ') scritto in ' + PID_FILE);
+  } catch (e) {
+    console.warn('ATTENZIONE: impossibile scrivere il PID in ' + PID_FILE +
+      ' (' + (e.message || e) + '). L\'arresto usera\' altri sistemi.');
+  }
+}
+
+function rimuoviPidFile() {
+  if (!pidFileScritto) return;
+  try {
+    // Si toglie il file solo se contiene ancora il PID di questo processo:
+    // se nel frattempo e' stato scritto da un'altra istanza, resta valido.
+    if (fs.readFileSync(PID_FILE, 'utf8').trim().split(/\s+/)[0] === String(process.pid)) {
+      fs.unlinkSync(PID_FILE);
+    }
+  } catch (e) { /* file gia' rimosso o non accessibile: niente da fare */ }
+}
 
 // Tabelle gestite dall'app (whitelist: nessuna altra tabella e' raggiungibile)
 const TABLES = new Set([
@@ -517,11 +568,57 @@ app.use((err, req, res, next) => {
 // File statici dell'app (stessa origin: nessun problema di CORS)
 app.use(express.static(path.join(__dirname)));
 
-app.listen(PORT, () => {
+// Arresto richiesto da "Ferma Gestione Contratti.cmd".
+// Il server si chiude da solo: funziona sempre, anche quando Windows non
+// lascia chiudere il processo dall'esterno perche' gira con i permessi di
+// amministratore (e' cosi' che lo avvia l'avvio automatico) e anche sui PC
+// dove netstat/WMI non riescono a dire quale processo tiene la porta 3000.
+// Accettato solo da questo PC e solo con il token scritto nel file del PID.
+app.post('/api/shutdown', (req, res) => {
+  const remoto = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  if (remoto !== '127.0.0.1' && remoto !== '::1') {
+    res.status(403).json({ error: 'Arresto consentito solo da questo PC' });
+    return;
+  }
+  if ((req.get('x-shutdown-token') || '') !== TOKEN_ARRESTO) {
+    res.status(403).json({ error: 'Token di arresto non valido' });
+    return;
+  }
+  res.json({ ok: true });
+  // Risponde al browser/script e poi chiude: la risposta deve partire prima.
+  setTimeout(() => chiusuraOrdinata(0), 100);
+});
+
+const server = app.listen(PORT, () => {
   console.log('==============================================');
   console.log('  Gestione Contratti di Affitto - MySQL');
   console.log('  Apri l\'app su:  http://localhost:' + PORT);
   console.log('==============================================');
+  // Il PID viene scritto solo ora, a server effettivamente in ascolto:
+  // cosi' "Ferma Gestione Contratti.cmd" trova un processo che risponde.
+  scriviPidFile();
+});
+
+// Chiusura ordinata: toglie il file del PID, smette di accettare richieste,
+// chiude le connessioni a MySQL e termina. Se la chiusura del pool si blocca,
+// esce comunque dopo 3 secondi.
+let chiusuraIniziata = false;
+function chiusuraOrdinata(codice) {
+  if (chiusuraIniziata) return;
+  chiusuraIniziata = true;
+  rimuoviPidFile();
+  try { server.close(); } catch (e) { /* gia' chiuso */ }
+  setTimeout(() => process.exit(codice || 0), 3000).unref();
+  pool.end().then(
+    () => process.exit(codice || 0),
+    () => process.exit(codice || 0)
+  );
+}
+
+// Alla chiusura (anche con Ctrl+C) il file del PID viene rimosso.
+process.on('exit', rimuoviPidFile);
+['SIGINT', 'SIGTERM', 'SIGHUP'].forEach((segnale) => {
+  process.on(segnale, () => chiusuraOrdinata(0));
 });
 
 // All'avvio: crea il database se manca e verifica la connessione

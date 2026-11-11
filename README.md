@@ -14,6 +14,7 @@ che serve l'app e parla con il database.
 | `app.js`, `index.html`, `styles.css` | Frontend (invariato nella logica) |
 | `.env` | Credenziali di connessione a MySQL |
 | `Avvia Gestione Contratti.cmd`, `Ferma Gestione Contratti.cmd` | Avvio/arresto con doppio clic (Windows) |
+| `ferma-server.ps1` | Usato da `Ferma Gestione Contratti.cmd`: chiude il processo del server |
 | `Metti in rete.cmd` | Prepara l'uso dagli altri PC (vedi "Uso da più PC") |
 | `Installa avvio automatico.cmd`, `Rimuovi avvio automatico.cmd`, `avvio-automatico.ps1` | Attiva/disattiva l'avvio del programma a ogni accesso a Windows |
 
@@ -69,7 +70,7 @@ Nella cartella dell'app:
 | File | Ruolo |
 | --- | --- |
 | `Avvia Gestione Contratti.cmd` | avvia il servizio MySQL se spento, avvia il server in background **senza finestra visibile** e apre il browser (`/auto` è il modo usato dall'avvio automatico: nessuna finestra da tenere aperta e la pagina viene aperta; `/silent` è accettato come equivalente) |
-| `Ferma Gestione Contratti.cmd` | ferma il server (MySQL resta attivo) |
+| `Ferma Gestione Contratti.cmd` | ferma il server (MySQL resta attivo); il lavoro lo fa `ferma-server.ps1`, che individua il processo dal file `%LOCALAPPDATA%\Gestione Contratti Affitto\server.pid` scritto da `server.js` all'avvio e da netstat, e avvisa se la porta 3000 resta occupata |
 | `Metti in rete.cmd` | prepara i collegamenti nella cartella condivisa e apre la porta nel firewall (vedi sotto) |
 | `Installa avvio automatico.cmd` | fa partire il programma da solo a ogni accesso a Windows e apre la pagina nel browser |
 | `Rimuovi avvio automatico.cmd` | toglie l'avvio automatico (stesso effetto di `Installa avvio automatico.cmd rimuovi`) |
