@@ -117,7 +117,15 @@ for %%D in ("%LOG_FILE%") do if not exist "%%~dpD" mkdir "%%~dpD" >nul 2>nul
 for %%D in ("%LOG_FILE%") do if not exist "%%~dpD" set "LOG_FILE=%TEMP%\gestione-contratti-server.log"
 
 rem ---- 6. Server sulla porta 3000 ----
-netstat -an | findstr /c:"LISTENING" | findstr /c:":3000" >nul
+rem  Il controllo NON usa piu' netstat: su alcuni PC netstat non elenca
+rem  la porta 3000 (e mostra lo stato sbagliato anche per altre porte,
+rem  es. MySQL 3306 come "FIN_WAIT_1" invece di "LISTENING"), perche'
+rem  viene intercettato da antivirus/firewall o driver di rete. Con quel
+rem  controllo l'avvio dichiarava "Il server non risponde" anche con il
+rem  server perfettamente attivo. Si prova invece ad APRIRE una
+rem  connessione sulla porta: se qualcuno la accetta, il server c'e'.
+rem  Funziona con qualsiasi lingua di Windows e senza netstat.
+call :porta_3000_attiva
 if not errorlevel 1 goto server_pronto
 
 echo  [Server] Avvio in background, senza finestra visibile...
@@ -132,14 +140,12 @@ rem  contiene spazi (es. "C:\Gestione Contratti").
 set "SRV_JS=%~dp0server.js"
 powershell -NoProfile -Command "$q=[char]34; $c='node '+$q+$env:SRV_JS+$q+' >> '+$q+$env:LOG_FILE+$q+' 2>&1'; Start-Process -FilePath 'cmd.exe' -ArgumentList '/c',$c -WindowStyle Hidden"
 
-rem Attende che il server risponda, massimo circa 30 secondi
-set /a tentativi=0
-:attesa_server
-netstat -an | findstr /c:"LISTENING" | findstr /c:":3000" >nul
+rem Attende che il server risponda, massimo circa 30 secondi.
+rem  Un solo processo PowerShell: prova una connessione sulla porta ogni
+rem  mezzo secondo e termina con 0 appena il server risponde, 1 allo
+rem  scadere del tempo (niente netstat, vedi il commento qui sopra).
+powershell -NoProfile -Command "$scad=(Get-Date).AddSeconds(30); while((Get-Date) -lt $scad){ try { $c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',3000); $c.Close(); exit 0 } catch { }; Start-Sleep -Milliseconds 500 }; exit 1"
 if not errorlevel 1 goto server_pronto
-timeout /t 1 /nobreak >nul 2>&1
-set /a tentativi+=1
-if %tentativi% lss 30 goto attesa_server
 echo  [ERRORE] Il server non risponde sulla porta 3000.
 echo  Il motivo e' scritto nel file di log:
 echo  "%LOG_FILE%"
@@ -195,6 +201,20 @@ rem  a Windows ma puo' essere ancora in partenza subito dopo
 rem  l'accesso: si aspetta qualche secondo prima di concludere che e'
 rem  spento e chiedere i permessi.
 rem ============================================================
+rem ============================================================
+rem  Sotto-rotina: la porta 3000 e' in ascolto?
+rem
+rem  Apre una connessione TCP sulla porta e la chiude subito:
+rem  esito 0 = c'e' un programma che risponde (il nostro server),
+rem  esito 1 = nessuno risponde.
+rem  NON usa netstat: vedi il commento al punto 6 (su alcuni PC
+rem  netstat non elenca affatto la porta 3000, quindi il server
+rem  risultava spento anche quando era attivo).
+rem ============================================================
+:porta_3000_attiva
+powershell -NoProfile -Command "try { $c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',3000); $c.Close(); exit 0 } catch { exit 1 }"
+exit /b %errorlevel%
+
 :avvia_mysql
 sc query MySQL80 >nul 2>nul
 if errorlevel 1 (
