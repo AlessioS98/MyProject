@@ -291,6 +291,37 @@ function dedupImmobili(list) {
     });
 }
 
+// --- Ordinamento delle liste Anagrafiche / Immobili ---
+// Usato sia dalla finestrella delle liste sia dall'esportazione Excel, così
+// l'Excel riporta le stesse righe nello stesso ordine che si vede a video.
+function ordinaPersonePerLista(list) {
+    return list.slice().sort(function(a, b) {
+        // Cognome prima del nome
+        var ka = (getPersonaCognomeNomeLabel(a)).toLowerCase();
+        var kb = (getPersonaCognomeNomeLabel(b)).toLowerCase();
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+}
+// Ordinamento degli immobili: prima Città, poi Indirizzo (confronto numerico,
+// così "10" viene dopo "9"; i valori mancanti finiscono in coda). Foglio,
+// particella e sub restano come ulteriore criterio per le unità dello stesso
+// edificio (stesso indirizzo, dati catastali diversi).
+function ordinaImmobiliPerLista(list) {
+    return list.slice().sort(function(a, b) {
+        var campi = ['citta', 'indirizzo', 'foglio', 'particella', 'sub'];
+        for (var k = 0; k < campi.length; k++) {
+            var va = (a[campi[k]] || '').toString().trim();
+            var vb = (b[campi[k]] || '').toString().trim();
+            if (!va && !vb) continue;
+            if (!va) return 1;
+            if (!vb) return -1;
+            var cmp = va.localeCompare(vb, 'it', { numeric: true, sensitivity: 'base' });
+            if (cmp !== 0) return cmp;
+        }
+        return 0;
+    });
+}
+
 // --- Canoni Annuali helpers ---
 function getCanoniByContratto(contrattoId) {
     return appData.canoni_annuali.filter(function(ca) { return ca.contratto_id === contrattoId; });
@@ -1403,10 +1434,12 @@ document.addEventListener('click', function(e) {
         case 'restore-scadenza': openModal('ripristinaScadenzaConfirm', id); break;
         case 'confirm-restore-scadenza': ripristinaScadenza(id); break;
 
+        case 'export-persone-excel': exportPersoneExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
         case 'delete-persona': openModal('deletePersonaConfirm', id); break;
         case 'confirm-delete-persona': deletePersona(id); break;
+        case 'export-immobili-excel': exportImmobiliExcel(); break;
         case 'new-immobile': openModal('newImmobile'); break;
         case 'edit-immobile': openModal('editImmobile', id); break;
         case 'delete-immobile': openModal('deleteImmobileConfirm', id); break;
@@ -2030,14 +2063,10 @@ function openModal(type, id) {
         html += '</div>';
 
     } else if (type === 'listaPersone') {
-        var personeList = dedupPersone(appData.persone).slice().sort(function(a, b) {
-            // Cognome prima del nome
-            var ka = (getPersonaCognomeNomeLabel(a)).toLowerCase();
-            var kb = (getPersonaCognomeNomeLabel(b)).toLowerCase();
-            return ka < kb ? -1 : ka > kb ? 1 : 0;
-        });
+        var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
         title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
-        html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
+        html = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">';
+        html += '<button type="button" class="btn btn-outline btn-sm" data-action="export-persone-excel" title="Scarica in Excel l\'elenco delle anagrafiche persone"><i class="fas fa-file-excel"></i> Esporta Excel</button>';
         html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-persona"><i class="fas fa-plus"></i> Nuova Persona</button></div>';
         if (personeList.length === 0) {
             html += '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
@@ -2088,25 +2117,10 @@ function openModal(type, id) {
         modal._returnToList = 'listaPersone';
 
     } else if (type === 'listaImmobili') {
-        // Ordinamento: prima Città, poi Indirizzo (confronto numerico, così
-        // "10" viene dopo "9"; i valori mancanti finiscono in coda). Foglio,
-        // particella e sub restano come ulteriore criterio per le unità dello
-        // stesso edificio (stesso indirizzo, dati catastali diversi).
-        var immobiliList = dedupImmobili(appData.immobili).slice().sort(function(a, b) {
-            var campi = ['citta', 'indirizzo', 'foglio', 'particella', 'sub'];
-            for (var k = 0; k < campi.length; k++) {
-                var va = (a[campi[k]] || '').toString().trim();
-                var vb = (b[campi[k]] || '').toString().trim();
-                if (!va && !vb) continue;
-                if (!va) return 1;
-                if (!vb) return -1;
-                var cmp = va.localeCompare(vb, 'it', { numeric: true, sensitivity: 'base' });
-                if (cmp !== 0) return cmp;
-            }
-            return 0;
-        });
+        var immobiliList = ordinaImmobiliPerLista(dedupImmobili(appData.immobili));
         title.textContent = 'Immobili (' + immobiliList.length + ')';
-        html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
+        html = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">';
+        html += '<button type="button" class="btn btn-outline btn-sm" data-action="export-immobili-excel" title="Scarica in Excel l\'elenco degli immobili"><i class="fas fa-file-excel"></i> Esporta Excel</button>';
         html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-immobile"><i class="fas fa-plus"></i> Nuovo Immobile</button></div>';
         if (immobiliList.length === 0) {
             html += '<div class="empty-state"><i class="fas fa-building"></i><p>Nessun immobile presente</p></div>';
@@ -3489,6 +3503,138 @@ function exportContrattiExcel() {
     a.remove();
     URL.revokeObjectURL(url);
     showToast('Elenco contratti esportato: ' + nomeFile + ' (nella cartella Download).', 'success', 8000);
+}
+
+// ============================================
+// EXPORT EXCEL ANAGRAFICHE / IMMOBILI
+// ============================================
+// Stessa tecnica dell'export contratti: un vero file .xlsx scritto a mano
+// (archivio ZIP di file XML), senza librerie esterne e senza internet.
+// Esportano TUTTE le righe della lista, nello stesso ordine della finestrella.
+
+// Workbook con un solo foglio, col nome indicato.
+function xlsxWorkbookXml(nomeFoglio) {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="' + escXml(nomeFoglio) + '" sheetId="1" r:id="rId1"/></sheets>' +
+        '</workbook>';
+}
+
+// Foglio generico: titolo in riga 1, intestazioni in riga 2, dati dalla riga 3,
+// riepilogo (facoltativo) due righe sotto l'ultimo dato.
+function creaXlsxListaBlob(nomeFoglio, titolo, colonne, larghezze, righeDati, riepilogo) {
+    var nCol = colonne.length;
+    var colsXml = '';
+    for (var ci = 0; ci < nCol; ci++) {
+        colsXml += '<col min="' + (ci + 1) + '" max="' + (ci + 1) + '" width="' + larghezze[ci] + '" customWidth="1"/>';
+    }
+
+    var ultimaRigaDati = 2 + righeDati.length;
+    var righeXml = rigaXlsx(1, [{ t: 's', s: S_TITOLO, v: titolo }]);
+    righeXml += rigaXlsx(2, colonne.map(function(t) { return { t: 's', s: S_HEAD, v: t }; }));
+    righeDati.forEach(function(celle, i) { righeXml += rigaXlsx(3 + i, celle); });
+    if (riepilogo) righeXml += rigaXlsx(ultimaRigaDati + 2, [{ t: 's', s: S_RIEPILOGO, v: riepilogo }]);
+
+    var sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<sheetViews><sheetView workbookViewId="0">' +
+          '<pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/>' +
+        '</sheetView></sheetViews>' +
+        '<sheetFormatPr defaultRowHeight="15"/>' +
+        '<cols>' + colsXml + '</cols>' +
+        '<sheetData>' + righeXml + '</sheetData>' +
+        '<autoFilter ref="A2:' + colLetter(nCol) + ultimaRigaDati + '"/>' +
+        '</worksheet>';
+
+    return creaXlsxBlob([
+        { nome: '[Content_Types].xml', testo: XLSX_CONTENT_TYPES },
+        { nome: '_rels/.rels', testo: XLSX_RELS },
+        { nome: 'xl/workbook.xml', testo: xlsxWorkbookXml(nomeFoglio) },
+        { nome: 'xl/_rels/workbook.xml.rels', testo: XLSX_WORKBOOK_RELS },
+        { nome: 'xl/styles.xml', testo: XLSX_STYLES },
+        { nome: 'xl/worksheets/sheet1.xml', testo: sheetXml }
+    ]);
+}
+
+// Scarica il file .xlsx nella cartella Download del browser
+function scaricaXlsx(blob, baseNome, messaggio) {
+    var adesso = new Date();
+    var p = function(n) { return String(n).padStart(2, '0'); };
+    var nomeFile = baseNome + '_' + toLocalDateStr(adesso) + '_' +
+        p(adesso.getHours()) + p(adesso.getMinutes()) + '.xlsx';
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = nomeFile;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast(messaggio + ': ' + nomeFile + ' (nella cartella Download).', 'success', 8000);
+}
+
+// Data + ora dell'esportazione, per il titolo del foglio
+function istanteExcel() {
+    var adesso = new Date();
+    var p = function(n) { return String(n).padStart(2, '0'); };
+    return formatDateExcel(toLocalDateStr(adesso)) + ' ' + p(adesso.getHours()) + ':' + p(adesso.getMinutes());
+}
+
+function exportPersoneExcel() {
+    var list = ordinaPersonePerLista(dedupPersone(appData.persone));
+    if (!list || list.length === 0) {
+        showToast('Nessuna anagrafica da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Cognome / Ragione Sociale', 'Nome', 'Codice Fiscale'];
+    var LARGHEZZE = [40, 26, 20];
+    var aziende = 0;
+
+    var righeDati = list.map(function(p) {
+        // Come nella lista: per le aziende la ragione sociale sta nella colonna
+        // "Cognome / Ragione Sociale" e il Nome resta vuoto.
+        var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
+        if (isAzienda) aziende++;
+        return [
+            { t: 's', s: S_TESTO, v: isAzienda ? (p.ragione_sociale || '') : (p.cognome || '') },
+            { t: 's', s: S_TESTO, v: isAzienda ? '' : (p.nome || '') },
+            { t: 's', s: S_TESTO, v: p.codice_fiscale || '' }
+        ];
+    });
+
+    var titolo = 'Elenco anagrafiche persone - esportato il ' + istanteExcel() +
+        ' (' + list.length + ' anagrafiche)';
+    var riepilogo = 'Riepilogo: ' + (list.length - aziende) + ' persone fisiche · ' + aziende + ' aziende';
+
+    var blob = creaXlsxListaBlob('Anagrafiche', titolo, COLONNE, LARGHEZZE, righeDati, riepilogo);
+    scaricaXlsx(blob, 'Gestione_Contratti_Anagrafiche', 'Elenco anagrafiche esportato');
+}
+
+function exportImmobiliExcel() {
+    var list = ordinaImmobiliPerLista(dedupImmobili(appData.immobili));
+    if (!list || list.length === 0) {
+        showToast('Nessun immobile da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Indirizzo', 'Città', 'Foglio', 'Particella', 'Sub'];
+    var LARGHEZZE = [44, 24, 10, 12, 10];
+
+    var righeDati = list.map(function(i) {
+        return [
+            { t: 's', s: S_TESTO, v: i.indirizzo || '' },
+            { t: 's', s: S_TESTO, v: i.citta || '' },
+            { t: 's', s: S_TESTO, v: i.foglio || '' },
+            { t: 's', s: S_TESTO, v: i.particella || '' },
+            { t: 's', s: S_TESTO, v: i.sub || '' }
+        ];
+    });
+
+    var titolo = 'Elenco immobili - esportato il ' + istanteExcel() + ' (' + list.length + ' immobili)';
+    var blob = creaXlsxListaBlob('Immobili', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Immobili', 'Elenco immobili esportato');
 }
 
 // --- Urgenza scadenze (usata dalla pagina Scadenze, non dalle notifiche) ---
