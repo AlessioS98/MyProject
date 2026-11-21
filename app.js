@@ -126,6 +126,30 @@ function toggleConduttoreType(tipo, rowEl) {
     }
 }
 
+// Nuova Delega: tipo Persona Fisica / Azienda, con la stessa logica delle
+// righe locatore/conduttore del contratto: i campi che non servono al tipo
+// scelto vengono disabilitati e attenuati, gli altri restano attivi.
+function getDelegaType() {
+    var radio = document.querySelector('input[name="dl_tipo"]:checked');
+    return radio ? radio.value : 'pf';
+}
+
+function toggleDelegaType(tipo) {
+    var isAzienda = tipo === 'azienda';
+    var cogEl = document.getElementById('dl_cognome');
+    var nomEl = document.getElementById('dl_nome');
+    var rsEl = document.getElementById('dl_rs');
+    var grpCog = document.getElementById('dlGrpCognome');
+    var grpNom = document.getElementById('dlGrpNome');
+    var grpRs = document.getElementById('dlGrpRs');
+    if (cogEl) cogEl.disabled = isAzienda;
+    if (nomEl) nomEl.disabled = isAzienda;
+    if (rsEl) rsEl.disabled = !isAzienda;
+    if (grpCog) grpCog.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpNom) grpNom.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpRs) grpRs.style.opacity = isAzienda ? '1' : '0.4';
+}
+
 // --- Resolve names from IDs ---
 function getPersona(id) {
     return appData.persone.find(function(p) { return p.id === id; }) || null;
@@ -1470,10 +1494,24 @@ function renderGenerale() {
 // Ordinamento dell'elenco deleghe: in ordine alfabetico (ragione sociale
 // per le aziende, cognome/nome per le persone).
 function ordinaDeleghePerLista(list) {
+    // Ordine alfabetico: prima il cognome, poi il nome, infine la ragione
+    // sociale (le aziende hanno cognome/nome vuoti, quindi tra loro ordinano
+    // per ragione sociale).
+    function chiave(x) {
+        return [
+            (x.cognome || '').toLowerCase(),
+            (x.nome || '').toLowerCase(),
+            (x.ragione_sociale || '').toLowerCase()
+        ];
+    }
     return (list || []).slice().sort(function(a, b) {
-        var ka = ((a.ragione_sociale || a.cognome || '') + ' ' + (a.nome || '')).toLowerCase();
-        var kb = ((b.ragione_sociale || b.cognome || '') + ' ' + (b.nome || '')).toLowerCase();
-        return ka.localeCompare(kb);
+        var ka = chiave(a);
+        var kb = chiave(b);
+        for (var i = 0; i < ka.length; i++) {
+            var c = ka[i].localeCompare(kb[i], 'it');
+            if (c !== 0) return c;
+        }
+        return 0;
     });
 }
 
@@ -1483,14 +1521,19 @@ function renderDeleghe() {
     if (!tbody) return;
     var list = ordinaDeleghePerLista(appData.deleghe);
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessuna delega presente</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessuna delega presente</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(function(d) {
         return '<tr><td><strong>' + (d.cognome || '-') + '</strong></td>' +
             '<td>' + (d.nome || '-') + '</td>' +
             '<td>' + (d.ragione_sociale || '-') + '</td>' +
-            '<td>' + (d.codice_fiscale || '-') + '</td></tr>';
+            '<td>' + (d.codice_fiscale || '-') + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="view-delega" data-id="' + d.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
+            '<button type="button" data-action="edit-delega" data-id="' + d.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-delega" data-id="' + d.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
     }).join('');
 }
 
@@ -1504,9 +1547,21 @@ async function saveDelega() {
     var decUnica = document.getElementById('dl_dec_unica').value.trim();
     var decFatture = document.getElementById('dl_dec_fatture').value.trim();
     var decCassetto = document.getElementById('dl_dec_cassetto').value.trim();
-    if (!cognome && !nome && !ragione) {
-        showToast('Inserisci cognome e nome oppure la ragione sociale.', 'error');
-        return;
+    // Il tipo scelto determina quali campi valgono (come nel contratto:
+    // una persona fisica non ha ragione sociale, un'azienda non ha nome/cognome)
+    if (getDelegaType() === 'azienda') {
+        cognome = '';
+        nome = '';
+        if (!ragione) {
+            showToast('Inserisci la ragione sociale.', 'error');
+            return;
+        }
+    } else {
+        ragione = '';
+        if (!cognome && !nome) {
+            showToast('Inserisci cognome e nome.', 'error');
+            return;
+        }
     }
     var dati = {
         cognome: cognome || null,
@@ -1517,16 +1572,71 @@ async function saveDelega() {
         data_scadenza_fatture_corrispettivi: decFatture || null,
         data_scadenza_cassetto_fiscale: decCassetto || null
     };
-    var { data, error } = await db.from('deleghe').insert(dati).select('id').single();
-    if (error) {
-        console.error('Errore insert delega:', error);
-        showToast('Errore salvataggio delega', 'error');
-        return;
+    var id = parseInt((document.getElementById('dl_id') || {}).value) || 0;
+    if (id) {
+        // Modifica di una delega esistente
+        var upd = await db.from('deleghe').update(dati).eq('id', id);
+        if (upd.error) {
+            console.error('Errore update delega:', upd.error);
+            showToast('Errore salvataggio delega', 'error');
+            return;
+        }
+        var idx = appData.deleghe.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.deleghe[idx], dati);
+    } else {
+        var ins = await db.from('deleghe').insert(dati).select('id').single();
+        if (ins.error) {
+            console.error('Errore insert delega:', ins.error);
+            showToast('Errore salvataggio delega', 'error');
+            return;
+        }
+        appData.deleghe.push({ id: ins.data.id, ...dati });
     }
-    appData.deleghe.push({ id: data.id, ...dati });
     closeModal();
     renderDeleghe();
-    showToast('Delega salvata!', 'success');
+    showToast(id ? 'Delega aggiornata!' : 'Delega salvata!', 'success');
+}
+
+// Scheda della delega condivisa da creazione e modifica: i campi sono
+// precompilati quando si modifica una delega esistente.
+function delegaFormHtml(d) {
+    var isAz = !!(d && d.ragione_sociale && !d.nome);
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+    };
+    var dataVal = function(x) { return x ? String(x).slice(0, 10) : ''; };
+    var html = '<form id="delegaForm" class="form-grid">';
+    html += '<input type="hidden" id="dl_id" value="' + (d && d.id ? d.id : '') + '">';
+    html += '<div class="form-group full"><label>Tipo</label>';
+    html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Persona Fisica</label>';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Azienda</label>';
+    html += '</div></div>';
+    html += '<div class="form-group" id="dlGrpCognome"><label>Cognome</label><input type="text" id="dl_cognome" autocomplete="off" value="' + esc(d && d.cognome) + '"></div>';
+    html += '<div class="form-group" id="dlGrpNome"><label>Nome</label><input type="text" id="dl_nome" autocomplete="off" value="' + esc(d && d.nome) + '"></div>';
+    html += '<div class="form-group" id="dlGrpRs"><label>Ragione Sociale</label><input type="text" id="dl_rs" autocomplete="off" value="' + esc(d && d.ragione_sociale) + '"></div>';
+    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off" value="' + esc(d && d.codice_fiscale) + '"></div>';
+    html += '<div class="form-group"><label>Data Scadenza Delega Unica</label><input type="date" id="dl_dec_unica" autocomplete="off" value="' + dataVal(d && d.data_scadenza_delega_unica) + '"></div>';
+    html += '<div class="form-group"><label>Data Scadenza Cassetto Fiscale</label><input type="date" id="dl_dec_cassetto" autocomplete="off" value="' + dataVal(d && d.data_scadenza_cassetto_fiscale) + '"></div>';
+    html += '<div class="form-group"><label>Data Scadenza Fatture e Corrispettivi</label><input type="date" id="dl_dec_fatture" autocomplete="off" value="' + dataVal(d && d.data_scadenza_fatture_corrispettivi) + '"></div>';
+    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '</form>';
+    return html;
+}
+
+function getDelegaLabel(d) {
+    if (!d) return '';
+    var nome = [d.cognome, d.nome].filter(Boolean).join(' ');
+    return d.ragione_sociale || nome || d.codice_fiscale || ('Delega #' + d.id);
+}
+
+async function deleteDelega(id) {
+    var { error } = await db.from('deleghe').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.deleghe = appData.deleghe.filter(function(d) { return d.id !== id; });
+    closeModal();
+    renderDeleghe();
+    showToast('Delega eliminata', 'info');
 }
 
 async function refreshPage(page) {
@@ -1564,6 +1674,10 @@ document.addEventListener('click', function(e) {
 
         case 'export-persone-excel': exportPersoneExcel(); break;
         case 'new-delega': openModal('newDelega'); break;
+        case 'edit-delega': openModal('editDelega', id); break;
+        case 'view-delega': openModal('viewDelega', id); break;
+        case 'delete-delega': openModal('deleteDelegaConfirm', id); break;
+        case 'confirm-delete-delega': deleteDelega(id); break;
         case 'export-deleghe-excel': exportDelegheExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
@@ -2194,16 +2308,42 @@ function openModal(type, id) {
 
     } else if (type === 'newDelega') {
         title.textContent = 'Nuova Delega';
-        html = '<form id="delegaForm" class="form-grid">';
-        html += '<div class="form-group"><label>Cognome</label><input type="text" id="dl_cognome" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Nome</label><input type="text" id="dl_nome" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="dl_rs" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Data Scadenza Delega Unica</label><input type="date" id="dl_dec_unica" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Data Scadenza Fatture e Corrispettivi</label><input type="date" id="dl_dec_fatture" autocomplete="off"></div>';
-        html += '<div class="form-group"><label>Data Scadenza Cassetto Fiscale</label><input type="date" id="dl_dec_cassetto" autocomplete="off"></div>';
-        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
-        html += '</form>';
+        html = delegaFormHtml(null);
+
+    } else if (type === 'editDelega') {
+        var de = appData.deleghe.find(function(x) { return x.id === id; });
+        if (!de) return;
+        title.textContent = 'Modifica Delega';
+        html = delegaFormHtml(de);
+
+    } else if (type === 'viewDelega') {
+        var dv = appData.deleghe.find(function(x) { return x.id === id; });
+        if (!dv) return;
+        title.textContent = 'Dettagli Delega';
+        var dvAzienda = !!(dv.ragione_sociale && !dv.nome && !dv.cognome);
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md)">';
+        html += '<div class="contract-detail"><label>Tipo</label><span>' + (dvAzienda ? 'Azienda' : 'Persona Fisica') + '</span></div>';
+        html += '<div class="contract-detail"><label>Cognome</label><span>' + (dv.cognome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Nome</label><span>' + (dv.nome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Ragione Sociale</label><span>' + (dv.ragione_sociale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Codice Fiscale</label><span>' + (dv.codice_fiscale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Scadenza Delega Unica</label><span>' + formatDate(dv.data_scadenza_delega_unica) + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Scadenza Cassetto Fiscale</label><span>' + formatDate(dv.data_scadenza_cassetto_fiscale) + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Scadenza Fatture e Corrispettivi</label><span>' + formatDate(dv.data_scadenza_fatture_corrispettivi) + '</span></div>';
+        html += '</div>';
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'deleteDelegaConfirm') {
+        var dd = appData.deleghe.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Delega';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare la delega di <strong>' + (dd ? getDelegaLabel(dd) : 'N/A') + '</strong>.</span>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-delega" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
 
     } else if (type === 'listaPersone') {
         var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
@@ -2460,14 +2600,21 @@ function openModal(type, id) {
         if (dlCf) setupCfAutocomplete(dlCf, dlf, {
             tipo: 'tutti',
             onPick: function(p) {
+                // Il soggetto scelto imposta anche il tipo, come nel contratto
+                var isAz = !!(p.ragione_sociale && !p.nome);
+                var radio = dlf.querySelector('input[name="dl_tipo"][value="' + (isAz ? 'azienda' : 'pf') + '"]');
+                if (radio) radio.checked = true;
                 var c = document.getElementById('dl_cognome');
                 var n = document.getElementById('dl_nome');
                 var r = document.getElementById('dl_rs');
                 if (c) c.value = p.cognome || '';
                 if (n) n.value = p.nome || '';
                 if (r) r.value = p.ragione_sociale || '';
+                toggleDelegaType(isAz ? 'azienda' : 'pf');
             }
         });
+        // Stato iniziale dei campi in base al tipo selezionato (default PF)
+        toggleDelegaType(getDelegaType());
     }
 
 
