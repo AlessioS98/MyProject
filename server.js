@@ -90,7 +90,8 @@ const TABLES = new Set([
   'canoni_annuali',
   'contratto_locatori',
   'contratto_conduttori',
-  'contratto_immobili'
+  'contratto_immobili',
+  'deleghe'
 ]);
 
 // Pool di connessioni verso il database dell'app.
@@ -143,7 +144,10 @@ async function loadMeta() {
 // La cache delle colonne (meta) viene svuotata dopo un ALTER, cosi' il
 // controllo dei nomi di colonna in /api/query vede subito la novita'.
 const COLONNE_AGGIUNTE = [
-  ['canoni_annuali', 'a_carico_di', "VARCHAR(20) NOT NULL DEFAULT '50'"]
+  ['canoni_annuali', 'a_carico_di', "VARCHAR(20) NOT NULL DEFAULT '50'"],
+  ['deleghe', 'data_scadenza_delega_unica', 'DATE NULL'],
+  ['deleghe', 'data_scadenza_fatture_corrispettivi', 'DATE NULL'],
+  ['deleghe', 'data_scadenza_cassetto_fiscale', 'DATE NULL']
 ];
 
 // Tabelle introdotte dopo la prima versione dello schema: vengono create
@@ -160,6 +164,21 @@ const TABELLE_AGGIUNTE = [
       '  PRIMARY KEY (`id`),' +
       '  CONSTRAINT `fk_contratto_immobili_contratto` FOREIGN KEY (`contratto_id`) REFERENCES `contratti` (`id`) ON DELETE CASCADE,' +
       '  CONSTRAINT `fk_contratto_immobili_immobile` FOREIGN KEY (`immobile_id`) REFERENCES `immobili` (`id`) ON DELETE CASCADE' +
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+  },
+  {
+    nome: 'deleghe',
+    sql: 'CREATE TABLE IF NOT EXISTS `deleghe` (' +
+      '  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,' +
+      '  `cognome` VARCHAR(255) NULL,' +
+      '  `nome` VARCHAR(255) NULL,' +
+      '  `ragione_sociale` VARCHAR(255) NULL,' +
+      '  `codice_fiscale` VARCHAR(16) NULL,' +
+      '  `data_scadenza_delega_unica` DATE NULL,' +
+      '  `data_scadenza_fatture_corrispettivi` DATE NULL,' +
+      '  `data_scadenza_cassetto_fiscale` DATE NULL,' +
+      '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
+      '  PRIMARY KEY (`id`)' +
       ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
   }
 ];

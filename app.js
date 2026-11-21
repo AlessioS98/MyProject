@@ -11,7 +11,7 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -848,7 +848,8 @@ function formatImportoOnInput(el) {
 }
 
 // --- CF Autocomplete ---
-function setupCfAutocomplete(inputEl, rowEl) {
+function setupCfAutocomplete(inputEl, rowEl, opts) {
+    opts = opts || {};
     // Disabilita i suggerimenti nativi del browser (es. Firefox) che si
     // sovrappongono a quelli del programma.
     inputEl.setAttribute('autocomplete', 'off');
@@ -860,20 +861,29 @@ function setupCfAutocomplete(inputEl, rowEl) {
     inputEl.addEventListener('input', function() {
         var val = inputEl.value.trim().toUpperCase();
         if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
-        // Determina il tipo selezionato (pf o azienda)
-        var tipoSel = 'pf';
-        var radioChecked = rowEl.querySelector('input[type="radio"]:checked');
-        if (radioChecked) tipoSel = radioChecked.value;
+        // Determina il tipo selezionato (pf o azienda). Nella finestra Nuova
+        // Delega non c'e' il selettore di tipo: opts.tipo = 'tutti' propone
+        // sia le persone fisiche sia le aziende, senza cambiare il
+        // comportamento della finestra Nuovo Contratto.
+        var tipoSel = opts.tipo || 'pf';
+        if (!opts.tipo) {
+            var radioChecked = rowEl.querySelector('input[type="radio"]:checked');
+            if (radioChecked) tipoSel = radioChecked.value;
+        }
         var isAzienda = (tipoSel === 'azienda');
         var seen = {};
         var matches = [];
         appData.persone.forEach(function(p) {
             if (p.codice_fiscale && p.codice_fiscale.toUpperCase().indexOf(val) === 0 && !seen[p.codice_fiscale]) {
-                // Filtra per tipo: pf = ha nome/cognome, azienda = ha ragione_sociale
-                if (isAzienda) {
-                    if (!p.ragione_sociale) return;
-                } else {
-                    if (!p.nome && !p.cognome) return;
+                // Filtra per tipo: pf = ha nome/cognome, azienda = ha ragione_sociale.
+                // Con opts.tipo = 'tutti' (Nuova Delega) non si filtra: servono
+                // sia le persone fisiche sia le aziende.
+                if (tipoSel !== 'tutti') {
+                    if (isAzienda) {
+                        if (!p.ragione_sociale) return;
+                    } else {
+                        if (!p.nome && !p.cognome) return;
+                    }
                 }
                 seen[p.codice_fiscale] = true;
                 matches.push(p);
@@ -919,6 +929,7 @@ function setupCfAutocomplete(inputEl, rowEl) {
                     if (cogEl2) cogEl2.value = p.cognome || '';
                     if (nomEl2) nomEl2.value = p.nome || '';
                 }
+                if (opts.onPick) opts.onPick(p);
             });
         });
     });
@@ -1349,7 +1360,8 @@ async function loadAllData() {
             db.from('canoni_annuali').select('*'),
             db.from('contratto_locatori').select('*'),
             db.from('contratto_conduttori').select('*'),
-            db.from('contratto_immobili').select('*')
+            db.from('contratto_immobili').select('*'),
+            db.from('deleghe').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1363,7 +1375,7 @@ async function loadAllData() {
         }
         var persone = results[0], immobili = results[1], contratti = results[2],
             scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
-            immRel = results[7];
+            immRel = results[7], deleghe = results[8];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1372,6 +1384,7 @@ async function loadAllData() {
         appData.contratto_locatori = locRel.data || [];
         appData.contratto_conduttori = condRel.data || [];
         appData.contratto_immobili = immRel.data || [];
+        appData.deleghe = deleghe.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1393,6 +1406,28 @@ async function loadAllData() {
 }
 
 // --- Navigation ---
+// Titolo della schermata: "[Titolo sezione] - [Nome voce]", ricavato dal
+// titolo del gruppo del menu laterale e dalla voce attiva. Aggiorna sia
+// l'intestazione della pagina sia il titolo della scheda del browser.
+function aggiornaTitoloSezione(page) {
+    var voce = document.querySelector('.nav-item[data-page="' + page + '"]');
+    if (!voce) return;
+    // Titolo della sezione = titolo del gruppo del menu che contiene la voce
+    // (es. "Gestione Contratti di Locazione"); le voci fuori dai gruppi
+    // (es. "Generale") usano solo il proprio nome.
+    var gruppo = voce.closest('.nav-group');
+    var sezione = gruppo ? gruppo.querySelector('.nav-group-title') : null;
+    var nome = voce.querySelector('span');
+    var nomeSezione = sezione ? sezione.textContent.trim() : '';
+    var nomeVoce = nome ? nome.textContent.trim() : '';
+    // Se la voce ha lo stesso nome della sezione (es. Deleghe) il titolo non
+    // si ripete: "Deleghe", non "Deleghe - Deleghe".
+    var titolo = (nomeSezione && nomeSezione !== nomeVoce) ? nomeSezione + ' - ' + nomeVoce : (nomeVoce || nomeSezione);
+    var h1 = document.querySelector('#page-' + page + ' .page-header h1');
+    if (h1) h1.textContent = titolo;
+    document.title = titolo;
+}
+
 function navigateTo(page) {
     document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
     document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
@@ -1401,12 +1436,105 @@ function navigateTo(page) {
     if (pe) pe.classList.add('active');
     if (ne) ne.classList.add('active');
     closeSidebar();
+    aggiornaTitoloSezione(page);
     refreshPage(page);
 }
+// --- Pagina Generale: elenco anagrafiche ---
+// Per ora la schermata "Generale" mostra la lista delle anagrafiche persone;
+// in futuro ospiterà anche altre sezioni.
+function renderGenerale() {
+    var tbody = document.getElementById('generaleTableBody');
+    if (!tbody) return;
+    var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
+    if (personeList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessuna anagrafica presente</td></tr>';
+        return;
+    }
+    tbody.innerHTML = personeList.map(function(p) {
+        var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
+        // Colonna "Cognome / Ragione Sociale": per le persone fisiche solo il
+        // cognome, per le aziende la ragione sociale (stessa logica della
+        // lista anagrafiche nella modale).
+        var cognomeOSociale = isAzienda ? (p.ragione_sociale || '') : (p.cognome || '');
+        return '<tr><td><strong>' + (cognomeOSociale || '-') + '</strong></td>' +
+            '<td>' + (isAzienda ? '-' : (p.nome || '-')) + '</td>' +
+            '<td>' + (p.codice_fiscale || '-') + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="edit-persona" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-persona" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
+    }).join('');
+}
+
+// --- Deleghe ---
+// Ordinamento dell'elenco deleghe: in ordine alfabetico (ragione sociale
+// per le aziende, cognome/nome per le persone).
+function ordinaDeleghePerLista(list) {
+    return (list || []).slice().sort(function(a, b) {
+        var ka = ((a.ragione_sociale || a.cognome || '') + ' ' + (a.nome || '')).toLowerCase();
+        var kb = ((b.ragione_sociale || b.cognome || '') + ' ' + (b.nome || '')).toLowerCase();
+        return ka.localeCompare(kb);
+    });
+}
+
+// Elenco deleghe nella pagina Deleghe
+function renderDeleghe() {
+    var tbody = document.getElementById('delegheTableBody');
+    if (!tbody) return;
+    var list = ordinaDeleghePerLista(appData.deleghe);
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessuna delega presente</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(d) {
+        return '<tr><td><strong>' + (d.cognome || '-') + '</strong></td>' +
+            '<td>' + (d.nome || '-') + '</td>' +
+            '<td>' + (d.ragione_sociale || '-') + '</td>' +
+            '<td>' + (d.codice_fiscale || '-') + '</td></tr>';
+    }).join('');
+}
+
+// Salva una nuova delega: stessa logica della creazione di un contratto
+// (validazione, inserimento nel database, aggiornamento della lista, toast)
+async function saveDelega() {
+    var cognome = document.getElementById('dl_cognome').value.trim();
+    var nome = document.getElementById('dl_nome').value.trim();
+    var ragione = document.getElementById('dl_rs').value.trim();
+    var cf = document.getElementById('dl_cf').value.trim();
+    var decUnica = document.getElementById('dl_dec_unica').value.trim();
+    var decFatture = document.getElementById('dl_dec_fatture').value.trim();
+    var decCassetto = document.getElementById('dl_dec_cassetto').value.trim();
+    if (!cognome && !nome && !ragione) {
+        showToast('Inserisci cognome e nome oppure la ragione sociale.', 'error');
+        return;
+    }
+    var dati = {
+        cognome: cognome || null,
+        nome: nome || null,
+        ragione_sociale: ragione || null,
+        codice_fiscale: cf || null,
+        data_scadenza_delega_unica: decUnica || null,
+        data_scadenza_fatture_corrispettivi: decFatture || null,
+        data_scadenza_cassetto_fiscale: decCassetto || null
+    };
+    var { data, error } = await db.from('deleghe').insert(dati).select('id').single();
+    if (error) {
+        console.error('Errore insert delega:', error);
+        showToast('Errore salvataggio delega', 'error');
+        return;
+    }
+    appData.deleghe.push({ id: data.id, ...dati });
+    closeModal();
+    renderDeleghe();
+    showToast('Delega salvata!', 'success');
+}
+
 async function refreshPage(page) {
     switch (page) {
         case 'contratti': await renderContratti(); break;
         case 'scadenze': await renderScadenze(); break;
+        case 'generale': renderGenerale(); break;
+        case 'deleghe': renderDeleghe(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -1435,6 +1563,8 @@ document.addEventListener('click', function(e) {
         case 'confirm-restore-scadenza': ripristinaScadenza(id); break;
 
         case 'export-persone-excel': exportPersoneExcel(); break;
+        case 'new-delega': openModal('newDelega'); break;
+        case 'export-deleghe-excel': exportDelegheExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
         case 'delete-persona': openModal('deletePersonaConfirm', id); break;
@@ -2062,12 +2192,25 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'newDelega') {
+        title.textContent = 'Nuova Delega';
+        html = '<form id="delegaForm" class="form-grid">';
+        html += '<div class="form-group"><label>Cognome</label><input type="text" id="dl_cognome" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Nome</label><input type="text" id="dl_nome" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="dl_rs" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Data Scadenza Delega Unica</label><input type="date" id="dl_dec_unica" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Data Scadenza Fatture e Corrispettivi</label><input type="date" id="dl_dec_fatture" autocomplete="off"></div>';
+        html += '<div class="form-group"><label>Data Scadenza Cassetto Fiscale</label><input type="date" id="dl_dec_cassetto" autocomplete="off"></div>';
+        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</form>';
+
     } else if (type === 'listaPersone') {
         var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
         title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
         html = '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px">';
         html += '<button type="button" class="btn btn-outline btn-sm" data-action="export-persone-excel" title="Scarica in Excel l\'elenco delle anagrafiche persone"><i class="fas fa-file-excel"></i> Esporta Excel</button>';
-        html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-persona"><i class="fas fa-plus"></i> Nuova Persona</button></div>';
+        html += '<button type="button" class="btn btn-primary btn-sm" data-action="new-persona"><i class="fas fa-plus"></i> Nuova Anagrafica</button></div>';
         if (personeList.length === 0) {
             html += '<div class="empty-state"><i class="fas fa-users"></i><p>Nessuna anagrafica presente</p></div>';
         } else {
@@ -2303,6 +2446,30 @@ function openModal(type, id) {
     var csf = document.getElementById('completaScadenzaForm');
     if (csf) csf.addEventListener('submit', function(e) { e.preventDefault(); salvaCompletamentoScadenza(id); });
 
+    var dlf = document.getElementById('delegaForm');
+    if (dlf) {
+        dlf.addEventListener('submit', function(e) { e.preventDefault(); saveDelega(); });
+        // Suggerimenti dai dati gia' presenti, stessa logica della finestra
+        // Nuovo Contratto: Nome/Cognome/Ragione Sociale propongono i valori
+        // dell'anagrafica; il Codice Fiscale propone i CF con sotto il nome e,
+        // alla scelta, compila anche gli altri campi della delega.
+        setupPersonFieldAutocomplete(document.getElementById('dl_cognome'), 'cognome');
+        setupPersonFieldAutocomplete(document.getElementById('dl_nome'), 'nome');
+        setupPersonFieldAutocomplete(document.getElementById('dl_rs'), 'ragione_sociale');
+        var dlCf = document.getElementById('dl_cf');
+        if (dlCf) setupCfAutocomplete(dlCf, dlf, {
+            tipo: 'tutti',
+            onPick: function(p) {
+                var c = document.getElementById('dl_cognome');
+                var n = document.getElementById('dl_nome');
+                var r = document.getElementById('dl_rs');
+                if (c) c.value = p.cognome || '';
+                if (n) n.value = p.nome || '';
+                if (r) r.value = p.ragione_sociale || '';
+            }
+        });
+    }
+
 
     // Delete confirmation modal
     var deleteInput = document.getElementById('deleteConfirmInput');
@@ -2325,6 +2492,10 @@ function openModal(type, id) {
 
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
+    // Se la pagina Generale è aperta, riallinea la lista anagrafiche dopo una
+    // nuova anagrafica / modifica / eliminazione fatta dalla modale.
+    var paginaGenerale = document.getElementById('page-generale');
+    if (paginaGenerale && paginaGenerale.classList.contains('active')) renderGenerale();
 }
 
 // ============================================
@@ -3612,6 +3783,30 @@ function exportPersoneExcel() {
     scaricaXlsx(blob, 'Gestione_Contratti_Anagrafiche', 'Elenco anagrafiche esportato');
 }
 
+function exportDelegheExcel() {
+    var list = ordinaDeleghePerLista(appData.deleghe);
+    if (list.length === 0) {
+        showToast('Nessuna delega da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Cognome', 'Nome', 'Ragione Sociale', 'Codice Fiscale'];
+    var LARGHEZZE = [28, 26, 44, 20];
+
+    var righeDati = list.map(function(d) {
+        return [
+            { t: 's', s: S_TESTO, v: d.cognome || '' },
+            { t: 's', s: S_TESTO, v: d.nome || '' },
+            { t: 's', s: S_TESTO, v: d.ragione_sociale || '' },
+            { t: 's', s: S_TESTO, v: d.codice_fiscale || '' }
+        ];
+    });
+
+    var titolo = 'Elenco deleghe - esportato il ' + istanteExcel() + ' (' + list.length + ' deleghe)';
+    var blob = creaXlsxListaBlob('Deleghe', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Deleghe', 'Elenco deleghe esportato');
+}
+
 function exportImmobiliExcel() {
     var list = ordinaImmobiliPerLista(dedupImmobili(appData.immobili));
     if (!list || list.length === 0) {
@@ -3653,24 +3848,26 @@ function getScadenzaUrgenza(s) {
 }
 
 // --- Notifiche: fasce dei promemoria ---
-// I promemoria seguono tre fasce: 30 giorni prima, 15 giorni prima e ultimi
-// 7 giorni (ogni giorno da 7 a 1). notifPhaseForDays restituisce la fascia
+// I promemoria seguono quattro fasce: 30 giorni prima, 15 giorni prima,
+// 10 giorni prima e ultimi 7 giorni (ogni giorno da 7 a 1).
+// notifPhaseForDays restituisce la fascia
 // corrente in base ai giorni mancanti. La fascia è usata come identità del
 // promemoria (lettura ed eliminazione separate per fascia): così segnare
-// come letta la fascia dei 30 giorni NON cancella quelle dei 15 e degli
-// ultimi 7, che arrivano comunque. Se un contratto viene creato quando una
+// come letta la fascia dei 30 giorni NON cancella quelle dei 15, dei 10 e
+// degli ultimi 7, che arrivano comunque. Se un contratto viene creato quando una
 // fascia è già iniziata (es. a 27 giorni), il promemoria di quella fascia
 // NON viene saltato: compare subito e poi arrivano regolarmente le fasce
 // successive.
 function notifPhaseForDays(gg) {
     if (gg <= 7) return '7';
+    if (gg <= 10) return '10';
     if (gg <= 15) return '15';
     if (gg <= 30) return '30';
     return null;
 }
 
 // --- Notifiche: scadenze di pagamento ---
-// I promemoria seguono le tre fasce (30 gg, 15 gg, ultimi 7 gg). La fascia
+// I promemoria seguono le quattro fasce (30 gg, 15 gg, 10 gg, ultimi 7 gg). La fascia
 // corrente è sempre attiva: se la scadenza è stata inserita dopo l'inizio
 // della fascia, il promemoria viene comunque mostrato (recupero). A scadenza
 // avvenuta non vengono più inviate notifiche, TRANNE se il contratto ha una
@@ -3702,8 +3899,8 @@ function getScadenzaNotifica(s) {
 }
 
 // --- Notifiche: contratti in scadenza ---
-// Vale la stessa logica delle scadenze di pagamento: fasce a 30 gg, 15 gg e
-// ultimi 7 giorni, con la fascia corrente sempre attiva (quindi recuperata
+// Vale la stessa logica delle scadenze di pagamento: fasce a 30 gg, 15 gg,
+// 10 gg e ultimi 7 giorni, con la fascia corrente sempre attiva (quindi recuperata
 // anche se il contratto è stato creato dopo l'inizio della fascia). La data
 // di riferimento è la scadenza del contratto (o la scadenza rinnovo, se
 // presente). A scadenza avvenuta, o con una data di chiusura inserita, non
@@ -3748,12 +3945,13 @@ function buildContrattoNotifItem(c) {
     if (!n) return null;
     var refDate = getContrattoScadenzaEffettiva(c);
     var gg = n.days;
-    // Il testo mostra l'etichetta della fascia (30 o 15) invece dei giorni
-    // reali rimanenti, così resta riconoscibile come promemoria dei 30/15
+    // Il testo mostra l'etichetta della fascia (30, 15 o 10) invece dei giorni
+    // reali rimanenti, così resta riconoscibile come promemoria dei 30/15/10
     // giorni; negli ultimi 7 giorni si mantiene il conto alla rovescia vero.
     var quando;
     if (n.phase === '30') quando = 'Tra 30 giorni';
     else if (n.phase === '15') quando = 'Tra 15 giorni';
+    else if (n.phase === '10') quando = 'Tra 10 giorni';
     else quando = gg === 1 ? 'Domani' : 'Tra ' + gg + ' giorni';
     return {
         key: 'contratto_' + c.id,
@@ -3834,8 +4032,8 @@ function announceNotificationArrivals(arrivals) {
 function renderNotifications() {
     var items = [];
 
-    // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg e
-    // ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista
+    // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg, 10 gg
+    // e ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista
     // Scadenze (colonna "Prossima Scadenza" = giorno prima della scadenza
     // del database: vedi getScadenzaDataMostrata), quindi i giorni mancanti
     // e la data scritta nella notifica sono quelli letti in lista. La fascia
@@ -3855,13 +4053,14 @@ function renderNotifications() {
         var gg = n.days;
         // Come nelle notifiche dei contratti, la scadenza di pagamento indica
         // anche le parti, con COGNOME prima del NOME.
-        // Il testo usa l'etichetta della fascia (30 o 15), non i giorni reali
+        // Il testo usa l'etichetta della fascia (30, 15 o 10), non i giorni reali
         // rimanenti: entrando nella fascia dei 30 gg il messaggio dice sempre
-        // "30 giorni" (non 28, 27, ...), e cosi' per i 15. Negli ultimi 7
+        // "30 giorni" (non 28, 27, ...), e cosi' per i 15 e i 10. Negli ultimi 7
         // giorni resta invece il conto alla rovescia vero (domani, fra N gg).
         var quando;
         if (n.phase === '30') quando = 'fra 30 giorni';
         else if (n.phase === '15') quando = 'fra 15 giorni';
+        else if (n.phase === '10') quando = 'fra 10 giorni';
         else if (gg > 1) quando = 'fra ' + gg + ' giorni';
         else if (gg === 1) quando = 'domani';
         else if (gg === 0) quando = 'oggi';
@@ -3880,7 +4079,7 @@ function renderNotifications() {
         });
     });
 
-    // Contratti in scadenza: stesse fasce (30 gg, 15 gg, ultimi 7 giorni),
+    // Contratti in scadenza: stesse fasce (30 gg, 15 gg, 10 gg, ultimi 7 giorni),
     // con la fascia corrente sempre attiva (recuperata se il contratto è
     // stato creato tardi).
     appData.contratti.forEach(function(c) {
@@ -4046,7 +4245,7 @@ function eliminaNotificheMostrate() {
 // True se la notifica è già stata eliminata (automaticamente alla chiusura
 // del pannello). L'eliminazione vale per quella specifica data di riferimento
 // E per la fascia: aver visto il promemoria dei 30 giorni non cancella quelli
-// dei 15 e degli ultimi 7 giorni. Con una scadenza diversa la notifica non è
+// dei 15, dei 10 e degli ultimi 7 giorni. Con una scadenza diversa la notifica non è
 // eliminata e ricompare.
 function isNotificationDismissed(key, deadline, phase) {
     var v = localStorage.getItem('notifDismissed_' + key);
@@ -4893,6 +5092,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     daPulire.forEach(function(k) { localStorage.removeItem(k); });
 
     await loadAllData();
+    // All'avvio si apre subito la sezione Generale (la pagina è già 'active'
+    // nel markup, insieme alla sua voce nel menu).
+    aggiornaTitoloSezione('generale');
     renderNotifications();
-    try { renderContratti(); } catch(e) { console.error('Contratti error:', e); }
+    try { renderGenerale(); } catch(e) { console.error('Generale error:', e); }
 });

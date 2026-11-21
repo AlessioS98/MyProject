@@ -16,6 +16,7 @@ che serve l'app e parla con il database.
 | `Avvia Gestione Contratti.cmd`, `Ferma Gestione Contratti.cmd` | Avvio/arresto con doppio clic (Windows) |
 | `ferma-server.ps1` | Usato da `Ferma Gestione Contratti.cmd`: chiude il processo del server |
 | `Metti in rete.cmd` | Prepara l'uso dagli altri PC (vedi "Uso da più PC") |
+| `Svuota database.cmd`, `svuota-db.js` | Svuota i dati di tutte le tabelle mantenendo struttura, vincoli e trigger (vedi "Svuotare i dati") |
 | `Installa avvio automatico.cmd`, `Rimuovi avvio automatico.cmd`, `avvio-automatico.ps1` | Attiva/disattiva l'avvio del programma a ogni accesso a Windows |
 
 ## Requisiti
@@ -74,6 +75,7 @@ Nella cartella dell'app:
 | `Metti in rete.cmd` | prepara i collegamenti nella cartella condivisa e apre la porta nel firewall (vedi sotto) |
 | `Installa avvio automatico.cmd` | fa partire il programma da solo a ogni accesso a Windows e apre la pagina nel browser |
 | `Rimuovi avvio automatico.cmd` | toglie l'avvio automatico (stesso effetto di `Installa avvio automatico.cmd rimuovi`) |
+| `Svuota database.cmd` | elimina **tutti i dati** mantenendo tabelle, vincoli e trigger; mostra le righe coinvolte e chiede di scrivere `SVUOTA` per confermare (vedi "Svuotare i dati") |
 
 Entrambi funzionano **da qualunque posizione della cartella**: se la sposti su
 un'altra unità, la copi in un percorso con spazi o la apri da una condivisione
@@ -130,6 +132,20 @@ Il nome del file è fisso, quindi un nuovo backup scaricato sostituisce il
 precedente nella cartella Download (prima di scaricarne uno nuovo, sposta quello
 vecchio se vuoi conservarlo). Se MySQL non è avviato, il clic mostra un avviso e
 non scarica niente.
+
+## Svuotare i dati (mantenendo le tabelle)
+
+Per ripartire da un archivio vuoto senza reimportare `schema.sql` (che
+ricrea le tabelle) fai doppio clic su **`Svuota database.cmd`**: il file
+mostra quante righe verranno eliminate e chiede di scrivere `SVUOTA` per
+confermare. Con la conferma esegue `TRUNCATE` su tutte le tabelle del
+database: i dati spariscono, mentre tabelle, colonne, indici, vincoli,
+trigger e viste restano al loro posto e gli `AUTO_INCREMENT` ripartono da 1.
+
+Serve MySQL avviato e le credenziali sono le stesse di `server.js` (`.env`).
+Prima di confermare conviene scaricare il backup con **Effettua Backup**.
+Dopo lo svuotamento ricarica l'app nel browser (`Ctrl+F5`): le liste
+restano in memoria finché non ricarichi la pagina.
 
 ## Uso da più PC (ufficio)
 
@@ -194,7 +210,7 @@ Cose da tenere presenti:
 - `db-client.js` replica, solo per le operazioni usate dall'app
   (`select`/`insert`/`update`/`delete`, filtri `eq`/`in`, `.single()`),
   l'interfaccia di supabase-js: ogni chiamata risolve `{ data, error }`.
-- `server.js` accetta solo le 8 tabelle dell'app e valida ogni nome di
+- `server.js` accetta solo le 9 tabelle dell'app e valida ogni nome di
   colonna contro `information_schema`; tutti i valori passano da query SQL
   parametrizzate (niente concatenazione di valori utente).
 - I database già in uso **non** vanno ricreati da `schema.sql` (che fa DROP):
@@ -202,7 +218,7 @@ Cose da tenere presenti:
   `canoni_annuali.a_carico_di`, il soggetto su cui grava l'imposta di
   registro: Locatore, Conduttore o 50%) e le tabelle aggiunte dopo (oggi
   `contratto_immobili`, gli immobili multipli del contratto, come
-  `contratto_locatori`/`contratto_conduttori`) vengono create/aggiunte
+  `contratto_locatori`/`contratto_conduttori`, e `deleghe`) vengono create/aggiunte
   automaticamente dal server all'avvio, se mancano.
 - Il trigger MySQL `trg_scadenze_calc_dates_ins/upd` ricalcola
   `prossima_scadenza = data_decorrenza + 1 anno + 30 giorni`, come il
@@ -218,8 +234,8 @@ Cose da tenere presenti:
   database. La lista **Contratti** non ha questo scarto: la colonna mostra la
   scadenza effettiva del contratto, la stessa usata dalle notifiche dei
   contratti.
-- Le notifiche della campanella (promemoria a 30 giorni, 15 giorni e ultimi
-  7 giorni, sia per le scadenze di pagamento sia per quelle dei contratti)
+- Le notifiche della campanella (promemoria a 30 giorni, 15 giorni, 10 giorni
+  e ultimi 7 giorni, sia per le scadenze di pagamento sia per quelle dei contratti)
   non hanno pulsanti: si apre il pannello, si leggono e alla **chiusura del
   pannello** le notifiche mostrate vengono eliminate automaticamente.
   L'eliminazione resta legata alla data di riferimento e alla fascia: se la

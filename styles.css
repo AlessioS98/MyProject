@@ -243,6 +243,25 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     overflow-y: auto;
 }
 
+/* Gruppo di voci del menu (Contratti / Scadenze) racchiuso in un riquadro
+   con il titolo come intestazione */
+.nav-group {
+    padding: 10px 8px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.nav-group-title {
+    padding: 0 8px 8px;
+    color: var(--sidebar-text);
+    opacity: 0.6;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
 .nav-item {
     display: flex;
     align-items: center;
@@ -273,16 +292,48 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     font-size: 1rem;
 }
 
+/* Voce del menu fuori dai gruppi (Generale): un po' di spazio prima del
+   riquadro del gruppo successivo */
+.sidebar-nav > .nav-item {
+    margin-bottom: 10px;
+}
+
+/* Spazio tra un riquadro di sezione e il successivo (es. Deleghe) */
+.nav-group + .nav-group {
+    margin-top: 10px;
+}
+
 .sidebar-footer {
     padding: 14px 20px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Scorciatoie circolari sopra l'utente (anagrafiche / immobili) */
+/* Scorciatoie circolari sopra l'utente (anagrafiche) */
 .sidebar-shortcuts {
     display: flex;
     gap: 10px;
     margin-bottom: 12px;
+}
+
+/* Il pulsante Immobili sta dentro il riquadro del gruppo Contratti/Scadenze:
+   riga larga quanto il riquadro, allineata alle voci del menu, con la sua
+   etichetta accanto all'icona */
+.nav-group .shortcut-btn {
+    width: 100%;
+    height: auto;
+    box-sizing: border-box;
+    margin: 8px 0 0;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    justify-content: flex-start;
+    gap: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.nav-group .shortcut-btn i {
+    width: 20px;
+    text-align: center;
 }
 
 .shortcut-btn {
@@ -1525,6 +1576,14 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 
 .list-table tbody tr:hover {
     background: var(--surface-hover);
+}
+
+/* Cella "nessun dato" nelle tabelle delle pagine */
+.table-empty-cell {
+    text-align: center;
+    padding: 28px 12px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
 }
 
 /* Badge tipo anagrafica */

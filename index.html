@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=30">
+    <link rel="stylesheet" href="styles.css?v=36">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -24,21 +24,38 @@
             </button>
         </div>
         <nav class="sidebar-nav">
-            <a href="#" class="nav-item active" data-page="contratti">
-                <i class="fas fa-file-contract"></i>
-                <span>Contratti</span>
+            <a href="#" class="nav-item active" data-page="generale">
+                <i class="fas fa-home"></i>
+                <span>Generale</span>
             </a>
-            <a href="#" class="nav-item" data-page="scadenze">
-                <i class="fas fa-calendar-check"></i>
-                <span>Scadenze</span>
-            </a>
+            <div class="nav-group">
+                <div class="nav-group-title">Gestione Contratti di Locazione</div>
+                <a href="#" class="nav-item" data-page="contratti">
+                    <i class="fas fa-file-contract"></i>
+                    <span>Contratti</span>
+                </a>
+                <a href="#" class="nav-item" data-page="scadenze">
+                    <i class="fas fa-calendar-check"></i>
+                    <span>Scadenze</span>
+                </a>
+                <button class="shortcut-btn" id="btnImmobili" title="Immobili">
+                    <i class="fas fa-building"></i>
+                    <span>Immobili</span>
+                </button>
+            </div>
+            <div class="nav-group">
+                <div class="nav-group-title">Gestione Deleghe</div>
+                <a href="#" class="nav-item" data-page="deleghe">
+                    <i class="fas fa-file-signature"></i>
+                    <span>Deleghe</span>
+                </a>
+            </div>
 
 
         </nav>
         <div class="sidebar-footer">
             <div class="sidebar-shortcuts">
                 <button class="shortcut-btn" id="btnAnagrafiche" title="Anagrafiche Persone"><i class="fas fa-users"></i></button>
-                <button class="shortcut-btn" id="btnImmobili" title="Immobili"><i class="fas fa-building"></i></button>
             </div>
             <div class="user-info">
                 <div class="user-avatar">
@@ -60,7 +77,7 @@
                 <i class="fas fa-bars"></i>
             </button>
             <div class="topbar-actions">
-                <span class="topbar-title">Gestione dei contratti di affitto</span>
+                <span class="topbar-title">SCADENZIARIO</span>
                 <button class="topbar-backup-btn" id="backupBtn" title="Scarica il backup completo del database (.sql)">
                     <i class="fas fa-download"></i>
                     <span>Effettua Backup</span>
@@ -87,7 +104,7 @@
 
 
         <!-- Page: Contratti -->
-        <section class="page active" id="page-contratti">
+        <section class="page" id="page-contratti">
             <div class="page-header">
                 <div>
                     <h1>Gestione Contratti</h1>
@@ -202,6 +219,66 @@
         </section>
 
 
+
+        <!-- Page: Generale -->
+        <section class="page active" id="page-generale">
+            <div class="page-header">
+                <div>
+                    <h1>Generale</h1>
+                    <p class="page-subtitle">Anagrafiche</p>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Cognome / Ragione Sociale</th>
+                            <th>Nome</th>
+                            <th>Codice Fiscale</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="generaleTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Deleghe -->
+        <section class="page" id="page-deleghe">
+            <div class="page-header">
+                <div>
+                    <h1>Deleghe</h1>
+                    <p class="page-subtitle">Gestisci tutte le deleghe</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-deleghe-excel" title="Scarica in Excel l'elenco delle deleghe">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                    <button class="btn btn-primary" data-action="new-delega">
+                        <i class="fas fa-plus"></i> Nuova Delega
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Cognome</th>
+                            <th>Nome</th>
+                            <th>Ragione Sociale</th>
+                            <th>Codice Fiscale</th>
+                        </tr>
+                    </thead>
+                    <tbody id="delegheTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
     </main>
 
