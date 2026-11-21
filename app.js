@@ -1636,9 +1636,9 @@ function renderScadenzeDeleghe() {
     // Statistiche: non scadute (tutte le date future, anche oltre i 30
     // giorni), scadute e quante rientrano nei prossimi 20 giorni (la fascia
     // dei promemoria); totale deleghe
-    var entro20 = items.filter(function(it) { return it.giorni > 0 && it.giorni <= 20; });
-    var scadute = items.filter(function(it) { return it.giorni <= 0; });
-    var nonScadute = items.filter(function(it) { return it.giorni > 0; });
+    var entro20 = items.filter(function(it) { return it.giorni >= 0 && it.giorni <= 20; });
+    var scadute = items.filter(function(it) { return it.giorni < 0; });
+    var nonScadute = items.filter(function(it) { return it.giorni >= 0; });
     var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
     setTxt('statDelegheNonScadute', nonScadute.length);
     setTxt('statDelegheScadute', scadute.length);
@@ -1654,17 +1654,18 @@ function renderScadenzeDeleghe() {
         items = items.filter(function(it) { return it.tipo === tipoFiltro; });
     }
     if (statoFiltro === 'future') {
-        items = items.filter(function(it) { return it.giorni > 0; });
+        items = items.filter(function(it) { return it.giorni >= 0; });
     } else if (statoFiltro === 'scadute') {
-        items = items.filter(function(it) { return it.giorni <= 0; });
+        items = items.filter(function(it) { return it.giorni < 0; });
     }
 
     // Ordine: dalla scadenza più prossima a quella più vecchia. Prima le
     // scadenze non ancora passate dalla più vicina in avanti, poi quelle
     // passate dalla più recente alla più vecchia.
     items.sort(function(a, b) {
-        var aPassata = a.giorni <= 0;
-        var bPassata = b.giorni <= 0;
+        // Oggi (0 giorni) non è ancora scaduta: è la scadenza più prossima
+        var aPassata = a.giorni < 0;
+        var bPassata = b.giorni < 0;
         if (aPassata !== bPassata) return aPassata ? 1 : -1;
         var cmp = aPassata
             ? b.data.localeCompare(a.data)
@@ -1681,8 +1682,8 @@ function renderScadenzeDeleghe() {
     }
 
     tbody.innerHTML = items.map(function(it) {
-        var urg = it.giorni <= 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
-        var rowCls = it.giorni <= 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
+        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
+        var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
         var giorniLabel = it.giorni > 0
             ? 'tra ' + it.giorni + ' gg'
             : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
@@ -1893,6 +1894,7 @@ async function saveMarchio() {
     }
     closeModal();
     renderMarchi();
+    renderNotifications();
     showToast(id ? 'Marchio aggiornato!' : 'Marchio salvato!', 'success');
 }
 
@@ -1902,6 +1904,7 @@ async function deleteMarchio(id) {
     appData.marchi = appData.marchi.filter(function(m) { return m.id !== id; });
     closeModal();
     renderMarchi();
+    renderNotifications();
     showToast('Marchio eliminato', 'info');
 }
 
@@ -1928,10 +1931,10 @@ function renderScadenzeMarchi() {
     // Statistiche: marchi non scaduti (senza data o con data futura, senza
     // limite di giorni) e marchi scaduti; totale marchi
     var nonScaduti = marchi.filter(function(m) {
-        return !m.data_scadenza || daysUntil(String(m.data_scadenza).slice(0, 10)) > 0;
+        return !m.data_scadenza || daysUntil(String(m.data_scadenza).slice(0, 10)) >= 0;
     }).length;
     var scaduti = marchi.filter(function(m) {
-        return !!m.data_scadenza && daysUntil(String(m.data_scadenza).slice(0, 10)) <= 0;
+        return !!m.data_scadenza && daysUntil(String(m.data_scadenza).slice(0, 10)) < 0;
     }).length;
     var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
     setTxt('statMarchiNonScaduti', nonScaduti);
@@ -1942,17 +1945,18 @@ function renderScadenzeMarchi() {
     var statoSel = document.getElementById('filterMarchioScadenzaStato');
     var statoFiltro = statoSel ? statoSel.value : 'future';
     if (statoFiltro === 'future') {
-        items = items.filter(function(it) { return it.giorni > 0; });
+        items = items.filter(function(it) { return it.giorni >= 0; });
     } else if (statoFiltro === 'scadute') {
-        items = items.filter(function(it) { return it.giorni <= 0; });
+        items = items.filter(function(it) { return it.giorni < 0; });
     }
 
     // Ordine: dalla scadenza più prossima a quella più vecchia. Prima le
     // scadenze non ancora passate dalla più vicina in avanti, poi quelle
     // passate dalla più recente alla più vecchia.
     items.sort(function(a, b) {
-        var aPassata = a.giorni <= 0;
-        var bPassata = b.giorni <= 0;
+        // Oggi (0 giorni) non è ancora scaduta: è la scadenza più prossima
+        var aPassata = a.giorni < 0;
+        var bPassata = b.giorni < 0;
         if (aPassata !== bPassata) return aPassata ? 1 : -1;
         var cmp = aPassata
             ? b.data.localeCompare(a.data)
@@ -1969,8 +1973,8 @@ function renderScadenzeMarchi() {
     }
 
     tbody.innerHTML = items.map(function(it) {
-        var urg = it.giorni <= 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
-        var rowCls = it.giorni <= 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
+        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
+        var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
         var giorniLabel = it.giorni > 0
             ? 'tra ' + it.giorni + ' gg'
             : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
@@ -4663,11 +4667,56 @@ function buildDelegaNotifItems() {
     return items;
 }
 
+// Notifiche delle scadenze dei marchi: la data di scadenza viene ricordata
+// una volta al mese a partire dai 12 mesi precedenti, poi a 15 giorni, a 10
+// giorni e infine ogni giorno nei 7 giorni precedenti la scadenza. Il giorno
+// stesso della scadenza NON viene notificato. La fase mensile contiene il mese
+// corrente: chiudendo il pannello il promemoria sparisce per quel mese e
+// ricompare il mese successivo. Le fasce 15 e 10 valgono per l'intera fascia
+// (11-15 e 8-10 giorni), mentre nei 7 giorni precedenti la fase contiene il
+// giorno corrente, quindi il promemoria torna ogni giorno.
+function buildMarchioNotifItems() {
+    var items = [];
+    var oggiKey = toLocalDateStr(new Date());
+    var meseKey = oggiKey.slice(0, 7);
+    (appData.marchi || []).forEach(function(m) {
+        if (!m.data_scadenza) return;
+        var data = String(m.data_scadenza).slice(0, 10);
+        var giorni = daysUntil(data);
+        if (giorni <= 0) return;            // scaduto o scade oggi: nessun promemoria
+        var phase;
+        if (giorni <= 7) phase = '7-' + oggiKey;       // ogni giorno
+        else if (giorni <= 10) phase = '10';
+        else if (giorni <= 15) phase = '15';
+        else if (giorni <= 365) phase = '12m-' + meseKey; // una volta al mese
+        else return;                        // più di 12 mesi: nessun promemoria
+        var quando;
+        if (phase === '15') quando = 'fra 15 giorni';
+        else if (phase === '10') quando = 'fra 10 giorni';
+        else quando = giorni === 1 ? 'domani' : 'fra ' + giorni + ' giorni';
+        items.push({
+            key: 'marchio_' + m.id,
+            date: data,
+            phase: phase,
+            icon: 'fa-registered',
+            cls: giorni <= 7 ? 'danger' : (giorni <= 15 ? 'warning' : 'info'),
+            txt: 'Scadenza del marchio ' + getMarchioLabel(m) + ' ' + quando,
+            meta: 'Marchi · ' + formatDate(data)
+        });
+    });
+    return items;
+}
+
 function renderNotifications() {
     var items = [];
 
     // Promemoria delle scadenze delle deleghe (20 giorni prima)
     buildDelegaNotifItems().forEach(function(it) { items.push(it); });
+
+    // Promemoria delle scadenze dei marchi (12 mesi prima una volta al mese,
+    // poi 15 giorni prima, 10 giorni prima e ogni giorno nei 7 giorni
+    // precedenti; il giorno della scadenza non viene notificato).
+    buildMarchioNotifItems().forEach(function(it) { items.push(it); });
 
     // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg, 10 gg
     // e ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista
