@@ -11,7 +11,7 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [], promemoria: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -1386,7 +1386,8 @@ async function loadAllData() {
             db.from('contratto_conduttori').select('*'),
             db.from('contratto_immobili').select('*'),
             db.from('deleghe').select('*'),
-            db.from('marchi').select('*')
+            db.from('marchi').select('*'),
+            db.from('promemoria').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1400,7 +1401,8 @@ async function loadAllData() {
         }
         var persone = results[0], immobili = results[1], contratti = results[2],
             scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
-            immRel = results[7], deleghe = results[8], marchi = results[9];
+            immRel = results[7], deleghe = results[8], marchi = results[9],
+            promemoria = results[10];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1411,6 +1413,7 @@ async function loadAllData() {
         appData.contratto_immobili = immRel.data || [];
         appData.deleghe = deleghe.data || [];
         appData.marchi = marchi.data || [];
+        appData.promemoria = promemoria.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1540,6 +1543,17 @@ function renderGeneraleScadenze() {
             tipo: 'Marchio',
             icon: 'fa-registered',
             dettaglio: (m.numero_identificativo ? 'N. ' + m.numero_identificativo + ' · ' : '') + getMarchioLabel(m)
+        });
+    });
+
+    // Promemoria non ancora fatti (quelli fatti non sono più scadenze attive).
+    (appData.promemoria || []).forEach(function(p) {
+        if (p.fatto || !p.data_scadenza) return;
+        items.push({
+            data: String(p.data_scadenza).slice(0, 10),
+            tipo: 'Promemoria',
+            icon: 'fa-bell',
+            dettaglio: p.descrizione || 'Promemoria #' + p.id
         });
     });
 
@@ -2034,6 +2048,136 @@ async function deleteMarchio(id) {
     showToast('Marchio eliminato', 'info');
 }
 
+// --- Promemoria ---
+// Elenco ordinato per data più prossima: prima oggi e le date future dalla più
+// vicina in avanti, poi le date passate dalla più recente alla più vecchia.
+// Lo stato "Fatto" non influisce sull'ordine; i promemoria senza data vanno
+// in fondo, dopo quelli datati.
+function ordinaPromemoriaPerLista(list) {
+    var oggi = toLocalDateStr(new Date());
+    return (list || []).slice().sort(function(a, b) {
+        var da = a.data_scadenza ? String(a.data_scadenza).slice(0, 10) : '';
+        var db = b.data_scadenza ? String(b.data_scadenza).slice(0, 10) : '';
+        if (!da && !db) return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
+        if (!da) return 1;
+        if (!db) return -1;
+        var aPassata = da < oggi;
+        var bPassata = db < oggi;
+        if (aPassata !== bPassata) return aPassata ? 1 : -1;
+        var cmp = aPassata ? db.localeCompare(da) : da.localeCompare(db);
+        if (cmp !== 0) return cmp;
+        return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
+    });
+}
+
+function renderPromemoria() {
+    var tbody = document.getElementById('promemoriaTableBody');
+    if (!tbody) return;
+    var list = ordinaPromemoriaPerLista(appData.promemoria);
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="table-empty-cell">Nessun promemoria presente</td></tr>';
+        return;
+    }
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+    };
+    tbody.innerHTML = list.map(function(p) {
+        var fatto = !!p.fatto;
+        return '<tr' + (fatto ? ' class="promemoria-fatto"' : '') + '>' +
+            '<td><strong>' + esc(p.descrizione || '-') + '</strong>' +
+            (fatto ? ' <span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') +
+            '</td>' +
+            '<td>' + formatDate(p.data_scadenza) + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="view-promemoria" data-id="' + p.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
+            '<button type="button" data-action="edit-promemoria" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-promemoria" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
+    }).join('');
+}
+
+function promemoriaFormHtml(p) {
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+    };
+    var dataVal = function(x) { return x ? String(x).slice(0, 10) : ''; };
+    var html = '<form id="promemoriaForm" class="form-grid">';
+    html += '<input type="hidden" id="pr_id" value="' + (p && p.id ? p.id : '') + '">';
+    html += '<div class="form-group full"><label>Descrizione <span class="req">*</span></label><input type="text" id="pr_descrizione" autocomplete="off" value="' + esc(p && p.descrizione) + '" required></div>';
+    html += '<div class="form-group"><label>Scadenza</label><input type="date" id="pr_scadenza" autocomplete="off" value="' + dataVal(p && p.data_scadenza) + '"></div>';
+    html += '<div class="form-group"><label>Fatto</label><label class="radio-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px"><input type="checkbox" id="pr_fatto"' + (p && p.fatto ? ' checked' : '') + '> Fatto</label></div>';
+    html += '<div class="form-group full"><label>Note</label><textarea id="pr_note">' + esc(p && p.note) + '</textarea></div>';
+    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '</form>';
+    return html;
+}
+
+async function savePromemoria() {
+    var id = parseInt((document.getElementById('pr_id') || {}).value) || 0;
+    var descrizione = document.getElementById('pr_descrizione').value.trim();
+    var dataScadenza = document.getElementById('pr_scadenza').value || null;
+    var note = document.getElementById('pr_note').value.trim() || null;
+    var fattoEl = document.getElementById('pr_fatto');
+    var fatto = fattoEl && fattoEl.checked ? 1 : 0;
+    if (!descrizione) {
+        showToast('Inserisci la descrizione del promemoria.', 'error');
+        return;
+    }
+    var dati = {
+        descrizione: descrizione,
+        data_scadenza: dataScadenza,
+        fatto: fatto,
+        note: note
+    };
+    if (id) {
+        var upd = await db.from('promemoria').update(dati).eq('id', id);
+        if (upd.error) {
+            console.error('Errore update promemoria:', upd.error);
+            showToast('Errore salvataggio promemoria', 'error');
+            return;
+        }
+        var idx = appData.promemoria.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.promemoria[idx], dati);
+    } else {
+        var ins = await db.from('promemoria').insert(dati).select('id').single();
+        if (ins.error) {
+            console.error('Errore insert promemoria:', ins.error);
+            showToast('Errore salvataggio promemoria', 'error');
+            return;
+        }
+        appData.promemoria.push({ id: ins.data.id, ...dati });
+    }
+    closeModal();
+    renderPromemoria();
+    renderNotifications();
+    showToast(id ? 'Promemoria aggiornato!' : 'Promemoria salvato!', 'success');
+}
+
+async function deletePromemoria(id) {
+    var { error } = await db.from('promemoria').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.promemoria = appData.promemoria.filter(function(p) { return p.id !== id; });
+    closeModal();
+    renderPromemoria();
+    renderNotifications();
+    showToast('Promemoria eliminato', 'info');
+}
+
+async function togglePromemoria(id) {
+    var p = (appData.promemoria || []).find(function(x) { return x.id === id; });
+    if (!p) return;
+    var nuovo = p.fatto ? 0 : 1;
+    var { error } = await db.from('promemoria').update({ fatto: nuovo }).eq('id', id);
+    if (error) {
+        showToast('Errore aggiornamento promemoria: ' + error.message, 'error');
+        renderPromemoria();
+        return;
+    }
+    p.fatto = nuovo;
+    renderPromemoria();
+    renderNotifications();
+}
+
 // Scadenze dei marchi: una riga per ogni marchio con data di scadenza, con
 // la stessa impostazione della pagina Scadenze delle deleghe.
 function renderScadenzeMarchi() {
@@ -2123,6 +2267,7 @@ async function refreshPage(page) {
         case 'scadenze-deleghe': renderScadenzeDeleghe(); break;
         case 'marchi': renderMarchi(); break;
         case 'scadenze-marchi': renderScadenzeMarchi(); break;
+        case 'promemoria': renderPromemoria(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -2163,6 +2308,13 @@ document.addEventListener('click', function(e) {
         case 'delete-marchio': openModal('deleteMarchioConfirm', id); break;
         case 'confirm-delete-marchio': deleteMarchio(id); break;
         case 'export-marchi-excel': exportMarchiExcel(); break;
+        case 'export-promemoria-excel': exportPromemoriaExcel(); break;
+        case 'new-promemoria': openModal('newPromemoria'); break;
+        case 'view-promemoria': openModal('viewPromemoria', id); break;
+        case 'edit-promemoria': openModal('editPromemoria', id); break;
+        case 'delete-promemoria': openModal('deletePromemoriaConfirm', id); break;
+        case 'confirm-delete-promemoria': deletePromemoria(id); break;
+        case 'toggle-promemoria': togglePromemoria(id); break;
         case 'export-deleghe-excel': exportDelegheExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
@@ -2868,6 +3020,40 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-marchio" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'newPromemoria') {
+        title.textContent = 'Nuovo Promemoria';
+        html = promemoriaFormHtml(null);
+
+    } else if (type === 'editPromemoria') {
+        var pp = appData.promemoria.find(function(x) { return x.id === id; });
+        if (!pp) return;
+        title.textContent = 'Modifica Promemoria';
+        html = promemoriaFormHtml(pp);
+
+    } else if (type === 'deletePromemoriaConfirm') {
+        var pd = appData.promemoria.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Promemoria';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare il promemoria <strong>' + (pd ? pd.descrizione : 'N/A') + '</strong>.</span>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-promemoria" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
+    } else if (type === 'viewPromemoria') {
+        var pv = appData.promemoria.find(function(x) { return x.id === id; });
+        if (!pv) return;
+        title.textContent = 'Dettagli Promemoria';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md)">';
+        html += '<div class="contract-detail"><label>Descrizione</label><span>' + (pv.descrizione || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Scadenza</label><span>' + formatDate(pv.data_scadenza) + '</span></div>';
+        html += '<div class="contract-detail"><label>Fatto</label><span>' + (pv.fatto ? 'Sì' : 'No') + '</span></div>';
+        html += '<div class="contract-detail"><label>Note</label><span>' + (pv.note || '-') + '</span></div>';
+        html += '</div>';
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
     } else if (type === 'listaPersone') {
         var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
         title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
@@ -3170,6 +3356,9 @@ function openModal(type, id) {
         // Stato iniziale dei campi in base al tipo selezionato (default PF)
         toggleMarchioType(getMarchioTipo());
     }
+
+    var prf = document.getElementById('promemoriaForm');
+    if (prf) prf.addEventListener('submit', function(e) { e.preventDefault(); savePromemoria(); });
 
     // Delete confirmation modal
     var deleteInput = document.getElementById('deleteConfirmInput');
@@ -4534,6 +4723,30 @@ function exportMarchiExcel() {
     scaricaXlsx(blob, 'Gestione_Contratti_Marchi', 'Elenco marchi esportato');
 }
 
+function exportPromemoriaExcel() {
+    var list = ordinaPromemoriaPerLista(appData.promemoria);
+    if (list.length === 0) {
+        showToast('Nessun promemoria da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Fatto', 'Descrizione', 'Scadenza', 'Note'];
+    var LARGHEZZE = [10, 50, 16, 50];
+
+    var righeDati = list.map(function(p) {
+        return [
+            { t: 's', s: S_TESTO, v: p.fatto ? 'Sì' : 'No' },
+            { t: 's', s: S_TESTO, v: p.descrizione || '' },
+            { t: 's', s: S_TESTO, v: p.data_scadenza ? formatDateExcel(p.data_scadenza) : '' },
+            { t: 's', s: S_TESTO, v: p.note || '' }
+        ];
+    });
+
+    var titolo = 'Elenco promemoria - esportato il ' + istanteExcel() + ' (' + list.length + ' promemoria)';
+    var blob = creaXlsxListaBlob('Promemoria', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Promemoria', 'Elenco promemoria esportato');
+}
+
 function exportImmobiliExcel() {
     var list = ordinaImmobiliPerLista(dedupImmobili(appData.immobili));
     if (!list || list.length === 0) {
@@ -4834,6 +5047,44 @@ function buildMarchioNotifItems() {
     return items;
 }
 
+// Notifiche delle scadenze dei promemoria: un avviso a 30 giorni, uno a 20 e
+// uno a 15, poi ogni giorno negli ultimi 10 giorni (escluso il giorno della
+// scadenza). I promemoria già fatti o senza data non generano notifiche.
+// Le fasce 30/20/15 hanno un'identità fissa, quindi chiudendo il pannello
+// l'avviso non torna fino alla fascia successiva; la fascia quotidiana
+// contiene il giorno corrente e torna ogni giorno.
+function buildPromemoriaNotifItems() {
+    var items = [];
+    var oggiKey = toLocalDateStr(new Date());
+    (appData.promemoria || []).forEach(function(p) {
+        if (p.fatto || !p.data_scadenza) return;
+        var data = String(p.data_scadenza).slice(0, 10);
+        var giorni = daysUntil(data);
+        if (giorni <= 0) return;             // scaduto o scade oggi: stop
+        var phase;
+        if (giorni <= 10) phase = '10-' + oggiKey;       // ogni giorno
+        else if (giorni <= 15) phase = '15';
+        else if (giorni <= 20) phase = '20';
+        else if (giorni <= 30) phase = '30';
+        else return;                        // più di 30 giorni: nessun avviso
+        var quando;
+        if (phase === '30') quando = 'fra 30 giorni';
+        else if (phase === '20') quando = 'fra 20 giorni';
+        else if (phase === '15') quando = 'fra 15 giorni';
+        else quando = giorni === 1 ? 'domani' : 'fra ' + giorni + ' giorni';
+        items.push({
+            key: 'promemoria_' + p.id,
+            date: data,
+            phase: phase,
+            icon: 'fa-thumbtack',
+            cls: giorni <= 10 ? 'danger' : (giorni <= 20 ? 'warning' : 'info'),
+            txt: 'Scadenza del promemoria ' + (p.descrizione || 'senza descrizione') + ' ' + quando,
+            meta: 'Promemoria · ' + formatDate(data)
+        });
+    });
+    return items;
+}
+
 function renderNotifications() {
     var items = [];
 
@@ -4844,6 +5095,10 @@ function renderNotifications() {
     // poi 15 giorni prima, 10 giorni prima e ogni giorno nei 7 giorni
     // precedenti; il giorno della scadenza non viene notificato).
     buildMarchioNotifItems().forEach(function(it) { items.push(it); });
+
+    // Promemoria delle scadenze dei promemoria (30, 20, 15 giorni e ogni
+    // giorno negli ultimi 10).
+    buildPromemoriaNotifItems().forEach(function(it) { items.push(it); });
 
     // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg, 10 gg
     // e ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista

@@ -92,7 +92,8 @@ const TABLES = new Set([
   'contratto_conduttori',
   'contratto_immobili',
   'deleghe',
-  'marchi'
+  'marchi',
+  'promemoria'
 ]);
 
 // Pool di connessioni verso il database dell'app.
@@ -206,6 +207,18 @@ const TABELLE_AGGIUNTE = [
       '  `ragione_sociale` VARCHAR(255) NULL,' +
       '  `codice_fiscale` VARCHAR(16) NULL,' +
       '  `data_scadenza` DATE NULL,' +
+      '  `note` TEXT NULL,' +
+      '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
+      '  PRIMARY KEY (`id`)' +
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+  },
+  {
+    nome: 'promemoria',
+    sql: 'CREATE TABLE IF NOT EXISTS `promemoria` (' +
+      '  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,' +
+      '  `descrizione` VARCHAR(255) NOT NULL,' +
+      '  `data_scadenza` DATE NULL,' +
+      '  `fatto` TINYINT(1) NOT NULL DEFAULT 0,' +
       '  `note` TEXT NULL,' +
       '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
       '  PRIMARY KEY (`id`)' +

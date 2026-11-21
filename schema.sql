@@ -26,6 +26,7 @@ DROP TABLE IF EXISTS contratto_locatori;
 DROP TABLE IF EXISTS canoni_annuali;
 DROP TABLE IF EXISTS scadenze;
 DROP TABLE IF EXISTS deleghe;
+DROP TABLE IF EXISTS promemoria;
 DROP TABLE IF EXISTS contratti;
 DROP TABLE IF EXISTS immobili;
 DROP TABLE IF EXISTS anagrafica_persona;
@@ -65,6 +66,17 @@ CREATE TABLE marchi (
   ragione_sociale VARCHAR(255) NULL,
   codice_fiscale VARCHAR(16) NULL,
   data_scadenza DATE NULL,
+  note TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Promemoria (cose da fare)
+CREATE TABLE promemoria (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  descrizione VARCHAR(255) NOT NULL,
+  data_scadenza DATE NULL,
+  fatto TINYINT(1) NOT NULL DEFAULT 0,
   note TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)

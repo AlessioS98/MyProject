@@ -764,6 +764,31 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     transform: rotate(-90deg);
 }
 
+/* Promemoria completati: riga verde e badge OK accanto alla descrizione */
+.data-table tr.promemoria-fatto td {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.data-table tr.promemoria-fatto td strong {
+    color: var(--success);
+}
+
+.promemoria-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: var(--success);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
+
 .header-actions {
     display: flex;
     gap: 10px;

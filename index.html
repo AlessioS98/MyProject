@@ -66,6 +66,10 @@
                 </a>
             </div>
 
+            <a href="#" class="nav-item" data-page="promemoria">
+                <i class="fas fa-thumbtack"></i>
+                <span>Promemoria</span>
+            </a>
 
         </nav>
         <div class="sidebar-footer">
@@ -474,6 +478,39 @@
                         </tr>
                     </thead>
                     <tbody id="scadenzeMarchiTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Promemoria -->
+        <section class="page" id="page-promemoria">
+            <div class="page-header">
+                <div>
+                    <h1>Promemoria</h1>
+                    <p class="page-subtitle">Promemoria e cose da fare</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-promemoria-excel" title="Scarica in Excel l'elenco dei promemoria">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                    <button class="btn btn-primary" data-action="new-promemoria">
+                        <i class="fas fa-plus"></i> Nuovo Promemoria
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Descrizione</th>
+                            <th>Scadenza</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="promemoriaTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
