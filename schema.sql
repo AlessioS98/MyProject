@@ -56,6 +56,20 @@ CREATE TABLE deleghe (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Marchi (marchi registrati)
+CREATE TABLE marchi (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  numero_identificativo VARCHAR(100) NULL,
+  cognome VARCHAR(255) NULL,
+  nome VARCHAR(255) NULL,
+  ragione_sociale VARCHAR(255) NULL,
+  codice_fiscale VARCHAR(16) NULL,
+  data_scadenza DATE NULL,
+  note TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 2. Immobili
 CREATE TABLE immobili (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

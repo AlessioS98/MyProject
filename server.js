@@ -91,7 +91,8 @@ const TABLES = new Set([
   'contratto_locatori',
   'contratto_conduttori',
   'contratto_immobili',
-  'deleghe'
+  'deleghe',
+  'marchi'
 ]);
 
 // Pool di connessioni verso il database dell'app.
@@ -147,7 +148,21 @@ const COLONNE_AGGIUNTE = [
   ['canoni_annuali', 'a_carico_di', "VARCHAR(20) NOT NULL DEFAULT '50'"],
   ['deleghe', 'data_scadenza_delega_unica', 'DATE NULL'],
   ['deleghe', 'data_scadenza_fatture_corrispettivi', 'DATE NULL'],
-  ['deleghe', 'data_scadenza_cassetto_fiscale', 'DATE NULL']
+  ['deleghe', 'data_scadenza_cassetto_fiscale', 'DATE NULL'],
+  ['marchi', 'numero_identificativo', 'VARCHAR(100) NULL'],
+  ['marchi', 'cognome', 'VARCHAR(255) NULL'],
+  ['marchi', 'nome', 'VARCHAR(255) NULL'],
+  ['marchi', 'ragione_sociale', 'VARCHAR(255) NULL'],
+  ['marchi', 'codice_fiscale', 'VARCHAR(16) NULL']
+];
+
+// Colonne cambiate dopo la prima versione (devono restare compatibili con i
+// dati gia' presenti): la modifica viene applicata solo se serve.
+const COLONNE_MODIFICATE = [
+  // 'denominazione' era obbligatoria nella prima versione della tabella:
+  // ora i marchi usano numero identificativo e soggetto, quindi la colonna
+  // resta solo per i dati preesistenti e non deve piu' bloccare gli insert.
+  ['marchi', 'denominazione', 'VARCHAR(255) NULL']
 ];
 
 // Tabelle introdotte dopo la prima versione dello schema: vengono create
@@ -180,6 +195,21 @@ const TABELLE_AGGIUNTE = [
       '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
       '  PRIMARY KEY (`id`)' +
       ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+  },
+  {
+    nome: 'marchi',
+    sql: 'CREATE TABLE IF NOT EXISTS `marchi` (' +
+      '  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,' +
+      '  `numero_identificativo` VARCHAR(100) NULL,' +
+      '  `cognome` VARCHAR(255) NULL,' +
+      '  `nome` VARCHAR(255) NULL,' +
+      '  `ragione_sociale` VARCHAR(255) NULL,' +
+      '  `codice_fiscale` VARCHAR(16) NULL,' +
+      '  `data_scadenza` DATE NULL,' +
+      '  `note` TEXT NULL,' +
+      '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
+      '  PRIMARY KEY (`id`)' +
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
   }
 ];
 
@@ -204,6 +234,20 @@ async function ensureColonna(tabella, colonna, definizione) {
   );
   if (rows[0] && rows[0].n > 0) return false;
   await pool.query('ALTER TABLE `' + tabella + '` ADD COLUMN `' + colonna + '` ' + definizione);
+  meta = null;
+  metaPromise = null;
+  return true;
+}
+
+async function ensureColonnaModificata(tabella, colonna, definizione) {
+  const [rows] = await pool.query(
+    'SELECT IS_NULLABLE FROM information_schema.columns ' +
+    'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+    [DB_NAME, tabella, colonna]
+  );
+  if (!rows[0]) return false;
+  if (rows[0].IS_NULLABLE === 'YES') return false;
+  await pool.query('ALTER TABLE `' + tabella + '` MODIFY COLUMN `' + colonna + '` ' + definizione);
   meta = null;
   metaPromise = null;
   return true;
@@ -655,6 +699,19 @@ process.on('exit', rimuoviPidFile);
     await boot.end();
     const [[r]] = await pool.query('SELECT VERSION() AS v');
     console.log('Connesso a MySQL ' + r.v + ' (database: ' + DB_NAME + ')');
+    // Crea prima le tabelle introdotte dopo l'importazione iniziale dello
+    // schema, cosi' le colonne nuove possono essere aggiunte subito anche su
+    // un database creato dal server.
+    for (const t of TABELLE_AGGIUNTE) {
+      try {
+        if (await ensureTabella(t.nome, t.sql)) {
+          console.log('Creata tabella ' + t.nome + ' nel database.');
+        }
+      } catch (e) {
+        console.warn('ATTENZIONE: impossibile creare la tabella ' + t.nome +
+          '. Importa lo schema aggiornato (' + (e.message || e) + ')');
+      }
+    }
     // Aggiunge le colonne introdotte dopo l'importazione iniziale dello schema
     for (const [tabella, colonna, definizione] of COLONNE_AGGIUNTE) {
       try {
@@ -666,14 +723,14 @@ process.on('exit', rimuoviPidFile);
           '. Importa lo schema aggiornato (' + (e.message || e) + ')');
       }
     }
-    // Crea le tabelle introdotte dopo l'importazione iniziale dello schema
-    for (const t of TABELLE_AGGIUNTE) {
+    // Aggiorna le colonne cambiate dopo la prima versione dello schema
+    for (const [tabella, colonna, definizione] of COLONNE_MODIFICATE) {
       try {
-        if (await ensureTabella(t.nome, t.sql)) {
-          console.log('Creata tabella ' + t.nome + ' nel database.');
+        if (await ensureColonnaModificata(tabella, colonna, definizione)) {
+          console.log('Aggiornata colonna ' + tabella + '.' + colonna + ' al database.');
         }
       } catch (e) {
-        console.warn('ATTENZIONE: impossibile creare la tabella ' + t.nome +
+        console.warn('ATTENZIONE: impossibile aggiornare ' + tabella + '.' + colonna +
           '. Importa lo schema aggiornato (' + (e.message || e) + ')');
       }
     }

@@ -11,7 +11,7 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -1385,7 +1385,8 @@ async function loadAllData() {
             db.from('contratto_locatori').select('*'),
             db.from('contratto_conduttori').select('*'),
             db.from('contratto_immobili').select('*'),
-            db.from('deleghe').select('*')
+            db.from('deleghe').select('*'),
+            db.from('marchi').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1399,7 +1400,7 @@ async function loadAllData() {
         }
         var persone = results[0], immobili = results[1], contratti = results[2],
             scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
-            immRel = results[7], deleghe = results[8];
+            immRel = results[7], deleghe = results[8], marchi = results[9];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1409,6 +1410,7 @@ async function loadAllData() {
         appData.contratto_conduttori = condRel.data || [];
         appData.contratto_immobili = immRel.data || [];
         appData.deleghe = deleghe.data || [];
+        appData.marchi = marchi.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1631,14 +1633,16 @@ function renderScadenzeDeleghe() {
         });
     });
 
-    // Statistiche: entro 30 giorni, scadute, future; deleghe con/senza date
-    var entro30 = items.filter(function(it) { return it.giorni > 0 && it.giorni <= 30; });
+    // Statistiche: non scadute (tutte le date future, anche oltre i 30
+    // giorni), scadute e quante rientrano nei prossimi 20 giorni (la fascia
+    // dei promemoria); totale deleghe
+    var entro20 = items.filter(function(it) { return it.giorni > 0 && it.giorni <= 20; });
     var scadute = items.filter(function(it) { return it.giorni <= 0; });
-    var future = items.filter(function(it) { return it.giorni > 30; });
+    var nonScadute = items.filter(function(it) { return it.giorni > 0; });
     var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
-    setTxt('statDelegheEntro30', entro30.length);
+    setTxt('statDelegheNonScadute', nonScadute.length);
     setTxt('statDelegheScadute', scadute.length);
-    setTxt('statDelegheFuture', future.length);
+    setTxt('statDelegheEntro20', entro20.length);
     setTxt('statDelegheTotale', deleghe.length);
 
     // Filtri per tipo di scadenza e per stato
@@ -1707,10 +1711,10 @@ function delegaFormHtml(d) {
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Persona Fisica</label>';
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Azienda</label>';
     html += '</div></div>';
+    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off" value="' + esc(d && d.codice_fiscale) + '"></div>';
     html += '<div class="form-group" id="dlGrpCognome"><label>Cognome</label><input type="text" id="dl_cognome" autocomplete="off" value="' + esc(d && d.cognome) + '"></div>';
     html += '<div class="form-group" id="dlGrpNome"><label>Nome</label><input type="text" id="dl_nome" autocomplete="off" value="' + esc(d && d.nome) + '"></div>';
     html += '<div class="form-group" id="dlGrpRs"><label>Ragione Sociale</label><input type="text" id="dl_rs" autocomplete="off" value="' + esc(d && d.ragione_sociale) + '"></div>';
-    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off" value="' + esc(d && d.codice_fiscale) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza Delega Unica</label><input type="date" id="dl_dec_unica" autocomplete="off" value="' + dataVal(d && d.data_scadenza_delega_unica) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza Cassetto Fiscale</label><input type="date" id="dl_dec_cassetto" autocomplete="off" value="' + dataVal(d && d.data_scadenza_cassetto_fiscale) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza Fatture e Corrispettivi</label><input type="date" id="dl_dec_fatture" autocomplete="off" value="' + dataVal(d && d.data_scadenza_fatture_corrispettivi) + '"></div>';
@@ -1735,6 +1739,251 @@ async function deleteDelega(id) {
     showToast('Delega eliminata', 'info');
 }
 
+// --- Marchi ---
+// Elenco in ordine alfabetico di denominazione
+function ordinaMarchiPerLista(list) {
+    // Prima per numero identificativo (ordine numerico dove possibile), poi
+    // per soggetto: utile per le righe senza numero o con numeri uguali.
+    function chiave(m) {
+        return [
+            (m.numero_identificativo || '').toLowerCase(),
+            (getMarchioLabel(m) || '').toLowerCase()
+        ];
+    }
+    return (list || []).slice().sort(function(a, b) {
+        var ka = chiave(a);
+        var kb = chiave(b);
+        var cmp = ka[0].localeCompare(kb[0], 'it', { numeric: true });
+        if (cmp !== 0) return cmp;
+        return ka[1].localeCompare(kb[1], 'it');
+    });
+}
+
+function getMarchioLabel(m) {
+    if (!m) return '';
+    var nome = [m.cognome, m.nome].filter(Boolean).join(' ');
+    // I dati piu' vecchi avevano solo la denominazione: resta come fallback
+    return m.ragione_sociale || nome || m.numero_identificativo || m.denominazione || ('Marchio #' + m.id);
+}
+
+// Tipo del marchio in creazione/modifica: stessa logica di contratti e deleghe
+function getMarchioTipo() {
+    var radio = document.querySelector('input[name="mk_tipo"]:checked');
+    return radio ? radio.value : 'pf';
+}
+
+function toggleMarchioType(tipo) {
+    var isAzienda = tipo === 'azienda';
+    var cogEl = document.getElementById('mk_cognome');
+    var nomEl = document.getElementById('mk_nome');
+    var rsEl = document.getElementById('mk_rs');
+    var grpCog = document.getElementById('mkGrpCognome');
+    var grpNom = document.getElementById('mkGrpNome');
+    var grpRs = document.getElementById('mkGrpRs');
+    if (cogEl) cogEl.disabled = isAzienda;
+    if (nomEl) nomEl.disabled = isAzienda;
+    if (rsEl) rsEl.disabled = !isAzienda;
+    if (grpCog) grpCog.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpNom) grpNom.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpRs) grpRs.style.opacity = isAzienda ? '1' : '0.4';
+}
+
+function renderMarchi() {
+    var tbody = document.getElementById('marchiTableBody');
+    if (!tbody) return;
+    var list = ordinaMarchiPerLista(appData.marchi);
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun marchio presente</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(m) {
+        return '<tr><td><strong>' + (m.numero_identificativo || '-') + '</strong></td>' +
+            '<td>' + getMarchioLabel(m) + '</td>' +
+            '<td>' + (m.codice_fiscale || '-') + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="view-marchio" data-id="' + m.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
+            '<button type="button" data-action="edit-marchio" data-id="' + m.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-marchio" data-id="' + m.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
+    }).join('');
+}
+
+// Scheda del marchio condivisa da creazione e modifica: i campi sono
+// precompilati quando si modifica un marchio esistente.
+function marchioFormHtml(m) {
+    var isAz = !!(m && m.ragione_sociale && !m.nome && !m.cognome);
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+    };
+    var dataVal = function(x) { return x ? String(x).slice(0, 10) : ''; };
+    var html = '<form id="marchioForm" class="form-grid">';
+    html += '<input type="hidden" id="mk_id" value="' + (m && m.id ? m.id : '') + '">';
+    html += '<div class="form-group"><label>Numero Identificativo <span class="req">*</span></label><input type="text" id="mk_numero_id" autocomplete="off" value="' + esc(m && m.numero_identificativo) + '" required></div>';
+    html += '<div class="form-group full"><label>Tipo</label>';
+    html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mk_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleMarchioType(this.value)"> Persona Fisica</label>';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mk_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleMarchioType(this.value)"> Azienda</label>';
+    html += '</div></div>';
+    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="mk_cf" autocomplete="off" value="' + esc(m && m.codice_fiscale) + '"></div>';
+    html += '<div class="form-group" id="mkGrpCognome"><label>Cognome</label><input type="text" id="mk_cognome" autocomplete="off" value="' + esc(m && m.cognome) + '"></div>';
+    html += '<div class="form-group" id="mkGrpNome"><label>Nome</label><input type="text" id="mk_nome" autocomplete="off" value="' + esc(m && m.nome) + '"></div>';
+    html += '<div class="form-group" id="mkGrpRs"><label>Ragione Sociale</label><input type="text" id="mk_rs" autocomplete="off" value="' + esc(m && m.ragione_sociale) + '"></div>';
+    html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="mk_scadenza" autocomplete="off" value="' + dataVal(m && m.data_scadenza) + '"></div>';
+    html += '<div class="form-group full"><label>Note</label><textarea id="mk_note">' + esc(m && m.note) + '</textarea></div>';
+    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '</form>';
+    return html;
+}
+
+async function saveMarchio() {
+    var id = parseInt((document.getElementById('mk_id') || {}).value) || 0;
+    var numero = document.getElementById('mk_numero_id').value.trim();
+    var cognome = document.getElementById('mk_cognome').value.trim();
+    var nome = document.getElementById('mk_nome').value.trim();
+    var ragione = document.getElementById('mk_rs').value.trim();
+    var cf = document.getElementById('mk_cf').value.trim();
+    var dataScadenza = document.getElementById('mk_scadenza').value || null;
+    var note = document.getElementById('mk_note').value.trim() || null;
+    if (!numero) {
+        showToast('Inserisci il numero identificativo del marchio.', 'error');
+        return;
+    }
+    // Il tipo scelto determina quali campi valgono (come nel contratto:
+    // una persona fisica non ha ragione sociale, un'azienda non ha nome/cognome)
+    if (getMarchioTipo() === 'azienda') {
+        cognome = '';
+        nome = '';
+        if (!ragione) {
+            showToast('Inserisci la ragione sociale.', 'error');
+            return;
+        }
+    } else {
+        ragione = '';
+        if (!cognome && !nome) {
+            showToast('Inserisci cognome e nome.', 'error');
+            return;
+        }
+    }
+    var dati = {
+        numero_identificativo: numero,
+        cognome: cognome || null,
+        nome: nome || null,
+        ragione_sociale: ragione || null,
+        codice_fiscale: cf || null,
+        data_scadenza: dataScadenza,
+        note: note
+    };
+    if (id) {
+        var upd = await db.from('marchi').update(dati).eq('id', id);
+        if (upd.error) {
+            console.error('Errore update marchio:', upd.error);
+            showToast('Errore salvataggio marchio', 'error');
+            return;
+        }
+        var idx = appData.marchi.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.marchi[idx], dati);
+    } else {
+        var ins = await db.from('marchi').insert(dati).select('id').single();
+        if (ins.error) {
+            console.error('Errore insert marchio:', ins.error);
+            showToast('Errore salvataggio marchio', 'error');
+            return;
+        }
+        appData.marchi.push({ id: ins.data.id, ...dati });
+    }
+    closeModal();
+    renderMarchi();
+    showToast(id ? 'Marchio aggiornato!' : 'Marchio salvato!', 'success');
+}
+
+async function deleteMarchio(id) {
+    var { error } = await db.from('marchi').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.marchi = appData.marchi.filter(function(m) { return m.id !== id; });
+    closeModal();
+    renderMarchi();
+    showToast('Marchio eliminato', 'info');
+}
+
+// Scadenze dei marchi: una riga per ogni marchio con data di scadenza, con
+// la stessa impostazione della pagina Scadenze delle deleghe.
+function renderScadenzeMarchi() {
+    var tbody = document.getElementById('scadenzeMarchiTableBody');
+    if (!tbody) return;
+
+    var marchi = appData.marchi || [];
+    var items = [];
+    marchi.forEach(function(m) {
+        if (!m.data_scadenza) return;
+        var data = String(m.data_scadenza).slice(0, 10);
+        items.push({
+            id: m.id,
+            numero: m.numero_identificativo || '-',
+            soggetto: getMarchioLabel(m),
+            data: data,
+            giorni: daysUntil(data)
+        });
+    });
+
+    // Statistiche: marchi non scaduti (senza data o con data futura, senza
+    // limite di giorni) e marchi scaduti; totale marchi
+    var nonScaduti = marchi.filter(function(m) {
+        return !m.data_scadenza || daysUntil(String(m.data_scadenza).slice(0, 10)) > 0;
+    }).length;
+    var scaduti = marchi.filter(function(m) {
+        return !!m.data_scadenza && daysUntil(String(m.data_scadenza).slice(0, 10)) <= 0;
+    }).length;
+    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('statMarchiNonScaduti', nonScaduti);
+    setTxt('statMarchiScadute', scaduti);
+    setTxt('statMarchiTotale', marchi.length);
+
+    // Filtro di stato
+    var statoSel = document.getElementById('filterMarchioScadenzaStato');
+    var statoFiltro = statoSel ? statoSel.value : 'future';
+    if (statoFiltro === 'future') {
+        items = items.filter(function(it) { return it.giorni > 0; });
+    } else if (statoFiltro === 'scadute') {
+        items = items.filter(function(it) { return it.giorni <= 0; });
+    }
+
+    // Ordine: dalla scadenza più prossima a quella più vecchia. Prima le
+    // scadenze non ancora passate dalla più vicina in avanti, poi quelle
+    // passate dalla più recente alla più vecchia.
+    items.sort(function(a, b) {
+        var aPassata = a.giorni <= 0;
+        var bPassata = b.giorni <= 0;
+        if (aPassata !== bPassata) return aPassata ? 1 : -1;
+        var cmp = aPassata
+            ? b.data.localeCompare(a.data)
+            : a.data.localeCompare(b.data);
+        if (cmp !== 0) return cmp;
+        cmp = a.soggetto.localeCompare(b.soggetto, 'it');
+        if (cmp !== 0) return cmp;
+        return a.numero.localeCompare(b.numero, 'it', { numeric: true });
+    });
+
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map(function(it) {
+        var urg = it.giorni <= 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
+        var rowCls = it.giorni <= 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
+        var giorniLabel = it.giorni > 0
+            ? 'tra ' + it.giorni + ' gg'
+            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
+        return '<tr' + rowCls + '>' +
+            '<td><strong>' + it.numero + '</strong></td>' +
+            '<td>' + it.soggetto + '</td>' +
+            '<td>' + formatDate(it.data) + '</td>' +
+            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
+            '<td><div class="td-actions"><button type="button" data-action="view-marchio" data-id="' + it.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td>' +
+            '</tr>';
+    }).join('');
+}
+
 async function refreshPage(page) {
     switch (page) {
         case 'contratti': await renderContratti(); break;
@@ -1742,6 +1991,8 @@ async function refreshPage(page) {
         case 'generale': renderGenerale(); break;
         case 'deleghe': renderDeleghe(); break;
         case 'scadenze-deleghe': renderScadenzeDeleghe(); break;
+        case 'marchi': renderMarchi(); break;
+        case 'scadenze-marchi': renderScadenzeMarchi(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -1775,6 +2026,12 @@ document.addEventListener('click', function(e) {
         case 'view-delega': openModal('viewDelega', id); break;
         case 'delete-delega': openModal('deleteDelegaConfirm', id); break;
         case 'confirm-delete-delega': deleteDelega(id); break;
+        case 'new-marchio': openModal('newMarchio'); break;
+        case 'edit-marchio': openModal('editMarchio', id); break;
+        case 'view-marchio': openModal('viewMarchio', id); break;
+        case 'delete-marchio': openModal('deleteMarchioConfirm', id); break;
+        case 'confirm-delete-marchio': deleteMarchio(id); break;
+        case 'export-marchi-excel': exportMarchiExcel(); break;
         case 'export-deleghe-excel': exportDelegheExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
@@ -2442,6 +2699,44 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-delega" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'newMarchio') {
+        title.textContent = 'Nuovo Marchio';
+        html = marchioFormHtml(null);
+
+    } else if (type === 'editMarchio') {
+        var ma = appData.marchi.find(function(x) { return x.id === id; });
+        if (!ma) return;
+        title.textContent = 'Modifica Marchio';
+        html = marchioFormHtml(ma);
+
+    } else if (type === 'viewMarchio') {
+        var mv = appData.marchi.find(function(x) { return x.id === id; });
+        if (!mv) return;
+        title.textContent = 'Dettagli Marchio';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md)">';
+        html += '<div class="contract-detail"><label>Numero Identificativo</label><span>' + (mv.numero_identificativo || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Tipo</label><span>' + ((mv.ragione_sociale && !mv.nome && !mv.cognome) ? 'Azienda' : 'Persona Fisica') + '</span></div>';
+        html += '<div class="contract-detail"><label>Cognome</label><span>' + (mv.cognome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Nome</label><span>' + (mv.nome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Ragione Sociale</label><span>' + (mv.ragione_sociale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Codice Fiscale</label><span>' + (mv.codice_fiscale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Scadenza</label><span>' + formatDate(mv.data_scadenza) + '</span></div>';
+        html += '<div class="contract-detail"><label>Note</label><span>' + (mv.note || '-') + '</span></div>';
+        html += '</div>';
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'deleteMarchioConfirm') {
+        var md = appData.marchi.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Marchio';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare il marchio <strong>' + (md ? getMarchioLabel(md) : 'N/A') + '</strong>.</span>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-marchio" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
     } else if (type === 'listaPersone') {
         var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
         title.textContent = 'Anagrafiche Persone (' + personeList.length + ')';
@@ -2714,6 +3009,36 @@ function openModal(type, id) {
         toggleDelegaType(getDelegaType());
     }
 
+
+    var mkf = document.getElementById('marchioForm');
+    if (mkf) {
+        mkf.addEventListener('submit', function(e) { e.preventDefault(); saveMarchio(); });
+        // Suggerimenti dai dati gia' presenti, stessa logica del contratto:
+        // Cognome/Nome/Ragione Sociale propongono i valori dell'anagrafica;
+        // il Codice Fiscale propone i soggetti e, alla scelta, imposta anche
+        // il tipo (persona fisica o azienda) e compila gli altri campi.
+        setupPersonFieldAutocomplete(document.getElementById('mk_cognome'), 'cognome');
+        setupPersonFieldAutocomplete(document.getElementById('mk_nome'), 'nome');
+        setupPersonFieldAutocomplete(document.getElementById('mk_rs'), 'ragione_sociale');
+        var mkCf = document.getElementById('mk_cf');
+        if (mkCf) setupCfAutocomplete(mkCf, mkf, {
+            tipo: 'tutti',
+            onPick: function(p) {
+                var isAz = !!(p.ragione_sociale && !p.nome);
+                var radio = mkf.querySelector('input[name="mk_tipo"][value="' + (isAz ? 'azienda' : 'pf') + '"]');
+                if (radio) radio.checked = true;
+                var c = document.getElementById('mk_cognome');
+                var n = document.getElementById('mk_nome');
+                var r = document.getElementById('mk_rs');
+                if (c) c.value = p.cognome || '';
+                if (n) n.value = p.nome || '';
+                if (r) r.value = p.ragione_sociale || '';
+                toggleMarchioType(isAz ? 'azienda' : 'pf');
+            }
+        });
+        // Stato iniziale dei campi in base al tipo selezionato (default PF)
+        toggleMarchioType(getMarchioTipo());
+    }
 
     // Delete confirmation modal
     var deleteInput = document.getElementById('deleteConfirmInput');
@@ -4049,6 +4374,33 @@ function exportDelegheExcel() {
     var titolo = 'Elenco deleghe - esportato il ' + istanteExcel() + ' (' + list.length + ' deleghe)';
     var blob = creaXlsxListaBlob('Deleghe', titolo, COLONNE, LARGHEZZE, righeDati, null);
     scaricaXlsx(blob, 'Gestione_Contratti_Deleghe', 'Elenco deleghe esportato');
+}
+
+function exportMarchiExcel() {
+    var list = ordinaMarchiPerLista(appData.marchi);
+    if (list.length === 0) {
+        showToast('Nessun marchio da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Numero Identificativo', 'Cognome', 'Nome', 'Ragione Sociale', 'Codice Fiscale', 'Data Scadenza', 'Note'];
+    var LARGHEZZE = [18, 22, 22, 34, 20, 16, 50];
+
+    var righeDati = list.map(function(m) {
+        return [
+            { t: 's', s: S_TESTO, v: m.numero_identificativo || '' },
+            { t: 's', s: S_TESTO, v: m.cognome || '' },
+            { t: 's', s: S_TESTO, v: m.nome || '' },
+            { t: 's', s: S_TESTO, v: m.ragione_sociale || '' },
+            { t: 's', s: S_TESTO, v: m.codice_fiscale || '' },
+            { t: 's', s: S_TESTO, v: m.data_scadenza ? formatDateExcel(m.data_scadenza) : '' },
+            { t: 's', s: S_TESTO, v: m.note || '' }
+        ];
+    });
+
+    var titolo = 'Elenco marchi - esportato il ' + istanteExcel() + ' (' + list.length + ' marchi)';
+    var blob = creaXlsxListaBlob('Marchi', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Marchi', 'Elenco marchi esportato');
 }
 
 function exportImmobiliExcel() {

@@ -54,6 +54,17 @@
                     <span>Scadenze</span>
                 </a>
             </div>
+            <div class="nav-group">
+                <div class="nav-group-title">Gestione Marchi</div>
+                <a href="#" class="nav-item" data-page="marchi">
+                    <i class="fas fa-registered"></i>
+                    <span>Marchi</span>
+                </a>
+                <a href="#" class="nav-item" data-page="scadenze-marchi">
+                    <i class="fas fa-calendar-check"></i>
+                    <span>Scadenze</span>
+                </a>
+            </div>
 
 
         </nav>
@@ -298,11 +309,11 @@
                 <div class="stat-card stat-orange" style="grid-column:span 2">
                     <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
                     <div class="stat-info">
-                        <span class="stat-value" id="statDelegheEntro30">0</span>
-                        <span class="stat-label">Scadenze Entro 30 Giorni</span>
+                        <span class="stat-value" id="statDelegheNonScadute">0</span>
+                        <span class="stat-label">Non Scadute</span>
                         <div class="stat-mini">
                             <span><strong id="statDelegheScadute">0</strong> scadute</span>
-                            <span><strong id="statDelegheFuture">0</strong> non scadute</span>
+                            <span><strong id="statDelegheEntro20">0</strong> entro 20 gg</span>
                         </div>
                     </div>
                 </div>
@@ -343,6 +354,97 @@
                         </tr>
                     </thead>
                     <tbody id="scadenzeDelegheTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Marchi -->
+        <section class="page" id="page-marchi">
+            <div class="page-header">
+                <div>
+                    <h1>Marchi</h1>
+                    <p class="page-subtitle">Gestisci i marchi registrati</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-marchi-excel" title="Scarica in Excel l'elenco dei marchi">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                    <button class="btn btn-primary" data-action="new-marchio">
+                        <i class="fas fa-plus"></i> Nuovo Marchio
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>N. Identificativo</th>
+                            <th>Soggetto</th>
+                            <th>Codice Fiscale</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="marchiTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Scadenze Marchi -->
+        <section class="page" id="page-scadenze-marchi">
+            <div class="page-header">
+                <div>
+                    <h1>Scadenze</h1>
+                    <p class="page-subtitle" id="scadenzeMarchiSubtitle">Scadenze dei marchi</p>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card stat-orange" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statMarchiNonScaduti">0</span>
+                        <span class="stat-label">Non Scaduti</span>
+                        <div class="stat-mini">
+                            <span><strong id="statMarchiScadute">0</strong> scaduti</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card stat-blue" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-registered"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statMarchiTotale">0</span>
+                        <span class="stat-label">Marchi</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterMarchioScadenzaStato" class="filter-select" onchange="renderScadenzeMarchi()" title="Filtra per stato">
+                        <option value="future">Non scadute</option>
+                        <option value="scadute">Scadute</option>
+                        <option value="tutte">Tutte</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>N. Identificativo</th>
+                            <th>Soggetto</th>
+                            <th>Data Scadenza</th>
+                            <th>Giorni</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scadenzeMarchiTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
