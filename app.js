@@ -1465,10 +1465,124 @@ function navigateTo(page) {
     aggiornaTitoloSezione(page);
     refreshPage(page);
 }
+// --- Pagina Generale: tutte le scadenze ---
+// Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
+// scadenza dei contratti non chiusi, le tre date delle deleghe e la scadenza
+// dei marchi. L'ordine è quello della scadenza più prossima: prima oggi e le
+// date future dalla più vicina in avanti, poi quelle passate dalla più
+// recente alla più vecchia.
+function renderGeneraleScadenze() {
+    var tbody = document.getElementById('generaleScadenzeTableBody');
+    if (!tbody) return;
+
+    var items = [];
+
+    // Scadenze di pagamento: in attesa o archiviate come scadute (quindi
+    // ancora da saldare). Le completate non sono più scadenze da tenere
+    // d'occhio; cedolare secca e date oltre il termine del contratto non
+    // prevedono versamenti.
+    (appData.scadenze || []).forEach(function(s) {
+        if (!s.prossima_scadenza) return;
+        if (isScadenzaCompletata(s)) return;
+        if (isScadenzaCedolare(s) || isScadenzaOltreTermine(s)) return;
+        var data = getScadenzaDataMostrata(s);
+        if (!data) return;
+        var c = getContrattoById(s.contratto_id);
+        var parti = c ? getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id) : '';
+        items.push({
+            data: data,
+            tipo: 'Pagamento',
+            icon: 'fa-euro-sign',
+            dettaglio: (c ? c.identificativo : 'Contratto #' + s.contratto_id) +
+                (parti ? ' · ' + parti : '') +
+                (s.importo != null ? ' · ' + formatCurrency(s.importo) : '')
+        });
+    });
+
+    // Scadenza dei contratti non chiusi (data di rinnovo se presente).
+    (appData.contratti || []).forEach(function(c) {
+        if (c.data_chiusura) return;
+        var data = getContrattoScadenzaEffettiva(c);
+        if (!data) return;
+        items.push({
+            data: String(data).slice(0, 10),
+            tipo: 'Contratto',
+            icon: 'fa-file-contract',
+            dettaglio: (c.identificativo || 'Contratto #' + c.id) + ' · ' +
+                getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id)
+        });
+    });
+
+    // Le tre date delle deleghe.
+    var TIPI_DELEGA = [
+        { campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
+        { campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
+        { campo: 'data_scadenza_fatture_corrispettivi', label: 'Fatture e Corrispettivi' }
+    ];
+    (appData.deleghe || []).forEach(function(d) {
+        TIPI_DELEGA.forEach(function(t) {
+            var data = d[t.campo];
+            if (!data) return;
+            items.push({
+                data: String(data).slice(0, 10),
+                tipo: 'Delega',
+                icon: 'fa-file-signature',
+                dettaglio: t.label + ' · ' + getDelegaLabel(d)
+            });
+        });
+    });
+
+    // Scadenza dei marchi.
+    (appData.marchi || []).forEach(function(m) {
+        if (!m.data_scadenza) return;
+        items.push({
+            data: String(m.data_scadenza).slice(0, 10),
+            tipo: 'Marchio',
+            icon: 'fa-registered',
+            dettaglio: (m.numero_identificativo ? 'N. ' + m.numero_identificativo + ' · ' : '') + getMarchioLabel(m)
+        });
+    });
+
+    items.forEach(function(it) { it.giorni = daysUntil(it.data); });
+    items.sort(function(a, b) {
+        // Oggi (0 giorni) non è ancora passata: è la scadenza più prossima
+        var aPassata = a.giorni < 0;
+        var bPassata = b.giorni < 0;
+        if (aPassata !== bPassata) return aPassata ? 1 : -1;
+        var cmp = aPassata
+            ? b.data.localeCompare(a.data)
+            : a.data.localeCompare(b.data);
+        if (cmp !== 0) return cmp;
+        cmp = a.tipo.localeCompare(b.tipo, 'it');
+        if (cmp !== 0) return cmp;
+        return a.dettaglio.localeCompare(b.dettaglio, 'it');
+    });
+
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza presente</p></div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map(function(it) {
+        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
+        var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 7 ? ' class="alert-in-scadenza"' : '');
+        var giorniLabel = it.giorni > 0
+            ? 'tra ' + it.giorni + ' gg'
+            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
+        return '<tr' + rowCls + '>' +
+            '<td><strong>' + formatDate(it.data) + '</strong></td>' +
+            '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
+            '<td>' + it.dettaglio + '</td>' +
+            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
+            '</tr>';
+    }).join('');
+}
+
 // --- Pagina Generale: elenco anagrafiche ---
-// Per ora la schermata "Generale" mostra la lista delle anagrafiche persone;
-// in futuro ospiterà anche altre sezioni.
+// La schermata "Generale" mostra le anagrafiche persone e, sotto, tutte le
+// scadenze di contratti, pagamenti, deleghe e marchi.
 function renderGenerale() {
+    renderGeneraleScadenze();
     var tbody = document.getElementById('generaleTableBody');
     if (!tbody) return;
     var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
@@ -1490,6 +1604,18 @@ function renderGenerale() {
             '<button type="button" class="danger" data-action="delete-persona" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
             '</div></td></tr>';
     }).join('');
+}
+
+// Mostra/nasconde un elenco della pagina Generale dalla freccia accanto al
+// titolo della sezione. Lo stato resta finché la pagina non viene ricaricata.
+function toggleGeneraleSection(btn) {
+    var target = document.getElementById(btn.getAttribute('data-target'));
+    if (!target) return;
+    var mostra = target.hidden;
+    target.hidden = !mostra;
+    btn.setAttribute('aria-expanded', mostra ? 'true' : 'false');
+    var label = btn.getAttribute('data-label') || 'elenco';
+    btn.title = (mostra ? 'Nascondi ' : 'Mostra ') + label;
 }
 
 // --- Deleghe ---
@@ -2025,6 +2151,7 @@ document.addEventListener('click', function(e) {
         case 'confirm-restore-scadenza': ripristinaScadenza(id); break;
 
         case 'export-persone-excel': exportPersoneExcel(); break;
+        case 'toggle-generale-section': toggleGeneraleSection(btn); break;
         case 'new-delega': openModal('newDelega'); break;
         case 'edit-delega': openModal('editDelega', id); break;
         case 'view-delega': openModal('viewDelega', id); break;

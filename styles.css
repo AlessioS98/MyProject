@@ -705,6 +705,65 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     line-height: 1.5;
 }
 
+/* Separatore tra le sezioni della pagina Generale (anagrafiche / scadenze) */
+.section-divider {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 28px 0 22px;
+}
+
+.section-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.section-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.section-heading p {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* Freccia che mostra/nasconde un elenco della pagina Generale */
+.section-toggle {
+    margin-left: auto;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.section-toggle:hover {
+    background: var(--primary-bg);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.section-toggle i {
+    transition: transform var(--transition);
+}
+
+.section-toggle[aria-expanded="false"] i {
+    transform: rotate(-90deg);
+}
+
 .header-actions {
     display: flex;
     gap: 10px;
