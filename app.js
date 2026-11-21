@@ -1594,7 +1594,102 @@ async function saveDelega() {
     }
     closeModal();
     renderDeleghe();
+    // Aggiorna subito la campanella: una nuova scadenza entro i 20 giorni
+    // compare senza aspettare la navigazione.
+    renderNotifications();
     showToast(id ? 'Delega aggiornata!' : 'Delega salvata!', 'success');
+}
+
+// Scadenze delle deleghe: una riga per ogni data impostata (Delega Unica,
+// Cassetto Fiscale, Fatture e Corrispettivi), con la stessa impostazione
+// della pagina Scadenze dei contratti.
+function renderScadenzeDeleghe() {
+    var tbody = document.getElementById('scadenzeDelegheTableBody');
+    if (!tbody) return;
+
+    var TIPI = [
+        { chiave: 'delega_unica', campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
+        { chiave: 'cassetto', campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
+        { chiave: 'fatture', campo: 'data_scadenza_fatture_corrispettivi', label: 'Fatture e Corrispettivi' }
+    ];
+    var deleghe = appData.deleghe || [];
+
+    // Tutte le scadenze presenti, una voce per delega e tipo di data
+    var items = [];
+    deleghe.forEach(function(d) {
+        TIPI.forEach(function(t) {
+            var data = d[t.campo];
+            if (!data) return;
+            items.push({
+                id: d.id,
+                delegato: getDelegaLabel(d),
+                tipo: t.chiave,
+                tipoLabel: t.label,
+                data: String(data).slice(0, 10),
+                giorni: daysUntil(data)
+            });
+        });
+    });
+
+    // Statistiche: entro 30 giorni, scadute, future; deleghe con/senza date
+    var entro30 = items.filter(function(it) { return it.giorni > 0 && it.giorni <= 30; });
+    var scadute = items.filter(function(it) { return it.giorni <= 0; });
+    var future = items.filter(function(it) { return it.giorni > 30; });
+    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('statDelegheEntro30', entro30.length);
+    setTxt('statDelegheScadute', scadute.length);
+    setTxt('statDelegheFuture', future.length);
+    setTxt('statDelegheTotale', deleghe.length);
+
+    // Filtri per tipo di scadenza e per stato
+    var tipoSel = document.getElementById('filterDelegaScadenzaTipo');
+    var statoSel = document.getElementById('filterDelegaScadenzaStato');
+    var tipoFiltro = tipoSel ? tipoSel.value : 'tutte';
+    var statoFiltro = statoSel ? statoSel.value : 'future';
+    if (tipoFiltro !== 'tutte') {
+        items = items.filter(function(it) { return it.tipo === tipoFiltro; });
+    }
+    if (statoFiltro === 'future') {
+        items = items.filter(function(it) { return it.giorni > 0; });
+    } else if (statoFiltro === 'scadute') {
+        items = items.filter(function(it) { return it.giorni <= 0; });
+    }
+
+    // Ordine: dalla scadenza più prossima a quella più vecchia. Prima le
+    // scadenze non ancora passate dalla più vicina in avanti, poi quelle
+    // passate dalla più recente alla più vecchia.
+    items.sort(function(a, b) {
+        var aPassata = a.giorni <= 0;
+        var bPassata = b.giorni <= 0;
+        if (aPassata !== bPassata) return aPassata ? 1 : -1;
+        var cmp = aPassata
+            ? b.data.localeCompare(a.data)
+            : a.data.localeCompare(b.data);
+        if (cmp !== 0) return cmp;
+        cmp = a.delegato.localeCompare(b.delegato, 'it');
+        if (cmp !== 0) return cmp;
+        return a.tipoLabel.localeCompare(b.tipoLabel, 'it');
+    });
+
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map(function(it) {
+        var urg = it.giorni <= 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
+        var rowCls = it.giorni <= 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
+        var giorniLabel = it.giorni > 0
+            ? 'tra ' + it.giorni + ' gg'
+            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
+        return '<tr' + rowCls + '>' +
+            '<td><strong>' + it.delegato + '</strong></td>' +
+            '<td>' + it.tipoLabel + '</td>' +
+            '<td>' + formatDate(it.data) + '</td>' +
+            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
+            '<td><div class="td-actions"><button type="button" data-action="view-delega" data-id="' + it.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td>' +
+            '</tr>';
+    }).join('');
 }
 
 // Scheda della delega condivisa da creazione e modifica: i campi sono
@@ -1636,6 +1731,7 @@ async function deleteDelega(id) {
     appData.deleghe = appData.deleghe.filter(function(d) { return d.id !== id; });
     closeModal();
     renderDeleghe();
+    renderNotifications();
     showToast('Delega eliminata', 'info');
 }
 
@@ -1645,6 +1741,7 @@ async function refreshPage(page) {
         case 'scadenze': await renderScadenze(); break;
         case 'generale': renderGenerale(); break;
         case 'deleghe': renderDeleghe(); break;
+        case 'scadenze-deleghe': renderScadenzeDeleghe(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -4176,8 +4273,49 @@ function announceNotificationArrivals(arrivals) {
     }
 }
 
+// Notifiche delle scadenze delle deleghe: promemoria 20 giorni prima di
+// ogni data impostata (Delega Unica, Cassetto Fiscale, Fatture e
+// Corrispettivi). Come per i contratti la fascia resta attiva fino alla
+// scadenza, anche se la delega è stata inserita quando la fascia era già
+// iniziata.
+function buildDelegaNotifItems() {
+    var TIPI = [
+        { campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
+        { campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
+        { campo: 'data_scadenza_fatture_corrispettivi', label: 'Fatture e Corrispettivi' }
+    ];
+    var items = [];
+    // La fase include il giorno corrente: la notifica è considerata nuova ogni
+    // giorno (e l'eliminazione alla chiusura del pannello vale solo per oggi),
+    // così il promemoria torna ogni giorno fino alla scadenza.
+    var oggiNotif = toLocalDateStr(new Date());
+    (appData.deleghe || []).forEach(function(d) {
+        TIPI.forEach(function(t) {
+            var data = d[t.campo];
+            if (!data) return;
+            var giorni = daysUntil(data);
+            if (giorni <= 0 || giorni > 20) return;
+            var quando = giorni === 1 ? 'domani' : ('fra ' + giorni + ' giorni');
+            items.push({
+                key: 'delega_' + d.id + '_' + t.campo,
+                date: String(data).slice(0, 10),
+                phase: '20-' + oggiNotif,
+                icon: 'fa-file-signature',
+                // Ultima settimana: notifica in rosso, altrimenti arancione
+                cls: giorni <= 7 ? 'danger' : 'warning',
+                txt: 'Scadenza ' + t.label + ' della delega di ' + getDelegaLabel(d) + ' ' + quando,
+                meta: 'Deleghe · ' + formatDate(data)
+            });
+        });
+    });
+    return items;
+}
+
 function renderNotifications() {
     var items = [];
+
+    // Promemoria delle scadenze delle deleghe (20 giorni prima)
+    buildDelegaNotifItems().forEach(function(it) { items.push(it); });
 
     // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg, 10 gg
     // e ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista

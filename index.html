@@ -49,6 +49,10 @@
                     <i class="fas fa-file-signature"></i>
                     <span>Deleghe</span>
                 </a>
+                <a href="#" class="nav-item" data-page="scadenze-deleghe">
+                    <i class="fas fa-calendar-check"></i>
+                    <span>Scadenze</span>
+                </a>
             </div>
 
 
@@ -275,6 +279,70 @@
                         </tr>
                     </thead>
                     <tbody id="delegheTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Scadenze Deleghe -->
+        <section class="page" id="page-scadenze-deleghe">
+            <div class="page-header">
+                <div>
+                    <h1>Scadenze</h1>
+                    <p class="page-subtitle" id="scadenzeDelegheSubtitle">Scadenze delle deleghe</p>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card stat-orange" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statDelegheEntro30">0</span>
+                        <span class="stat-label">Scadenze Entro 30 Giorni</span>
+                        <div class="stat-mini">
+                            <span><strong id="statDelegheScadute">0</strong> scadute</span>
+                            <span><strong id="statDelegheFuture">0</strong> non scadute</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card stat-blue" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-file-signature"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statDelegheTotale">0</span>
+                        <span class="stat-label">Deleghe</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterDelegaScadenzaTipo" class="filter-select" onchange="renderScadenzeDeleghe()">
+                        <option value="tutte">Tutte le scadenze</option>
+                        <option value="delega_unica">Delega Unica</option>
+                        <option value="cassetto">Cassetto Fiscale</option>
+                        <option value="fatture">Fatture e Corrispettivi</option>
+                    </select>
+                    <select id="filterDelegaScadenzaStato" class="filter-select" onchange="renderScadenzeDeleghe()" title="Filtra per stato">
+                        <option value="future">Non scadute</option>
+                        <option value="scadute">Scadute</option>
+                        <option value="tutte">Tutte</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Delegato</th>
+                            <th>Tipo Scadenza</th>
+                            <th>Data Scadenza</th>
+                            <th>Giorni</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scadenzeDelegheTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
