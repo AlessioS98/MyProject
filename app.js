@@ -1094,22 +1094,83 @@ function setupImmobileSuggestions(inputEl, fieldKey, rowEl) {
 }
 
 // --- Locatore / Conduttore Row Helpers ---
-// Suggerimenti campo-per-campo (stessa logica usata nella finestra Cerca Contratto):
-// digitando in Nome/Cognome/Ragione Sociale appaiono i valori presenti nell'anagrafica.
+// Prefisso dei campi del soggetto, ricavato dalla classe della riga
+// (loc- / cond-) oppure dall'id del form (dl_ / mk_ / pf_).
+function prefissoCampiSoggetto(inputEl) {
+    var cl = String(inputEl.className || '');
+    // Righe locatore/conduttore del contratto (classi loc-* e cond-*)
+    if (cl.indexOf('loc-cognome') >= 0 || cl.indexOf('loc-nome') >= 0 || cl.indexOf('loc-rs') >= 0) return 'loc-';
+    if (cl.indexOf('cond-cognome') >= 0 || cl.indexOf('cond-nome') >= 0 || cl.indexOf('cond-rs') >= 0) return 'cond-';
+    // Form delega, marchio e persona (id dl_*, mk_*, pf_*)
+    var m = /^(dl|mk|pf)_(cognome|nome|rs)$/.exec(inputEl.id || '');
+    return m ? m[1] + '_' : '';
+}
+
+// Alla scelta di un suggerimento compila anche gli altri campi dello stesso
+// soggetto (cognome, nome, ragione sociale e codice fiscale) e imposta il
+// tipo Persona Fisica / Azienda, così la scheda resta coerente.
+function compilaCampiSoggettoDaPersona(inputEl, p) {
+    var scope = inputEl.closest('.locatore-row, .conduttore-row, form') || document;
+    var prefisso = prefissoCampiSoggetto(inputEl);
+    var campo = function(nome) {
+        if (!prefisso) return null;
+        return prefisso.slice(-1) === '-'
+            ? scope.querySelector('.' + prefisso + nome)
+            : document.getElementById(prefisso + nome);
+    };
+    var cog = campo('cognome'), nom = campo('nome'), rs = campo('rs'), cf = campo('cf');
+    if (cog) cog.value = p.cognome || '';
+    if (nom) nom.value = p.nome || '';
+    if (rs) rs.value = p.ragione_sociale || '';
+    if (cf) cf.value = p.codice_fiscale || '';
+
+    var isAz = !!(p.ragione_sociale && !p.nome);
+    var tipo = isAz ? 'azienda' : 'pf';
+    if (scope.classList && scope.classList.contains('locatore-row')) {
+        var rLoc = scope.querySelector('input[name^="cf_loc_tipo"][value="' + tipo + '"]');
+        if (rLoc) { rLoc.checked = true; toggleLocatoreType(tipo, scope); }
+    } else if (scope.classList && scope.classList.contains('conduttore-row')) {
+        var rCond = scope.querySelector('input[name^="cf_cond_tipo"][value="' + tipo + '"]');
+        if (rCond) { rCond.checked = true; toggleConduttoreType(tipo, scope); }
+    } else if (document.getElementById('delegaForm') && document.getElementById('delegaForm').contains(inputEl)) {
+        var rDl = document.querySelector('input[name="dl_tipo"][value="' + tipo + '"]');
+        if (rDl) rDl.checked = true;
+        toggleDelegaType(tipo);
+    } else if (document.getElementById('marchioForm') && document.getElementById('marchioForm').contains(inputEl)) {
+        var rMk = document.querySelector('input[name="mk_tipo"][value="' + tipo + '"]');
+        if (rMk) rMk.checked = true;
+        toggleMarchioType(tipo);
+    }
+}
+
+// Suggerimenti campo-per-campo: ogni proposta mostra il valore digitato con
+// sotto il nome completo e il codice fiscale; alla scelta si compilano tutti
+// i campi del soggetto (cognome, nome, ragione sociale, codice fiscale).
 function setupPersonFieldAutocomplete(inputEl, fieldKey) {
     if (!inputEl) return;
+    inputEl.setAttribute('autocomplete', 'off');
     inputEl.parentNode.style.position = 'relative';
     setupFilterAutocomplete(inputEl, function() {
-        var seen = {};
         var out = [];
         appData.persone.forEach(function(p) {
             var v = p[fieldKey];
-            if (!v) return;
+            if (v == null) return;
             var label = String(v).trim();
-            if (label && !seen[label]) { seen[label] = true; out.push(label); }
+            if (!label) return;
+            var parti = [];
+            var completo = getPersonaLabelShort(p);
+            if (completo && completo !== label) parti.push(completo);
+            if (p.codice_fiscale) parti.push('CF: ' + p.codice_fiscale);
+            out.push({ label: label, sub: parti.join(' · '), data: p });
         });
         return out;
-    }, null);
+    }, function(p) {
+        compilaCampiSoggettoDaPersona(inputEl, p);
+    }, {
+        dedupeKey: function(item) { return item.data.id; }
+        // L'ordinamento predefinito è alfabetico sul valore proposto; a
+        // parità la tendina usa il nome completo mostrato sotto.
+    });
 }
 
 // --- Immobile Row Helpers (piu' immobili per contratto) ---
@@ -2729,10 +2790,9 @@ function setupFilterInputs() {
     }
     function setupPersonFilter(inputId, fieldKey, onPick) {
         setupFilterAutocomplete(document.getElementById(inputId), function() { return personeSugg(fieldKey); }, onPick, {
-            dedupeKey: function(item) { return item.data.id; },
-            // Ordina per il nome completo mostrato sotto il valore del campo
-            // (es. digitando nel Cognome, per "Maria Rossi" e "Luca Rossi")
-            sortLabel: function(item) { return getPersonaLabelShort(item.data); }
+            dedupeKey: function(item) { return item.data.id; }
+            // Ordinamento alfabetico sul valore del campo; a parità usa il
+            // nome completo mostrato sotto (es. "Maria Rossi", "Luca Rossi")
         });
     }
     function fillLocatoreFilter(p) {
