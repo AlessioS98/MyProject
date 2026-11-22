@@ -269,6 +269,37 @@ function getConduttoriCognomeNomeLabel(contrattoId) {
     if (conds.length === 0) return 'N/A';
     return conds.map(function(p) { return getPersonaCognomeNomeLabel(p); }).join(', ');
 }
+// Chiave di ordinamento di un soggetto (persona o azienda): il confronto
+// principale usa il Cognome e, per le aziende (senza cognome), la Ragione
+// Sociale, così persone fisiche e aziende si alternano in un'unica lista
+// alfabetica. A parità valgono ragione sociale e nome.
+// Usata da deleghe, marchi e contratti.
+function chiaveOrdinamentoSoggetto(p) {
+    var cognome = String((p && p.cognome) || '').trim().toLowerCase();
+    var ragione = String((p && p.ragione_sociale) || '').trim().toLowerCase();
+    var nome = String((p && p.nome) || '').trim().toLowerCase();
+    // Per le aziende il cognome manca: al suo posto si usa la ragione sociale
+    return [cognome || ragione, ragione, nome];
+}
+
+function confrontaChiaviSoggetto(a, b) {
+    for (var i = 0; i < 3; i++) {
+        var cmp = a[i].localeCompare(b[i], 'it');
+        if (cmp !== 0) return cmp;
+    }
+    return 0;
+}
+
+// Confronta due sequenze di soggetti (es. i locatori di un contratto):
+// elemento per elemento; a parità di inizio viene prima la più corta.
+function confrontaSequenzeSoggetti(a, b) {
+    var n = Math.min(a.length, b.length);
+    for (var i = 0; i < n; i++) {
+        var cmp = confrontaChiaviSoggetto(a[i], b[i]);
+        if (cmp !== 0) return cmp;
+    }
+    return a.length - b.length;
+}
 function getPersonaLabelShort(p) {
     if (!p) return 'N/A';
     if (p.ragione_sociale && !p.nome && !p.cognome) return p.ragione_sociale;
@@ -1709,27 +1740,12 @@ function toggleGeneraleSection(btn) {
 }
 
 // --- Deleghe ---
-// Ordinamento dell'elenco deleghe: in ordine alfabetico (ragione sociale
-// per le aziende, cognome/nome per le persone).
+// Ordinamento dell'elenco deleghe: alfabetico per Cognome (ragione sociale
+// per le aziende), poi Ragione Sociale e Nome, con persone fisiche e
+// aziende mescolate (stessa regola di marchi e contratti).
 function ordinaDeleghePerLista(list) {
-    // Ordine alfabetico: prima il cognome, poi il nome, infine la ragione
-    // sociale (le aziende hanno cognome/nome vuoti, quindi tra loro ordinano
-    // per ragione sociale).
-    function chiave(x) {
-        return [
-            (x.cognome || '').toLowerCase(),
-            (x.nome || '').toLowerCase(),
-            (x.ragione_sociale || '').toLowerCase()
-        ];
-    }
     return (list || []).slice().sort(function(a, b) {
-        var ka = chiave(a);
-        var kb = chiave(b);
-        for (var i = 0; i < ka.length; i++) {
-            var c = ka[i].localeCompare(kb[i], 'it');
-            if (c !== 0) return c;
-        }
-        return 0;
+        return confrontaChiaviSoggetto(chiaveOrdinamentoSoggetto(a), chiaveOrdinamentoSoggetto(b));
     });
 }
 
@@ -1972,7 +1988,7 @@ function delegaFormHtml(d) {
     html += '<div class="form-group"><label>Data Scadenza Delega Unica</label><input type="date" id="dl_dec_unica" autocomplete="off" value="' + dataVal(d && d.data_scadenza_delega_unica) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza Cassetto Fiscale</label><input type="date" id="dl_dec_cassetto" autocomplete="off" value="' + dataVal(d && d.data_scadenza_cassetto_fiscale) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza Fatture e Corrispettivi</label><input type="date" id="dl_dec_fatture" autocomplete="off" value="' + dataVal(d && d.data_scadenza_fatture_corrispettivi) + '"></div>';
-    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
     html += '</form>';
     return html;
 }
@@ -1994,37 +2010,12 @@ async function deleteDelega(id) {
 }
 
 // --- Marchi ---
-// Elenco ordinato per soggetto: prima il Cognome (per le aziende la Ragione
-// Sociale), poi il Nome. A parità di soggetto si usa il numero del marchio.
+// Elenco ordinato per Cognome (ragione sociale per le aziende), poi
+// Ragione Sociale e Nome, con persone fisiche e aziende mescolate; a
+// parità di soggetto si usa il numero del marchio.
 function ordinaMarchiPerLista(list) {
-    function soggetto(m) {
-        var cognome = String(m.cognome || '').trim();
-        var nome = String(m.nome || '').trim();
-        var rs = String(m.ragione_sociale || '').trim();
-        // Azienda: al posto di cognome/nome si usa la ragione sociale
-        var isAzienda = !!(rs && !nome);
-        var primo, secondo;
-        if (isAzienda) {
-            primo = rs;
-            secondo = '';
-        } else if (cognome) {
-            primo = cognome;
-            secondo = nome;
-        } else {
-            // Dati senza cognome (o vecchi marchi con la sola denominazione)
-            primo = nome || rs || String(m.denominazione || '');
-            secondo = '';
-        }
-        return { primo: primo.toLowerCase(), secondo: secondo.toLowerCase() };
-    }
     return (list || []).slice().sort(function(a, b) {
-        var sa = soggetto(a);
-        var sb = soggetto(b);
-        // Le righe senza soggetto finiscono in fondo
-        if (!sa.primo !== !sb.primo) return sa.primo ? -1 : 1;
-        var cmp = sa.primo.localeCompare(sb.primo, 'it');
-        if (cmp !== 0) return cmp;
-        cmp = sa.secondo.localeCompare(sb.secondo, 'it');
+        var cmp = confrontaChiaviSoggetto(chiaveOrdinamentoSoggetto(a), chiaveOrdinamentoSoggetto(b));
         if (cmp !== 0) return cmp;
         return String(a.numero_identificativo || '').localeCompare(String(b.numero_identificativo || ''), 'it', { numeric: true });
     });
@@ -2104,7 +2095,7 @@ function marchioFormHtml(m) {
     html += '<div class="form-group" id="mkGrpRs"><label>Ragione Sociale</label><input type="text" id="mk_rs" autocomplete="off" value="' + esc(m && m.ragione_sociale) + '"></div>';
     html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="mk_scadenza" autocomplete="off" value="' + dataVal(m && m.data_scadenza) + '"></div>';
     html += '<div class="form-group full"><label>Note</label><textarea id="mk_note">' + esc(m && m.note) + '</textarea></div>';
-    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
     html += '</form>';
     return html;
 }
@@ -2992,7 +2983,7 @@ function openModal(type, id) {
         html += '<div class="form-group full"><div id="immobiliRowsContainer"></div>';
         html += '<button type="button" class="btn btn-sm btn-outline" onclick="addImmobileRow()"><i class="fas fa-plus"></i> Aggiungi Immobile</button></div>';
 
-        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
 
 
@@ -3246,7 +3237,7 @@ function openModal(type, id) {
             });
             html += '</tbody></table></div>';
         }
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+        html += '';
 
     } else if (type === 'newPersona' || type === 'editPersona') {
         var pe = type === 'editPersona' ? appData.persone.find(function(x) { return x.id === id; }) : null;
@@ -3298,7 +3289,7 @@ function openModal(type, id) {
             });
             html += '</tbody></table></div>';
         }
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+        html += '';
 
     } else if (type === 'newImmobile' || type === 'editImmobile') {
         var ie = type === 'editImmobile' ? appData.immobili.find(function(x) { return x.id === id; }) : null;
@@ -4332,14 +4323,26 @@ function resetContrattiFilter() {
 async function renderContratti() {
     renderContrattiList(appData.contratti);
 }
-// Ordinamento dei contratti usato nella lista: alfabetico per locatore
-// (cognome prima del nome) e, a parita' di locatore, per conduttore. Usato sia
-// dalla tabella a video sia dall'esportazione Excel.
+// Ordinamento dei contratti usato nella lista: prima i locatori, poi i
+// conduttori, con la regola dei soggetti (Cognome o ragione sociale per le
+// aziende, poi Ragione Sociale e Nome), senza separare persone e aziende.
+// Se un contratto ha più locatori/conduttori si confrontano le sequenze.
+// Usato sia dalla tabella a video sia dall'esportazione Excel.
 function ordinaContrattiPerLista(list) {
+    function chiave(c) {
+        var chiaviPersone = function(persone) {
+            return persone.map(function(p) { return chiaveOrdinamentoSoggetto(p); });
+        };
+        return {
+            locatori: chiaviPersone(getLocatoriByContratto(c.id)),
+            conduttori: chiaviPersone(getConduttoriByContratto(c.id))
+        };
+    }
     return list.slice().sort(function(a, b) {
-        var cmp = (getLocatoriCognomeNomeLabel(a.id) || '').localeCompare(getLocatoriCognomeNomeLabel(b.id) || '', 'it');
+        var ka = chiave(a), kb = chiave(b);
+        var cmp = confrontaSequenzeSoggetti(ka.locatori, kb.locatori);
         if (cmp !== 0) return cmp;
-        return (getConduttoriCognomeNomeLabel(a.id) || '').localeCompare(getConduttoriCognomeNomeLabel(b.id) || '', 'it');
+        return confrontaSequenzeSoggetti(ka.conduttori, kb.conduttori);
     });
 }
 
