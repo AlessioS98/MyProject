@@ -1633,6 +1633,46 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     border-collapse: collapse;
 }
 
+/* Tabella con altezza scelta dall'utente tramite il grip sotto la tabella:
+   le righe in più scorrono dentro la tabella, con l'intestazione ferma in alto. */
+.table-container.table-container-fissa {
+    overflow-y: auto;
+    min-height: 120px;
+}
+
+/* Grip sotto la tabella per regolarne l'altezza trascinando */
+.table-resizer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    margin-top: 6px;
+    cursor: ns-resize;
+    touch-action: none;
+    user-select: none;
+}
+
+.table-resizer span {
+    width: 64px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--border);
+    transition: background var(--transition), width var(--transition);
+}
+
+.table-resizer:hover span,
+.table-resizer.dragging span {
+    width: 88px;
+    background: var(--primary);
+}
+
+/* Durante il trascinamento il cursore resta a doppia freccia su tutta la pagina */
+body.tabella-resize,
+body.tabella-resize * {
+    cursor: ns-resize !important;
+    user-select: none;
+}
+
 /* Scadenze: locatore e conduttore vanno a capo su più righe, senza punti di sospensione */
 #scadenzeTable .data-table td:nth-child(1),
 #scadenzeTable .data-table td:nth-child(2) {

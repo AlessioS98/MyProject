@@ -1835,6 +1835,86 @@ function toggleGeneraleSection(btn) {
     btn.setAttribute('aria-expanded', mostra ? 'true' : 'false');
     var label = btn.getAttribute('data-label') || 'elenco';
     btn.title = (mostra ? 'Nascondi ' : 'Mostra ') + label;
+    // Il grip per l'altezza segue la tabella: se la tabella è nascosta, sparisce
+    // anche il grip.
+    var grip = document.querySelector('.table-resizer[data-resize-target="' + btn.getAttribute('data-target') + '"]');
+    if (grip) grip.hidden = !mostra;
+}
+
+// --- Altezza regolabile delle tabelle ---
+// Il grip sotto una tabella permette di allungarla o accorciarla trascinando
+// (mouse o dito): l'altezza scelta viene applicata alla tabella, le righe in
+// più scorrono al suo interno e l'intestazione resta ferma in alto. L'altezza
+// resta memorizzata nel browser; il doppio clic sul grip riporta la tabella
+// all'altezza naturale.
+var TABELLA_ALTEZZA_MIN = 120;
+
+function tabellaAltezzaMassima() {
+    return Math.max(TABELLA_ALTEZZA_MIN, window.innerHeight - 80);
+}
+
+function applicaAltezzaTabella(container, altezza) {
+    if (!container) return;
+    if (!altezza) {
+        container.style.height = '';
+        container.classList.remove('table-container-fissa');
+        return;
+    }
+    container.style.height = altezza + 'px';
+    container.classList.add('table-container-fissa');
+}
+
+function initTabellaRidimensionabile(targetId, storageKey) {
+    var container = document.getElementById(targetId);
+    var grip = document.querySelector('.table-resizer[data-resize-target="' + targetId + '"]');
+    if (!container || !grip) return;
+
+    var salvata = parseInt(localStorage.getItem(storageKey), 10);
+    if (salvata > 0) applicaAltezzaTabella(container, salvata);
+
+    var attivo = false;
+    var startY = 0;
+    var startH = 0;
+    var altezza = 0;
+
+    grip.addEventListener('pointerdown', function(e) {
+        if (e.button) return;
+        e.preventDefault();
+        attivo = true;
+        startY = e.clientY;
+        startH = container.offsetHeight;
+        altezza = startH;
+        container.style.height = startH + 'px';
+        container.classList.add('table-container-fissa');
+        grip.classList.add('dragging');
+        document.body.classList.add('tabella-resize');
+        if (grip.setPointerCapture) {
+            try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+    });
+
+    grip.addEventListener('pointermove', function(e) {
+        if (!attivo) return;
+        e.preventDefault();
+        altezza = Math.min(tabellaAltezzaMassima(), Math.max(TABELLA_ALTEZZA_MIN, startH + (e.clientY - startY)));
+        container.style.height = altezza + 'px';
+    });
+
+    function fineTrascinamento() {
+        if (!attivo) return;
+        attivo = false;
+        grip.classList.remove('dragging');
+        document.body.classList.remove('tabella-resize');
+        try { localStorage.setItem(storageKey, String(Math.round(altezza))); } catch (err) {}
+    }
+
+    grip.addEventListener('pointerup', fineTrascinamento);
+    grip.addEventListener('pointercancel', fineTrascinamento);
+
+    grip.addEventListener('dblclick', function() {
+        applicaAltezzaTabella(container, 0);
+        try { localStorage.removeItem(storageKey); } catch (err) {}
+    });
 }
 
 // --- Deleghe ---
@@ -6696,4 +6776,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     aggiornaTitoloSezione('generale');
     renderNotifications();
     try { renderGenerale(); } catch(e) { console.error('Generale error:', e); }
+
+    // Altezza regolabile della tabella "Promemoria fatti e senza scadenza"
+    // della pagina Promemoria (l'altezza scelta resta memorizzata).
+    initTabellaRidimensionabile('promemoriaArchiviati', 'altezzaPromemoriaArchiviati');
 });
