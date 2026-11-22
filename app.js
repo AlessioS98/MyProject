@@ -136,6 +136,8 @@ function getDelegaType() {
 
 function toggleDelegaType(tipo) {
     var isAzienda = tipo === 'azienda';
+    // Cambiando tipo i suggerimenti sul codice fiscale già aperti non valgono più
+    document.querySelectorAll('.cf-suggestions.show').forEach(function(el) { el.classList.remove('show'); });
     var cogEl = document.getElementById('dl_cognome');
     var nomEl = document.getElementById('dl_nome');
     var rsEl = document.getElementById('dl_rs');
@@ -885,12 +887,13 @@ function setupCfAutocomplete(inputEl, rowEl, opts) {
     inputEl.addEventListener('input', function() {
         var val = inputEl.value.trim().toUpperCase();
         if (val.length < 1) { suggestionsEl.classList.remove('show'); return; }
-        // Determina il tipo selezionato (pf o azienda). Nella finestra Nuova
-        // Delega non c'e' il selettore di tipo: opts.tipo = 'tutti' propone
-        // sia le persone fisiche sia le aziende, senza cambiare il
-        // comportamento della finestra Nuovo Contratto.
+        // Tipo del soggetto: fisso (opts.tipo), calcolato da chi apre la
+        // finestra (opts.getTipo, usato da marchi e deleghe) oppure letto
+        // dal selettore Persona Fisica / Azienda presente nella riga.
         var tipoSel = opts.tipo || 'pf';
-        if (!opts.tipo) {
+        if (typeof opts.getTipo === 'function') {
+            tipoSel = opts.getTipo();
+        } else if (!opts.tipo) {
             var radioChecked = rowEl.querySelector('input[type="radio"]:checked');
             if (radioChecked) tipoSel = radioChecked.value;
         }
@@ -1265,9 +1268,9 @@ function syncPersonaDateFields() {
     });
 }
 
-// --- Toggle globale maiuscolo/minuscolo per il form contratto ---
-// Un solo pulsante accanto al titolo del modale: premuto scrive tutti i campi
-// di testo del contratto in MAIUSCOLO, premuto di nuovo in minuscolo.
+// --- Toggle globale maiuscolo/minuscolo per i modali ---
+// Un solo pulsante accanto al titolo della finestra: premuto scrive tutti i
+// campi di testo del modale in MAIUSCOLO, premuto di nuovo in minuscolo.
 // Preferenza salvata: la modalità maiuscolo/minuscolo scelta con il pulsante
 // viene ricordata tra un'apertura del form e l'altra (e tra le sessioni).
 var contrattoCaseMode = 'lower';
@@ -1276,10 +1279,15 @@ try {
     if (savedCaseMode === 'upper' || savedCaseMode === 'lower') contrattoCaseMode = savedCaseMode;
 } catch (e) {}
 
+// Marca i campi di testo e le aree di testo della finestra: sono quelli
+// convertiti dal pulsante. Vale per tutti i modali (contratto, promemoria,
+// deleghe, marchi, persone, immobili...). I campi con data-case-skip
+// restano come sono (es. la conferma "CONFERMA" del modale elimina).
 function setupContrattoCaseFields(container) {
     if (!container) return;
     container.querySelectorAll('input[type="text"], textarea').forEach(function(input) {
         if (input.dataset.caseFieldDone) return;
+        if (input.hasAttribute('data-case-skip')) return;
         input.dataset.caseFieldDone = '1';
         input.classList.add('case-field');
     });
@@ -1438,6 +1446,27 @@ async function loadAllData() {
 // Titolo della schermata: "[Titolo sezione] - [Nome voce]", ricavato dal
 // titolo del gruppo del menu laterale e dalla voce attiva. Aggiorna sia
 // l'intestazione della pagina sia il titolo della scheda del browser.
+// Menu laterale a tendina: apre o chiude una sezione (Contratti, Deleghe,
+// Marchi). Le voci della sezione sono visibili solo quando è aperta.
+function setNavGroupOpen(group, apri) {
+    if (!group) return;
+    if (apri) group.classList.add('open');
+    else group.classList.remove('open');
+    var btn = group.querySelector('.nav-group-title');
+    if (btn) btn.setAttribute('aria-expanded', apri ? 'true' : 'false');
+}
+
+// Clic sul titolo di una sezione: la apre (chiudendo le altre) o la richiude.
+function toggleNavGroup(btn) {
+    var group = btn.closest('.nav-group');
+    if (!group) return;
+    var apri = !group.classList.contains('open');
+    document.querySelectorAll('.sidebar-nav .nav-group').forEach(function(g) {
+        if (g !== group) setNavGroupOpen(g, false);
+    });
+    setNavGroupOpen(group, apri);
+}
+
 function aggiornaTitoloSezione(page) {
     var voce = document.querySelector('.nav-item[data-page="' + page + '"]');
     if (!voce) return;
@@ -1445,6 +1474,12 @@ function aggiornaTitoloSezione(page) {
     // (es. "Gestione Contratti di Locazione"); le voci fuori dai gruppi
     // (es. "Generale") usano solo il proprio nome.
     var gruppo = voce.closest('.nav-group');
+    // La tendina della voce attiva si apre da sola (le altre si chiudono)
+    if (gruppo) {
+        document.querySelectorAll('.sidebar-nav .nav-group').forEach(function(g) {
+            setNavGroupOpen(g, g === gruppo);
+        });
+    }
     var sezione = gruppo ? gruppo.querySelector('.nav-group-title') : null;
     var nome = voce.querySelector('span');
     var nomeSezione = sezione ? sezione.textContent.trim() : '';
@@ -1481,10 +1516,11 @@ function promemoriaCellaNote(note) {
 // --- Pagina Generale: tutte le scadenze ---
 // Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
 // scadenza dei contratti non chiusi, le tre date delle deleghe, la scadenza
-// dei marchi e i promemoria con data. L'ordine è quello della scadenza più
-// prossima: prima oggi e le date future dalla più vicina in avanti, poi
-// quelle passate dalla più recente alla più vecchia. I promemoria SENZA data
-// sono mostrati a parte, sotto una linea orizzontale in fondo alla tabella.
+// dei marchi e i promemoria con data. In cima stanno i promemoria con
+// "Fatto" attivo; poi l'ordine è quello della scadenza più prossima: prima
+// oggi e le date future dalla più vicina in avanti, poi quelle passate dalla
+// più recente alla più vecchia. I promemoria SENZA data sono mostrati a
+// parte, sotto una linea orizzontale in fondo alla tabella.
 // Snapshot della vista della pagina Generale (righe datate e promemoria senza
 // scadenza): lo usa l'esportazione Excel per riprodurre la tabella a video.
 var ultimaVistaGenerale = null;
@@ -1587,6 +1623,10 @@ function renderGeneraleScadenze() {
 
     items.forEach(function(it) { it.giorni = daysUntil(it.data); });
     items.sort(function(a, b) {
+        // I promemoria con "Fatto" attivo stanno in cima alla lista
+        var aFatto = !!a.fatto;
+        var bFatto = !!b.fatto;
+        if (aFatto !== bFatto) return aFatto ? -1 : 1;
         // Oggi (0 giorni) non è ancora passata: è la scadenza più prossima
         var aPassata = a.giorni < 0;
         var bPassata = b.giorni < 0;
@@ -1693,20 +1733,41 @@ function ordinaDeleghePerLista(list) {
     });
 }
 
+// Scadenza più imminente della delega: tra le tre date inserite si usa la
+// prima ancora da raggiungere (oggi o futura); se sono tutte passate si usa
+// la più recente, cioè quella scaduta per ultima.
+function getDelegaScadenzaImminente(d) {
+    var date = [
+        d.data_scadenza_delega_unica,
+        d.data_scadenza_cassetto_fiscale,
+        d.data_scadenza_fatture_corrispettivi
+    ].map(function(x) { return x ? String(x).slice(0, 10) : ''; })
+        .filter(Boolean)
+        .sort();
+    if (date.length === 0) return '';
+    var oggi = toLocalDateStr(new Date());
+    for (var i = 0; i < date.length; i++) {
+        if (date[i] >= oggi) return date[i];
+    }
+    return date[date.length - 1];
+}
+
 // Elenco deleghe nella pagina Deleghe
 function renderDeleghe() {
     var tbody = document.getElementById('delegheTableBody');
     if (!tbody) return;
     var list = ordinaDeleghePerLista(appData.deleghe);
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessuna delega presente</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="table-empty-cell">Nessuna delega presente</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(function(d) {
-        return '<tr><td><strong>' + (d.cognome || '-') + '</strong></td>' +
-            '<td>' + (d.nome || '-') + '</td>' +
-            '<td>' + (d.ragione_sociale || '-') + '</td>' +
-            '<td>' + (d.codice_fiscale || '-') + '</td>' +
+        // Colonna Scadenza: la più imminente tra le tre date della delega
+        var scadenza = getDelegaScadenzaImminente(d);
+        // Colonna Delegato: ragione sociale per le aziende, nome e cognome
+        // per i privati (stessa etichetta usata nelle altre pagine)
+        return '<tr><td><strong>' + getDelegaLabel(d) + '</strong></td>' +
+            '<td>' + (scadenza ? formatDate(scadenza) : '-') + '</td>' +
             '<td><div class="td-actions">' +
             '<button type="button" data-action="view-delega" data-id="' + d.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
             '<button type="button" data-action="edit-delega" data-id="' + d.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
@@ -1933,22 +1994,39 @@ async function deleteDelega(id) {
 }
 
 // --- Marchi ---
-// Elenco in ordine alfabetico di denominazione
+// Elenco ordinato per soggetto: prima il Cognome (per le aziende la Ragione
+// Sociale), poi il Nome. A parità di soggetto si usa il numero del marchio.
 function ordinaMarchiPerLista(list) {
-    // Prima per numero identificativo (ordine numerico dove possibile), poi
-    // per soggetto: utile per le righe senza numero o con numeri uguali.
-    function chiave(m) {
-        return [
-            (m.numero_identificativo || '').toLowerCase(),
-            (getMarchioLabel(m) || '').toLowerCase()
-        ];
+    function soggetto(m) {
+        var cognome = String(m.cognome || '').trim();
+        var nome = String(m.nome || '').trim();
+        var rs = String(m.ragione_sociale || '').trim();
+        // Azienda: al posto di cognome/nome si usa la ragione sociale
+        var isAzienda = !!(rs && !nome);
+        var primo, secondo;
+        if (isAzienda) {
+            primo = rs;
+            secondo = '';
+        } else if (cognome) {
+            primo = cognome;
+            secondo = nome;
+        } else {
+            // Dati senza cognome (o vecchi marchi con la sola denominazione)
+            primo = nome || rs || String(m.denominazione || '');
+            secondo = '';
+        }
+        return { primo: primo.toLowerCase(), secondo: secondo.toLowerCase() };
     }
     return (list || []).slice().sort(function(a, b) {
-        var ka = chiave(a);
-        var kb = chiave(b);
-        var cmp = ka[0].localeCompare(kb[0], 'it', { numeric: true });
+        var sa = soggetto(a);
+        var sb = soggetto(b);
+        // Le righe senza soggetto finiscono in fondo
+        if (!sa.primo !== !sb.primo) return sa.primo ? -1 : 1;
+        var cmp = sa.primo.localeCompare(sb.primo, 'it');
         if (cmp !== 0) return cmp;
-        return ka[1].localeCompare(kb[1], 'it');
+        cmp = sa.secondo.localeCompare(sb.secondo, 'it');
+        if (cmp !== 0) return cmp;
+        return String(a.numero_identificativo || '').localeCompare(String(b.numero_identificativo || ''), 'it', { numeric: true });
     });
 }
 
@@ -1967,6 +2045,8 @@ function getMarchioTipo() {
 
 function toggleMarchioType(tipo) {
     var isAzienda = tipo === 'azienda';
+    // Cambiando tipo i suggerimenti sul codice fiscale già aperti non valgono più
+    document.querySelectorAll('.cf-suggestions.show').forEach(function(el) { el.classList.remove('show'); });
     var cogEl = document.getElementById('mk_cognome');
     var nomEl = document.getElementById('mk_nome');
     var rsEl = document.getElementById('mk_rs');
@@ -1990,9 +2070,10 @@ function renderMarchi() {
         return;
     }
     tbody.innerHTML = list.map(function(m) {
-        return '<tr><td><strong>' + (m.numero_identificativo || '-') + '</strong></td>' +
-            '<td>' + getMarchioLabel(m) + '</td>' +
+        // Colonne: Soggetto, Codice Fiscale, N. Identificativo, Azioni
+        return '<tr><td>' + getMarchioLabel(m) + '</td>' +
             '<td>' + (m.codice_fiscale || '-') + '</td>' +
+            '<td><strong>' + (m.numero_identificativo || '-') + '</strong></td>' +
             '<td><div class="td-actions">' +
             '<button type="button" data-action="view-marchio" data-id="' + m.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
             '<button type="button" data-action="edit-marchio" data-id="' + m.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
@@ -2321,10 +2402,11 @@ function renderScadenzeMarchi() {
         var giorniLabel = it.giorni > 0
             ? 'tra ' + it.giorni + ' gg'
             : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
+        // Colonne: Soggetto, Data Scadenza, N. Identificativo, Giorni, Azioni
         return '<tr' + rowCls + '>' +
-            '<td><strong>' + it.numero + '</strong></td>' +
             '<td>' + it.soggetto + '</td>' +
             '<td>' + formatDate(it.data) + '</td>' +
+            '<td><strong>' + it.numero + '</strong></td>' +
             '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
             '<td><div class="td-actions"><button type="button" data-action="view-marchio" data-id="' + it.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td>' +
             '</tr>';
@@ -2416,6 +2498,13 @@ document.querySelectorAll('.nav-item').forEach(function(item) {
     item.addEventListener('click', function(e) {
         e.preventDefault();
         navigateTo(item.dataset.page);
+    });
+});
+// Apertura/chiusura delle tendine del menu laterale
+document.querySelectorAll('.sidebar-nav .nav-group-title').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        toggleNavGroup(btn);
     });
 });
 var isDark = localStorage.getItem('theme') === 'dark';
@@ -3012,7 +3101,7 @@ function openModal(type, id) {
         html += '<span>Stai per eliminare il contratto <strong>' + cd.identificativo + '</strong> e tutti i dati collegati (locatori, conduttori, canoni, scadenze).</span>';
         html += '</div>';
         html += '<div class="form-group full"><label>Scrivi <strong>CONFERMA</strong> per procedere</label>';
-        html += '<input type="text" id="deleteConfirmInput" placeholder="CONFERMA" style="text-transform:uppercase">';
+        html += '<input type="text" id="deleteConfirmInput" placeholder="CONFERMA" data-case-skip="1" style="text-transform:uppercase">';
         html += '<div id="deleteConfirmWarning" style="display:none;color:var(--danger);font-size:0.82rem;margin-top:6px"><i class="fas fa-exclamation-circle"></i> Testo non corretto. Scrivi esattamente <strong>CONFERMA</strong></div>';
         html += '</div>';
         html += '<div class="form-actions full">';
@@ -3292,14 +3381,16 @@ function openModal(type, id) {
     modal.scrollTop = 0;
     body.scrollTop = 0;
 
-    // Pulsante maiuscolo/minuscolo: visibile solo nel form contratto,
-    // accanto al titolo del modale
+    // Pulsante maiuscolo/minuscolo: accanto al titolo del modale, compare
+    // solo se la finestra ha campi di testo (contratto, promemoria, deleghe,
+    // marchi, persone, immobili...) e applica subito la modalità scelta.
+    setupContrattoCaseFields(body);
     var caseBtn = document.getElementById('caseToggleBtn');
-    var isContrattoForm = !!document.getElementById('contrattoForm');
-    if (caseBtn) caseBtn.hidden = !isContrattoForm;
-    if (isContrattoForm) {
-        setupContrattoCaseFields(body);
+    var hasCaseFields = !!body.querySelector('.case-field');
+    if (caseBtn) caseBtn.hidden = !hasCaseFields;
+    if (hasCaseFields) {
         updateCaseToggleBtn();
+        applyContrattoCase();
     }
 
     // Attach form listeners
@@ -3377,14 +3468,16 @@ function openModal(type, id) {
         dlf.addEventListener('submit', function(e) { e.preventDefault(); saveDelega(); });
         // Suggerimenti dai dati gia' presenti, stessa logica della finestra
         // Nuovo Contratto: Nome/Cognome/Ragione Sociale propongono i valori
-        // dell'anagrafica; il Codice Fiscale propone i CF con sotto il nome e,
-        // alla scelta, compila anche gli altri campi della delega.
+        // dell'anagrafica; il Codice Fiscale propone solo i CF del tipo
+        // scelto (persona fisica o azienda) e, alla scelta, compila gli
+        // altri campi della delega.
         setupPersonFieldAutocomplete(document.getElementById('dl_cognome'), 'cognome');
         setupPersonFieldAutocomplete(document.getElementById('dl_nome'), 'nome');
         setupPersonFieldAutocomplete(document.getElementById('dl_rs'), 'ragione_sociale');
         var dlCf = document.getElementById('dl_cf');
         if (dlCf) setupCfAutocomplete(dlCf, dlf, {
-            tipo: 'tutti',
+            // Suggerimenti solo del tipo scelto nella finestra
+            getTipo: function() { return getDelegaType(); },
             onPick: function(p) {
                 // Il soggetto scelto imposta anche il tipo, come nel contratto
                 var isAz = !!(p.ragione_sociale && !p.nome);
@@ -3409,14 +3502,15 @@ function openModal(type, id) {
         mkf.addEventListener('submit', function(e) { e.preventDefault(); saveMarchio(); });
         // Suggerimenti dai dati gia' presenti, stessa logica del contratto:
         // Cognome/Nome/Ragione Sociale propongono i valori dell'anagrafica;
-        // il Codice Fiscale propone i soggetti e, alla scelta, imposta anche
-        // il tipo (persona fisica o azienda) e compila gli altri campi.
+        // il Codice Fiscale propone solo soggetti del tipo scelto (persona
+        // fisica o azienda) e, alla scelta, compila anche gli altri campi.
         setupPersonFieldAutocomplete(document.getElementById('mk_cognome'), 'cognome');
         setupPersonFieldAutocomplete(document.getElementById('mk_nome'), 'nome');
         setupPersonFieldAutocomplete(document.getElementById('mk_rs'), 'ragione_sociale');
         var mkCf = document.getElementById('mk_cf');
         if (mkCf) setupCfAutocomplete(mkCf, mkf, {
-            tipo: 'tutti',
+            // Suggerimenti solo del tipo scelto nella finestra
+            getTipo: function() { return getMarchioTipo(); },
             onPick: function(p) {
                 var isAz = !!(p.ragione_sociale && !p.nome);
                 var radio = mkf.querySelector('input[name="mk_tipo"][value="' + (isAz ? 'azienda' : 'pf') + '"]');
@@ -4764,15 +4858,14 @@ function exportDelegheExcel() {
         return;
     }
 
-    var COLONNE = ['Cognome', 'Nome', 'Ragione Sociale', 'Codice Fiscale'];
-    var LARGHEZZE = [28, 26, 44, 20];
+    var COLONNE = ['Delegato', 'Scadenza'];
+    var LARGHEZZE = [60, 20];
 
     var righeDati = list.map(function(d) {
+        var scadenza = getDelegaScadenzaImminente(d);
         return [
-            { t: 's', s: S_TESTO, v: d.cognome || '' },
-            { t: 's', s: S_TESTO, v: d.nome || '' },
-            { t: 's', s: S_TESTO, v: d.ragione_sociale || '' },
-            { t: 's', s: S_TESTO, v: d.codice_fiscale || '' }
+            { t: 's', s: S_TESTO, v: getDelegaLabel(d) },
+            { t: 's', s: S_TESTO, v: scadenza ? formatDateExcel(scadenza) : '' }
         ];
     });
 

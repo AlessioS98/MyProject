@@ -243,23 +243,83 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     overflow-y: auto;
 }
 
-/* Gruppo di voci del menu (Contratti / Scadenze) racchiuso in un riquadro
-   con il titolo come intestazione */
+/* Sezioni del menu (Contratti / Deleghe / Marchi): tendine richiudibili.
+   Ogni sezione ha il suo colore, usato da icona, titolo e freccia. */
+.nav-group[data-group="contratti"] { --nav-accent: #7dd3fc; }
+.nav-group[data-group="deleghe"] { --nav-accent: #6ee7b7; }
+.nav-group[data-group="marchi"] { --nav-accent: #fcd34d; }
+
 .nav-group {
-    padding: 10px 8px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: var(--radius-md);
-    background: rgba(255, 255, 255, 0.03);
 }
 
 .nav-group-title {
-    padding: 0 8px 8px;
-    color: var(--sidebar-text);
-    opacity: 0.6;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 12px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition), box-shadow var(--transition);
+}
+
+.nav-group-title > i:first-child {
+    color: var(--nav-accent, #a5b4fc);
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.nav-group-label {
+    flex: 1;
+    color: #eef2ff;
+}
+
+.nav-group-chevron {
+    color: var(--nav-accent, #a5b4fc);
+    font-size: 0.75rem;
+    transition: transform var(--transition);
+}
+
+.nav-group-title:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.nav-group.open > .nav-group-title {
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 3px 0 0 var(--nav-accent, #a5b4fc);
+}
+
+.nav-group.open > .nav-group-title .nav-group-chevron {
+    transform: rotate(180deg);
+}
+
+.nav-group-items {
+    display: none;
+    margin: 2px 0 4px 20px;
+    padding: 2px 0 2px 8px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.nav-group.open > .nav-group-items {
+    display: block;
+}
+
+.nav-group-items .nav-item {
+    padding: 10px 14px;
+    font-size: 0.88rem;
 }
 
 .nav-item {
@@ -298,9 +358,9 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     margin-bottom: 10px;
 }
 
-/* Spazio tra un riquadro di sezione e il successivo (es. Deleghe) */
+/* Spazio tra una sezione del menu e la successiva (es. Deleghe) */
 .nav-group + .nav-group {
-    margin-top: 10px;
+    margin-top: 2px;
 }
 
 .sidebar-footer {
@@ -2165,6 +2225,11 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 .case-toggle-btn:hover {
     border-color: var(--primary);
     color: var(--primary);
+}
+/* Il pulsante usa display:flex, che altrimenti vince sull'attributo hidden:
+   senza questa regola comparirebbe in tutte le finestre, anche dove non serve */
+.case-toggle-btn[hidden] {
+    display: none;
 }
 .case-toggle-btn.active {
     background: var(--primary);

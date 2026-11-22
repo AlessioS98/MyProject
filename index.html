@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=36">
+    <link rel="stylesheet" href="styles.css?v=37">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -28,42 +28,60 @@
                 <i class="fas fa-home"></i>
                 <span>Generale</span>
             </a>
-            <div class="nav-group">
-                <div class="nav-group-title">Gestione Contratti di Locazione</div>
-                <a href="#" class="nav-item" data-page="contratti">
+            <div class="nav-group" data-group="contratti">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupContratti">
                     <i class="fas fa-file-contract"></i>
-                    <span>Contratti</span>
-                </a>
-                <a href="#" class="nav-item" data-page="scadenze">
-                    <i class="fas fa-calendar-check"></i>
-                    <span>Scadenze</span>
-                </a>
-                <button class="shortcut-btn" id="btnImmobili" title="Immobili">
-                    <i class="fas fa-building"></i>
-                    <span>Immobili</span>
+                    <span class="nav-group-label">Gestione Contratti di Locazione</span>
+                    <i class="fas fa-chevron-down nav-group-chevron"></i>
                 </button>
+                <div class="nav-group-items" id="navGroupContratti">
+                    <a href="#" class="nav-item" data-page="contratti">
+                        <i class="fas fa-file-contract"></i>
+                        <span>Contratti</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="scadenze">
+                        <i class="fas fa-calendar-check"></i>
+                        <span>Scadenze</span>
+                    </a>
+                    <button class="shortcut-btn" id="btnImmobili" title="Immobili">
+                        <i class="fas fa-building"></i>
+                        <span>Immobili</span>
+                    </button>
+                </div>
             </div>
-            <div class="nav-group">
-                <div class="nav-group-title">Gestione Deleghe</div>
-                <a href="#" class="nav-item" data-page="deleghe">
+            <div class="nav-group" data-group="deleghe">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupDeleghe">
                     <i class="fas fa-file-signature"></i>
-                    <span>Deleghe</span>
-                </a>
-                <a href="#" class="nav-item" data-page="scadenze-deleghe">
-                    <i class="fas fa-calendar-check"></i>
-                    <span>Scadenze</span>
-                </a>
+                    <span class="nav-group-label">Gestione Deleghe</span>
+                    <i class="fas fa-chevron-down nav-group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="navGroupDeleghe">
+                    <a href="#" class="nav-item" data-page="deleghe">
+                        <i class="fas fa-file-signature"></i>
+                        <span>Deleghe</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="scadenze-deleghe">
+                        <i class="fas fa-calendar-check"></i>
+                        <span>Scadenze</span>
+                    </a>
+                </div>
             </div>
-            <div class="nav-group">
-                <div class="nav-group-title">Gestione Marchi</div>
-                <a href="#" class="nav-item" data-page="marchi">
+            <div class="nav-group" data-group="marchi">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupMarchi">
                     <i class="fas fa-registered"></i>
-                    <span>Marchi</span>
-                </a>
-                <a href="#" class="nav-item" data-page="scadenze-marchi">
-                    <i class="fas fa-calendar-check"></i>
-                    <span>Scadenze</span>
-                </a>
+                    <span class="nav-group-label">Gestione Marchi</span>
+                    <i class="fas fa-chevron-down nav-group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="navGroupMarchi">
+                    <a href="#" class="nav-item" data-page="marchi">
+                        <i class="fas fa-registered"></i>
+                        <span>Marchi</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="scadenze-marchi">
+                        <i class="fas fa-calendar-check"></i>
+                        <span>Scadenze</span>
+                    </a>
+                </div>
             </div>
 
             <a href="#" class="nav-item" data-page="promemoria">
@@ -303,10 +321,8 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Cognome</th>
-                            <th>Nome</th>
-                            <th>Ragione Sociale</th>
-                            <th>Codice Fiscale</th>
+                            <th>Delegato</th>
+                            <th>Scadenza</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
@@ -407,9 +423,9 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>N. Identificativo</th>
                             <th>Soggetto</th>
                             <th>Codice Fiscale</th>
+                            <th>N. Identificativo</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
@@ -468,9 +484,9 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>N. Identificativo</th>
                             <th>Soggetto</th>
                             <th>Data Scadenza</th>
+                            <th>N. Identificativo</th>
                             <th>Giorni</th>
                             <th>Azioni</th>
                         </tr>
