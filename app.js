@@ -1470,10 +1470,11 @@ function navigateTo(page) {
 }
 // --- Pagina Generale: tutte le scadenze ---
 // Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
-// scadenza dei contratti non chiusi, le tre date delle deleghe e la scadenza
-// dei marchi. L'ordine è quello della scadenza più prossima: prima oggi e le
-// date future dalla più vicina in avanti, poi quelle passate dalla più
-// recente alla più vecchia.
+// scadenza dei contratti non chiusi, le tre date delle deleghe, la scadenza
+// dei marchi e i promemoria con data. L'ordine è quello della scadenza più
+// prossima: prima oggi e le date future dalla più vicina in avanti, poi
+// quelle passate dalla più recente alla più vecchia. I promemoria SENZA data
+// sono mostrati a parte, sotto una linea orizzontale in fondo alla tabella.
 function renderGeneraleScadenze() {
     var tbody = document.getElementById('generaleScadenzeTableBody');
     if (!tbody) return;
@@ -1546,16 +1547,28 @@ function renderGeneraleScadenze() {
         });
     });
 
-    // Promemoria non ancora fatti (quelli fatti non sono più scadenze attive).
+    // Promemoria: compaiono TUTTI, anche quelli con "Fatto" attivo (restano
+    // visibili, colorati in verde come nella pagina Promemoria). Quelli CON
+    // scadenza entrano nella lista datata qui sopra; quelli SENZA data non
+    // sono scadenze e restano a parte, per il blocco in fondo alla tabella
+    // (stessa divisione della pagina Promemoria).
+    var promemoriaSenzaData = [];
     (appData.promemoria || []).forEach(function(p) {
-        if (p.fatto || !p.data_scadenza) return;
+        var descrizione = p.descrizione || 'Promemoria #' + p.id;
+        var fatto = !!p.fatto;
+        if (!p.data_scadenza) {
+            promemoriaSenzaData.push({ id: p.id, dettaglio: descrizione, fatto: fatto });
+            return;
+        }
         items.push({
             data: String(p.data_scadenza).slice(0, 10),
             tipo: 'Promemoria',
             icon: 'fa-bell',
-            dettaglio: p.descrizione || 'Promemoria #' + p.id
+            dettaglio: descrizione,
+            fatto: fatto
         });
     });
+    promemoriaSenzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
 
     items.forEach(function(it) { it.giorni = daysUntil(it.data); });
     items.sort(function(a, b) {
@@ -1572,52 +1585,55 @@ function renderGeneraleScadenze() {
         return a.dettaglio.localeCompare(b.dettaglio, 'it');
     });
 
-    if (items.length === 0) {
+    if (items.length === 0 && promemoriaSenzaData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza presente</p></div></td></tr>';
         return;
     }
 
-    tbody.innerHTML = items.map(function(it) {
+    var html = items.map(function(it) {
         var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
-        var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 7 ? ' class="alert-in-scadenza"' : '');
+        // I promemoria fatti restano visibili ma in verde (come nella pagina
+        // Promemoria) e non vengono evidenziati come scaduti.
+        var rowCls = it.fatto
+            ? ' class="promemoria-fatto"'
+            : (it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 7 ? ' class="alert-in-scadenza"' : ''));
         var giorniLabel = it.giorni > 0
             ? 'tra ' + it.giorni + ' gg'
             : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
+        var stato = it.fatto
+            ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>'
+            : '<span class="status-badge ' + urg + '">' + giorniLabel + '</span>';
         return '<tr' + rowCls + '>' +
             '<td><strong>' + formatDate(it.data) + '</strong></td>' +
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
             '<td>' + it.dettaglio + '</td>' +
-            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
+            '<td>' + stato + '</td>' +
             '</tr>';
     }).join('');
+
+    // Promemoria senza data: blocco separato da una linea orizzontale, in
+    // ordine alfabetico. La linea compare solo se ci sono anche scadenze
+    // datate sopra, come nella pagina Promemoria.
+    if (items.length && promemoriaSenzaData.length) {
+        html += '<tr class="promemoria-divisore"><td colspan="4"><span>Promemoria senza scadenza</span></td></tr>';
+    }
+    html += promemoriaSenzaData.map(function(p) {
+        return '<tr' + (p.fatto ? ' class="promemoria-fatto"' : '') + '>' +
+            '<td>-</td>' +
+            '<td><i class="fas fa-bell"></i> Promemoria</td>' +
+            '<td>' + p.dettaglio + '</td>' +
+            '<td>' + (p.fatto ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') + '</td>' +
+            '</tr>';
+    }).join('');
+
+    tbody.innerHTML = html;
 }
 
-// --- Pagina Generale: elenco anagrafiche ---
-// La schermata "Generale" mostra le anagrafiche persone e, sotto, tutte le
-// scadenze di contratti, pagamenti, deleghe e marchi.
+// --- Pagina Generale: tutte le scadenze ---
+// La schermata "Generale" mostra solo l'elenco di tutte le scadenze
+// (pagamenti, contratti, deleghe, marchi e promemoria).
 function renderGenerale() {
     renderGeneraleScadenze();
-    var tbody = document.getElementById('generaleTableBody');
-    if (!tbody) return;
-    var personeList = ordinaPersonePerLista(dedupPersone(appData.persone));
-    if (personeList.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessuna anagrafica presente</td></tr>';
-        return;
-    }
-    tbody.innerHTML = personeList.map(function(p) {
-        var isAzienda = p.ragione_sociale && !p.nome && !p.cognome;
-        // Colonna "Cognome / Ragione Sociale": per le persone fisiche solo il
-        // cognome, per le aziende la ragione sociale (stessa logica della
-        // lista anagrafiche nella modale).
-        var cognomeOSociale = isAzienda ? (p.ragione_sociale || '') : (p.cognome || '');
-        return '<tr><td><strong>' + (cognomeOSociale || '-') + '</strong></td>' +
-            '<td>' + (isAzienda ? '-' : (p.nome || '-')) + '</td>' +
-            '<td>' + (p.codice_fiscale || '-') + '</td>' +
-            '<td><div class="td-actions">' +
-            '<button type="button" data-action="edit-persona" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
-            '<button type="button" class="danger" data-action="delete-persona" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
-            '</div></td></tr>';
-    }).join('');
 }
 
 // Mostra/nasconde un elenco della pagina Generale dalla freccia accanto al
@@ -2081,7 +2097,12 @@ function renderPromemoria() {
     var esc = function(x) {
         return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
     };
-    tbody.innerHTML = list.map(function(p) {
+    // Due blocchi separati da una linea: sopra i promemoria CON scadenza,
+    // ordinati da ordinaPromemoriaPerLista dalla data più vicina a oggi fino
+    // alla più lontana; sotto quelli SENZA data, in ordine alfabetico.
+    var conData = list.filter(function(p) { return !!p.data_scadenza; });
+    var senzaData = list.filter(function(p) { return !p.data_scadenza; });
+    function rigaPromemoria(p) {
         var fatto = !!p.fatto;
         return '<tr' + (fatto ? ' class="promemoria-fatto"' : '') + '>' +
             '<td><strong>' + esc(p.descrizione || '-') + '</strong>' +
@@ -2093,7 +2114,13 @@ function renderPromemoria() {
             '<button type="button" data-action="edit-promemoria" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
             '<button type="button" class="danger" data-action="delete-promemoria" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
             '</div></td></tr>';
-    }).join('');
+    }
+    var html = conData.map(rigaPromemoria).join('');
+    if (conData.length && senzaData.length) {
+        html += '<tr class="promemoria-divisore"><td colspan="3"><span>Senza scadenza</span></td></tr>';
+    }
+    html += senzaData.map(rigaPromemoria).join('');
+    tbody.innerHTML = html;
 }
 
 function promemoriaFormHtml(p) {
