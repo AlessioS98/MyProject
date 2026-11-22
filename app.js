@@ -1468,6 +1468,16 @@ function navigateTo(page) {
     aggiornaTitoloSezione(page);
     refreshPage(page);
 }
+// Colonna "Note" dei promemoria: dice se l'utente ha scritto qualcosa nelle
+// note (Sì) oppure no (No). Le altre scadenze della pagina Generale mostrano
+// un trattino, perché non hanno note.
+function promemoriaCellaNote(note) {
+    if (note == null || !String(note).trim()) {
+        return '<span class="nota-no">No</span>';
+    }
+    return '<span class="nota-si"><i class="fas fa-check"></i> Sì</span>';
+}
+
 // --- Pagina Generale: tutte le scadenze ---
 // Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
 // scadenza dei contratti non chiusi, le tre date delle deleghe, la scadenza
@@ -1475,6 +1485,10 @@ function navigateTo(page) {
 // prossima: prima oggi e le date future dalla più vicina in avanti, poi
 // quelle passate dalla più recente alla più vecchia. I promemoria SENZA data
 // sono mostrati a parte, sotto una linea orizzontale in fondo alla tabella.
+// Snapshot della vista della pagina Generale (righe datate e promemoria senza
+// scadenza): lo usa l'esportazione Excel per riprodurre la tabella a video.
+var ultimaVistaGenerale = null;
+
 function renderGeneraleScadenze() {
     var tbody = document.getElementById('generaleScadenzeTableBody');
     if (!tbody) return;
@@ -1557,7 +1571,7 @@ function renderGeneraleScadenze() {
         var descrizione = p.descrizione || 'Promemoria #' + p.id;
         var fatto = !!p.fatto;
         if (!p.data_scadenza) {
-            promemoriaSenzaData.push({ id: p.id, dettaglio: descrizione, fatto: fatto });
+            promemoriaSenzaData.push({ id: p.id, dettaglio: descrizione, fatto: fatto, nota: p.note || '' });
             return;
         }
         items.push({
@@ -1565,7 +1579,8 @@ function renderGeneraleScadenze() {
             tipo: 'Promemoria',
             icon: 'fa-bell',
             dettaglio: descrizione,
-            fatto: fatto
+            fatto: fatto,
+            nota: p.note || ''
         });
     });
     promemoriaSenzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
@@ -1585,8 +1600,11 @@ function renderGeneraleScadenze() {
         return a.dettaglio.localeCompare(b.dettaglio, 'it');
     });
 
+    // Snapshot della vista appena calcolata (ordine incluso)
+    ultimaVistaGenerale = { items: items, senzaData: promemoriaSenzaData };
+
     if (items.length === 0 && promemoriaSenzaData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza presente</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza presente</p></div></td></tr>';
         return;
     }
 
@@ -1608,6 +1626,7 @@ function renderGeneraleScadenze() {
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
             '<td>' + it.dettaglio + '</td>' +
             '<td>' + stato + '</td>' +
+            '<td>' + (it.tipo === 'Promemoria' ? promemoriaCellaNote(it.nota) : '-') + '</td>' +
             '</tr>';
     }).join('');
 
@@ -1615,7 +1634,7 @@ function renderGeneraleScadenze() {
     // ordine alfabetico. La linea compare solo se ci sono anche scadenze
     // datate sopra, come nella pagina Promemoria.
     if (items.length && promemoriaSenzaData.length) {
-        html += '<tr class="promemoria-divisore"><td colspan="4"><span>Promemoria senza scadenza</span></td></tr>';
+        html += '<tr class="promemoria-divisore"><td colspan="5"><span>Promemoria senza scadenza</span></td></tr>';
     }
     html += promemoriaSenzaData.map(function(p) {
         return '<tr' + (p.fatto ? ' class="promemoria-fatto"' : '') + '>' +
@@ -1623,6 +1642,7 @@ function renderGeneraleScadenze() {
             '<td><i class="fas fa-bell"></i> Promemoria</td>' +
             '<td>' + p.dettaglio + '</td>' +
             '<td>' + (p.fatto ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') + '</td>' +
+            '<td>' + promemoriaCellaNote(p.nota) + '</td>' +
             '</tr>';
     }).join('');
 
@@ -1761,21 +1781,18 @@ async function saveDelega() {
 // Scadenze delle deleghe: una riga per ogni data impostata (Delega Unica,
 // Cassetto Fiscale, Fatture e Corrispettivi), con la stessa impostazione
 // della pagina Scadenze dei contratti.
-function renderScadenzeDeleghe() {
-    var tbody = document.getElementById('scadenzeDelegheTableBody');
-    if (!tbody) return;
+var TIPI_SCADENZA_DELEGA = [
+    { chiave: 'delega_unica', campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
+    { chiave: 'cassetto', campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
+    { chiave: 'fatture', campo: 'data_scadenza_fatture_corrispettivi', label: 'Fatture e Corrispettivi' }
+];
 
-    var TIPI = [
-        { chiave: 'delega_unica', campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
-        { chiave: 'cassetto', campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
-        { chiave: 'fatture', campo: 'data_scadenza_fatture_corrispettivi', label: 'Fatture e Corrispettivi' }
-    ];
-    var deleghe = appData.deleghe || [];
-
-    // Tutte le scadenze presenti, una voce per delega e tipo di data
+// Tutte le scadenze delle deleghe, senza filtri: una voce per ogni delega e
+// tipo di data. È la base di statistiche, tabella ed esportazione Excel.
+function getScadenzeDelegheTutte() {
     var items = [];
-    deleghe.forEach(function(d) {
-        TIPI.forEach(function(t) {
+    (appData.deleghe || []).forEach(function(d) {
+        TIPI_SCADENZA_DELEGA.forEach(function(t) {
             var data = d[t.campo];
             if (!data) return;
             items.push({
@@ -1788,20 +1805,15 @@ function renderScadenzeDeleghe() {
             });
         });
     });
+    return items;
+}
 
-    // Statistiche: non scadute (tutte le date future, anche oltre i 30
-    // giorni), scadute e quante rientrano nei prossimi 20 giorni (la fascia
-    // dei promemoria); totale deleghe
-    var entro20 = items.filter(function(it) { return it.giorni >= 0 && it.giorni <= 20; });
-    var scadute = items.filter(function(it) { return it.giorni < 0; });
-    var nonScadute = items.filter(function(it) { return it.giorni >= 0; });
-    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
-    setTxt('statDelegheNonScadute', nonScadute.length);
-    setTxt('statDelegheScadute', scadute.length);
-    setTxt('statDelegheEntro20', entro20.length);
-    setTxt('statDelegheTotale', deleghe.length);
+// Scadenze filtrate per tipo e per stato, ordinate come in tabella. La usano
+// sia la pagina sia l'esportazione Excel, così il file contiene esattamente
+// ciò che l'utente sta guardando.
+function getScadenzeDelegheFiltrate() {
+    var items = getScadenzeDelegheTutte();
 
-    // Filtri per tipo di scadenza e per stato
     var tipoSel = document.getElementById('filterDelegaScadenzaTipo');
     var statoSel = document.getElementById('filterDelegaScadenzaStato');
     var tipoFiltro = tipoSel ? tipoSel.value : 'tutte';
@@ -1831,6 +1843,30 @@ function renderScadenzeDeleghe() {
         if (cmp !== 0) return cmp;
         return a.tipoLabel.localeCompare(b.tipoLabel, 'it');
     });
+    return items;
+}
+
+function renderScadenzeDeleghe() {
+    var tbody = document.getElementById('scadenzeDelegheTableBody');
+    if (!tbody) return;
+
+    var deleghe = appData.deleghe || [];
+    var items = getScadenzeDelegheTutte();
+
+    // Statistiche: non scadute (tutte le date future, anche oltre i 30
+    // giorni), scadute e quante rientrano nei prossimi 20 giorni (la fascia
+    // dei promemoria); totale deleghe
+    var entro20 = items.filter(function(it) { return it.giorni >= 0 && it.giorni <= 20; });
+    var scadute = items.filter(function(it) { return it.giorni < 0; });
+    var nonScadute = items.filter(function(it) { return it.giorni >= 0; });
+    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('statDelegheNonScadute', nonScadute.length);
+    setTxt('statDelegheScadute', scadute.length);
+    setTxt('statDelegheEntro20', entro20.length);
+    setTxt('statDelegheTotale', deleghe.length);
+
+    // Lista filtrata per tipo e stato, ordinata come in tabella
+    items = getScadenzeDelegheFiltrate();
 
     if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
@@ -2091,7 +2127,7 @@ function renderPromemoria() {
     if (!tbody) return;
     var list = ordinaPromemoriaPerLista(appData.promemoria);
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="table-empty-cell">Nessun promemoria presente</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria presente</td></tr>';
         return;
     }
     var esc = function(x) {
@@ -2109,6 +2145,7 @@ function renderPromemoria() {
             (fatto ? ' <span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') +
             '</td>' +
             '<td>' + formatDate(p.data_scadenza) + '</td>' +
+            '<td>' + promemoriaCellaNote(p.note) + '</td>' +
             '<td><div class="td-actions">' +
             '<button type="button" data-action="view-promemoria" data-id="' + p.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
             '<button type="button" data-action="edit-promemoria" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
@@ -2207,13 +2244,11 @@ async function togglePromemoria(id) {
 
 // Scadenze dei marchi: una riga per ogni marchio con data di scadenza, con
 // la stessa impostazione della pagina Scadenze delle deleghe.
-function renderScadenzeMarchi() {
-    var tbody = document.getElementById('scadenzeMarchiTableBody');
-    if (!tbody) return;
-
-    var marchi = appData.marchi || [];
+// La lista (filtrata per stato e ordinata come in tabella) è condivisa con
+// l'esportazione Excel: il file contiene esattamente ciò che si vede.
+function getScadenzeMarchiFiltrate() {
     var items = [];
-    marchi.forEach(function(m) {
+    (appData.marchi || []).forEach(function(m) {
         if (!m.data_scadenza) return;
         var data = String(m.data_scadenza).slice(0, 10);
         items.push({
@@ -2225,20 +2260,7 @@ function renderScadenzeMarchi() {
         });
     });
 
-    // Statistiche: marchi non scaduti (senza data o con data futura, senza
-    // limite di giorni) e marchi scaduti; totale marchi
-    var nonScaduti = marchi.filter(function(m) {
-        return !m.data_scadenza || daysUntil(String(m.data_scadenza).slice(0, 10)) >= 0;
-    }).length;
-    var scaduti = marchi.filter(function(m) {
-        return !!m.data_scadenza && daysUntil(String(m.data_scadenza).slice(0, 10)) < 0;
-    }).length;
-    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
-    setTxt('statMarchiNonScaduti', nonScaduti);
-    setTxt('statMarchiScadute', scaduti);
-    setTxt('statMarchiTotale', marchi.length);
-
-    // Filtro di stato
+    // Filtro di stato (Non scadute / Scadute / Tutte)
     var statoSel = document.getElementById('filterMarchioScadenzaStato');
     var statoFiltro = statoSel ? statoSel.value : 'future';
     if (statoFiltro === 'future') {
@@ -2263,6 +2285,30 @@ function renderScadenzeMarchi() {
         if (cmp !== 0) return cmp;
         return a.numero.localeCompare(b.numero, 'it', { numeric: true });
     });
+    return items;
+}
+
+function renderScadenzeMarchi() {
+    var tbody = document.getElementById('scadenzeMarchiTableBody');
+    if (!tbody) return;
+
+    var marchi = appData.marchi || [];
+
+    // Statistiche: marchi non scaduti (senza data o con data futura, senza
+    // limite di giorni) e marchi scaduti; totale marchi
+    var nonScaduti = marchi.filter(function(m) {
+        return !m.data_scadenza || daysUntil(String(m.data_scadenza).slice(0, 10)) >= 0;
+    }).length;
+    var scaduti = marchi.filter(function(m) {
+        return !!m.data_scadenza && daysUntil(String(m.data_scadenza).slice(0, 10)) < 0;
+    }).length;
+    var setTxt = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('statMarchiNonScaduti', nonScaduti);
+    setTxt('statMarchiScadute', scaduti);
+    setTxt('statMarchiTotale', marchi.length);
+
+    // Lista filtrata per lo stato scelto e ordinata come in tabella
+    var items = getScadenzeMarchiFiltrate();
 
     if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
@@ -2335,6 +2381,7 @@ document.addEventListener('click', function(e) {
         case 'delete-marchio': openModal('deleteMarchioConfirm', id); break;
         case 'confirm-delete-marchio': deleteMarchio(id); break;
         case 'export-marchi-excel': exportMarchiExcel(); break;
+        case 'export-scadenze-marchi-excel': exportScadenzeMarchiExcel(); break;
         case 'export-promemoria-excel': exportPromemoriaExcel(); break;
         case 'new-promemoria': openModal('newPromemoria'); break;
         case 'view-promemoria': openModal('viewPromemoria', id); break;
@@ -2343,6 +2390,9 @@ document.addEventListener('click', function(e) {
         case 'confirm-delete-promemoria': deletePromemoria(id); break;
         case 'toggle-promemoria': togglePromemoria(id); break;
         case 'export-deleghe-excel': exportDelegheExcel(); break;
+        case 'export-scadenze-excel': exportScadenzeExcel(); break;
+        case 'export-generale-excel': exportGeneraleExcel(); break;
+        case 'export-scadenze-deleghe-excel': exportScadenzeDelegheExcel(); break;
         case 'new-persona': openModal('newPersona'); break;
         case 'edit-persona': openModal('editPersona', id); break;
         case 'delete-persona': openModal('deletePersonaConfirm', id); break;
@@ -4199,8 +4249,13 @@ function ordinaContrattiPerLista(list) {
     });
 }
 
+// Ultima lista di contratti disegnata (filtrata e ordinata): la usa
+// l'esportazione Excel per esportare esattamente ciò che si vede a video.
+var ultimaListaContratti = null;
+
 function renderContrattiList(list) {
     var filtered = ordinaContrattiPerLista(list);
+    ultimaListaContratti = filtered;
 
     // Table view
     var tbody = document.getElementById('contractsTableBody');
@@ -4229,11 +4284,11 @@ function renderContrattiList(list) {
 // ============================================
 // EXPORT EXCEL CONTRATTI
 // ============================================
-// Genera un vero file Excel (.xlsx) con TUTTI i contratti, anche quando la
-// lista a video e' filtrata da una ricerca: il filtro vale solo per la tabella
-// mostrata, non per l'esportazione. Per ogni contratto riporta le informazioni
-// principali e lo STATO (Attivo / Scaduto / Chiuso) evidenziato con un colore.
-// Nessuna libreria esterna e nessun bisogno di internet.
+// Genera un vero file Excel (.xlsx) con i contratti MOSTRATI a video: se e'
+// attivo un filtro (ricerca o scadenza entro N giorni) il file contiene solo
+// quei contratti, nello stesso ordine della tabella. Per ogni contratto
+// riporta le informazioni principali e lo STATO (Attivo / Scaduto / Chiuso)
+// evidenziato con un colore. Nessuna libreria esterna, nessun bisogno di internet.
 
 // Data nel formato italiano gg/mm/aaaa (usata nel titolo del foglio Excel).
 function formatDateExcel(d) {
@@ -4469,8 +4524,9 @@ function rigaXlsx(nRiga, celle) {
 }
 
 function exportContrattiExcel() {
-    // SEMPRE tutti i contratti (in ordine di lista), anche con un filtro attivo
-    var list = ordinaContrattiPerLista(appData.contratti);
+    // Rispetta il filtro attivo: esporta l'ultima lista disegnata a video
+    // (renderContrattiList), con lo stesso ordine; senza filtro sono tutti.
+    var list = ultimaListaContratti || ordinaContrattiPerLista(appData.contratti);
     if (!list || list.length === 0) {
         showToast('Nessun contratto da esportare', 'error');
         return;
@@ -4540,7 +4596,9 @@ function exportContrattiExcel() {
     var adesso = new Date();
     var p = function(n) { return String(n).padStart(2, '0'); };
     var istante = formatDateExcel(toLocalDateStr(adesso)) + ' ' + p(adesso.getHours()) + ':' + p(adesso.getMinutes());
-    var titolo = 'Elenco contratti - esportato il ' + istante + ' (tutti i contratti: ' + list.length + ')';
+    var filtroAttivo = list.length !== appData.contratti.length;
+    var titolo = 'Elenco contratti - esportato il ' + istante +
+        ' (' + (filtroAttivo ? 'filtro attivo: ' : 'tutti i contratti: ') + list.length + ')';
     var riepilogo = 'Riepilogo: ' + conteggi.attivo + ' attivi · ' +
         conteggi.scaduto + ' scaduti · ' + conteggi.chiuso + ' chiusi';
 
@@ -4723,6 +4781,178 @@ function exportDelegheExcel() {
     scaricaXlsx(blob, 'Gestione_Contratti_Deleghe', 'Elenco deleghe esportato');
 }
 
+// Esporta in Excel la pagina Scadenze delle deleghe rispettando i filtri
+// attivi (tipo di scadenza e stato): righe e ordine sono quelli della
+// tabella a video.
+function exportScadenzeDelegheExcel() {
+    var list = getScadenzeDelegheFiltrate();
+    if (list.length === 0) {
+        showToast('Nessuna scadenza delega da esportare', 'error');
+        return;
+    }
+
+    var tipoSel = document.getElementById('filterDelegaScadenzaTipo');
+    var statoSel = document.getElementById('filterDelegaScadenzaStato');
+    var tipoFiltro = tipoSel ? tipoSel.value : 'tutte';
+    var statoFiltro = statoSel ? statoSel.value : 'future';
+
+    var etichetteTipo = {
+        tutte: 'tutte le scadenze',
+        delega_unica: 'Delega Unica',
+        cassetto: 'Cassetto Fiscale',
+        fatture: 'Fatture e Corrispettivi'
+    };
+    var etichetteStato = { future: 'Non scadute', scadute: 'Scadute', tutte: 'Tutte' };
+    var suffissiTipo = {
+        tutte: 'Tutte',
+        delega_unica: 'Delega_Unica',
+        cassetto: 'Cassetto_Fiscale',
+        fatture: 'Fatture_e_Corrispettivi'
+    };
+    var etichettaTipo = etichetteTipo[tipoFiltro] || tipoFiltro;
+    var etichettaStato = etichetteStato[statoFiltro] || statoFiltro;
+    var suffissoTipo = suffissiTipo[tipoFiltro] || 'Tutte';
+    var suffissoStato = statoFiltro === 'future'
+        ? 'Non_Scadute'
+        : (statoFiltro === 'scadute' ? 'Scadute' : 'Tutte');
+
+    var COLONNE = ['Delegato', 'Tipo Scadenza', 'Data Scadenza', 'Giorni'];
+    var LARGHEZZE = [40, 26, 16, 20];
+
+    var righeDati = list.map(function(it) {
+        var g = it.giorni;
+        var giorniTxt = g > 0 ? 'tra ' + g + ' gg' : (g === 0 ? 'oggi' : Math.abs(g) + ' gg fa');
+        return [
+            { t: 's', s: S_TESTO, v: it.delegato },
+            { t: 's', s: S_TESTO, v: it.tipoLabel },
+            { t: 's', s: S_TESTO, v: formatDateExcel(it.data) },
+            { t: 's', s: S_TESTO, v: giorniTxt }
+        ];
+    });
+
+    var titolo = 'Scadenze deleghe (' + etichettaTipo + ', ' + etichettaStato.toLowerCase() + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
+    var blob = creaXlsxListaBlob('Scadenze deleghe', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Deleghe_' + suffissoTipo + '_' + suffissoStato, 'Scadenze deleghe esportate');
+}
+
+// Esporta in Excel la pagina Scadenze dei contratti di locazione rispettando i
+// filtri attivi (Scadenze di pagamento / Scadenze dei contratti e stato): il
+// file riproduce la tabella a video, con le stesse righe e lo stesso ordine.
+async function exportScadenzeExcel() {
+    // Ridisegna la vista con i filtri correnti e usa le righe appena calcolate
+    await renderScadenze();
+    var vista = ultimaVistaScadenze;
+    if (!vista || !vista.items || vista.items.length === 0) {
+        showToast('Nessuna scadenza da esportare', 'error');
+        return;
+    }
+
+    var isContratti = vista.tipo === 'contratti';
+    var isScaduti = isContratti && vista.statoFiltro === 'scaduti';
+
+    var etichettaStato = isContratti
+        ? (isScaduti ? 'scaduti/chiusi' : 'non scaduti')
+        : (vista.statoFiltro === 'archiviate' ? 'archiviate' : 'da pagare');
+    var suffissoTipo = isContratti ? 'Contratti' : 'Pagamenti';
+    var suffissoStato = isContratti
+        ? (isScaduti ? 'Scaduti_Chiusi' : 'Non_Scaduti')
+        : (vista.statoFiltro === 'archiviate' ? 'Archiviate' : 'Da_Pagare');
+
+    var COLONNE;
+    var LARGHEZZE;
+    var righeDati;
+
+    if (isContratti) {
+        COLONNE = ['Locatore', 'Conduttore', isScaduti ? 'Esito' : 'Prossima Scadenza'];
+        LARGHEZZE = [34, 34, 26];
+        righeDati = vista.items.map(function(it) {
+            var esito;
+            if (it.chiuso) {
+                esito = 'Chiuso il ' + formatDateExcel(it.dataChiusura);
+            } else if (it.scaduto) {
+                esito = 'Scaduto il ' + formatDateExcel(it.scadenza);
+            } else {
+                esito = formatDateExcel(it.scadenza);
+            }
+            return [
+                { t: 's', s: S_TESTO, v: it.locLabel || '' },
+                { t: 's', s: S_TESTO, v: it.condLabel || '' },
+                { t: 's', s: S_TESTO, v: esito }
+            ];
+        });
+    } else {
+        COLONNE = ['Locatore', 'Conduttore', 'Prossima Scadenza', 'Stato', 'Canone'];
+        LARGHEZZE = [30, 30, 18, 20, 50];
+        righeDati = vista.items.map(function(it) {
+            var stato;
+            if (it.completata) {
+                stato = 'Completata' + (it.dataCompletamento ? ' il ' + formatDateExcel(it.dataCompletamento) : '');
+            } else if (it.scaduta) {
+                stato = 'Scaduta';
+            } else if (it.urg) {
+                stato = it.urg.label + (it.urg.days > 0 ? ' (' + it.urg.days + ' gg)' : '');
+            } else {
+                stato = 'Da pagare';
+            }
+            return [
+                { t: 's', s: S_TESTO, v: it.locLabel || '' },
+                { t: 's', s: S_TESTO, v: it.condLabel || '' },
+                { t: 's', s: S_TESTO, v: formatDateExcel(it.scadenza) },
+                { t: 's', s: S_TESTO, v: stato },
+                { t: 's', s: S_TESTO, v: it.canoneInfo || '' }
+            ];
+        });
+    }
+
+    var titolo = (isContratti ? 'Scadenze contratti' : 'Scadenze pagamenti') + ' (' + etichettaStato + ') - esportate il ' + istanteExcel() + ' (' + vista.items.length + ' righe)';
+    var blob = creaXlsxListaBlob('Scadenze', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_' + suffissoTipo + '_' + suffissoStato, 'Scadenze esportate');
+}
+
+// Esporta in Excel l'elenco "Tutte le scadenze" della pagina Generale: le
+// righe datate nello stesso ordine della tabella, poi i promemoria senza
+// scadenza in fondo, come si vedono a video.
+function exportGeneraleExcel() {
+    var vista = ultimaVistaGenerale;
+    if (!vista || (vista.items.length === 0 && vista.senzaData.length === 0)) {
+        showToast('Nessuna scadenza da esportare', 'error');
+        return;
+    }
+
+    var notaTxt = function(nota) {
+        return (nota && String(nota).trim()) ? 'Sì' : 'No';
+    };
+
+    var COLONNE = ['Data', 'Tipo', 'Dettaglio', 'Stato', 'Note'];
+    var LARGHEZZE = [16, 20, 50, 20, 10];
+
+    var righeDati = vista.items.map(function(it) {
+        var g = it.giorni;
+        var stato = it.fatto
+            ? 'Fatto'
+            : (g > 0 ? 'tra ' + g + ' gg' : (g === 0 ? 'oggi' : Math.abs(g) + ' gg fa'));
+        return [
+            { t: 's', s: S_TESTO, v: formatDateExcel(it.data) },
+            { t: 's', s: S_TESTO, v: it.tipo },
+            { t: 's', s: S_TESTO, v: it.dettaglio },
+            { t: 's', s: S_TESTO, v: stato },
+            { t: 's', s: S_TESTO, v: it.tipo === 'Promemoria' ? notaTxt(it.nota) : '-' }
+        ];
+    }).concat(vista.senzaData.map(function(p) {
+        return [
+            { t: 's', s: S_TESTO, v: '-' },
+            { t: 's', s: S_TESTO, v: 'Promemoria' },
+            { t: 's', s: S_TESTO, v: p.dettaglio },
+            { t: 's', s: S_TESTO, v: p.fatto ? 'Fatto' : 'Senza scadenza' },
+            { t: 's', s: S_TESTO, v: notaTxt(p.nota) }
+        ];
+    }));
+
+    var titolo = 'Tutte le scadenze - esportate il ' + istanteExcel() + ' (' + righeDati.length + ' righe)';
+    var blob = creaXlsxListaBlob('Scadenze', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Generale_Scadenze', 'Scadenze esportate');
+}
+
 function exportMarchiExcel() {
     var list = ordinaMarchiPerLista(appData.marchi);
     if (list.length === 0) {
@@ -4748,6 +4978,44 @@ function exportMarchiExcel() {
     var titolo = 'Elenco marchi - esportato il ' + istanteExcel() + ' (' + list.length + ' marchi)';
     var blob = creaXlsxListaBlob('Marchi', titolo, COLONNE, LARGHEZZE, righeDati, null);
     scaricaXlsx(blob, 'Gestione_Contratti_Marchi', 'Elenco marchi esportato');
+}
+
+// Esporta in Excel la pagina Scadenze dei marchi rispettando il filtro attivo
+// (Non scadute / Scadute / Tutte): righe e ordine sono quelli della tabella
+// a video, così il file contiene solo ciò che l'utente sta guardando.
+function exportScadenzeMarchiExcel() {
+    var list = getScadenzeMarchiFiltrate();
+    if (list.length === 0) {
+        showToast('Nessuna scadenza marchio da esportare', 'error');
+        return;
+    }
+
+    var statoSel = document.getElementById('filterMarchioScadenzaStato');
+    var statoFiltro = statoSel ? statoSel.value : 'future';
+    var etichettaStato = statoFiltro === 'scadute'
+        ? 'Scadute'
+        : (statoFiltro === 'future' ? 'Non scadute' : 'Tutte');
+    var suffissoFile = statoFiltro === 'scadute'
+        ? 'Scadute'
+        : (statoFiltro === 'future' ? 'Non_Scadute' : 'Tutte');
+
+    var COLONNE = ['Numero Identificativo', 'Soggetto', 'Data Scadenza', 'Giorni'];
+    var LARGHEZZE = [22, 40, 16, 20];
+
+    var righeDati = list.map(function(it) {
+        var g = it.giorni;
+        var giorniTxt = g > 0 ? 'tra ' + g + ' gg' : (g === 0 ? 'oggi' : Math.abs(g) + ' gg fa');
+        return [
+            { t: 's', s: S_TESTO, v: it.numero },
+            { t: 's', s: S_TESTO, v: it.soggetto },
+            { t: 's', s: S_TESTO, v: formatDateExcel(it.data) },
+            { t: 's', s: S_TESTO, v: giorniTxt }
+        ];
+    });
+
+    var titolo = 'Scadenze marchi (' + etichettaStato.toLowerCase() + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
+    var blob = creaXlsxListaBlob('Scadenze marchi', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Marchi_' + suffissoFile, 'Scadenze marchi esportate');
 }
 
 function exportPromemoriaExcel() {
@@ -5913,6 +6181,11 @@ function getContrattoUrgenza(c) {
     return null;
 }
 
+// Snapshot dell'ultima vista disegnata nella pagina Scadenze (tipo di elenco,
+// filtro di stato e righe): lo usa l'esportazione Excel per generare un file
+// identico a ciò che si vede, con gli stessi filtri e lo stesso ordine.
+var ultimaVistaScadenze = null;
+
 async function renderScadenze() {
     var tipo = document.getElementById('filterScadenzaTipo').value;
 
@@ -6156,6 +6429,9 @@ async function renderScadenze() {
                 '</tr>';
         }).join('');
     }
+
+    // Snapshot della vista appena disegnata (filtri e ordine inclusi)
+    ultimaVistaScadenze = { tipo: tipo, statoFiltro: statoFiltro, items: items };
 }
 
 

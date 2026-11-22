@@ -816,6 +816,22 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     background: var(--border);
 }
 
+/* Colonna "Note" dei promemoria: Sì (con spunta verde) se il promemoria
+   ha del testo nelle note, No in grigio se sono vuote. */
+.nota-si {
+    color: var(--success);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.nota-si i {
+    margin-right: 4px;
+}
+
+.nota-no {
+    color: var(--text-muted);
+}
+
 .header-actions {
     display: flex;
     gap: 10px;

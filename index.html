@@ -130,7 +130,7 @@
                     <p class="page-subtitle">Gestisci tutti i contratti di locazione</p>
                 </div>
                 <div class="header-actions">
-                    <button class="btn btn-outline" onclick="exportContrattiExcel()" title="Scarica in Excel TUTTI i contratti con lo stato (attivo, scaduto, chiuso), anche con un filtro attivo">
+                    <button class="btn btn-outline" onclick="exportContrattiExcel()" title="Scarica in Excel i contratti attualmente mostrati, in base al filtro attivo">
                         <i class="fas fa-file-excel"></i> Esporta Excel
                     </button>
                     <button class="btn btn-primary" onclick="openModal('newContratto')">
@@ -176,6 +176,11 @@
                 <div>
                     <h1>Scadenze</h1>
                     <p class="page-subtitle" id="scadenzeSubtitle">Versamento Imposta di Registro 30gg</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-scadenze-excel" title="Scarica in Excel le scadenze in base ai filtri selezionati">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
                 </div>
             </div>
 
@@ -246,6 +251,11 @@
                     <h1>Generale</h1>
                     <p class="page-subtitle">Scadenze</p>
                 </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-generale-excel" title="Scarica in Excel l'elenco delle scadenze della pagina Generale">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                </div>
             </div>
 
             <div class="section-heading">
@@ -262,6 +272,7 @@
                             <th>Tipo</th>
                             <th>Dettaglio</th>
                             <th>Stato</th>
+                            <th>Note</th>
                         </tr>
                     </thead>
                     <tbody id="generaleScadenzeTableBody">
@@ -312,6 +323,11 @@
                 <div>
                     <h1>Scadenze</h1>
                     <p class="page-subtitle" id="scadenzeDelegheSubtitle">Scadenze delle deleghe</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-scadenze-deleghe-excel" title="Scarica in Excel le scadenze delle deleghe in base ai filtri selezionati">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
                 </div>
             </div>
 
@@ -411,6 +427,11 @@
                     <h1>Scadenze</h1>
                     <p class="page-subtitle" id="scadenzeMarchiSubtitle">Scadenze dei marchi</p>
                 </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-scadenze-marchi-excel" title="Scarica in Excel le scadenze dei marchi in base al filtro selezionato">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                </div>
             </div>
 
             <div class="stats-grid">
@@ -484,6 +505,7 @@
                         <tr>
                             <th>Descrizione</th>
                             <th>Scadenza</th>
+                            <th>Note</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
