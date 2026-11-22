@@ -1607,14 +1607,17 @@ function promemoriaCellaNote(note) {
 
 // --- Pagina Generale: tutte le scadenze ---
 // Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
-// scadenza dei contratti non chiusi, le tre date delle deleghe, la scadenza
-// dei marchi e i promemoria con data. In cima stanno i promemoria con
-// "Fatto" attivo; poi l'ordine è quello della scadenza più prossima: prima
-// oggi e le date future dalla più vicina in avanti, poi quelle passate dalla
-// più recente alla più vecchia. I promemoria SENZA data sono mostrati a
-// parte, sotto una linea orizzontale in fondo alla tabella.
-// Snapshot della vista della pagina Generale (righe datate e promemoria senza
-// scadenza): lo usa l'esportazione Excel per riprodurre la tabella a video.
+// scadenza dei contratti non chiusi e non ancora scaduti, le tre date delle
+// deleghe e la scadenza dei marchi (solo quelle non ancora passate), più i
+// promemoria ancora da fare con una data non ancora scaduta. Le scadenze di
+// pagamento scadute o completate, i contratti scaduti, le deleghe scadute, i
+// marchi scaduti e i promemoria scaduti non entrano nell'elenco: sono voci
+// già chiuse, che restano nelle rispettive pagine. I promemoria fatti e
+// quelli senza data stanno nella tabella qui sotto (vedi
+// renderGeneralePromemoria). L'ordine è quello della scadenza più prossima,
+// con oggi per primo e le date future dalla più vicina in avanti.
+// Snapshot della vista (ordine incluso): lo usa l'esportazione Excel per
+// riprodurre la tabella a video.
 var ultimaVistaGenerale = null;
 
 function renderGeneraleScadenze() {
@@ -1623,16 +1626,17 @@ function renderGeneraleScadenze() {
 
     var items = [];
 
-    // Scadenze di pagamento: in attesa o archiviate come scadute (quindi
-    // ancora da saldare). Le completate non sono più scadenze da tenere
-    // d'occhio; cedolare secca e date oltre il termine del contratto non
-    // prevedono versamenti.
+    // Scadenze di pagamento: solo quelle ancora da saldare e non ancora
+    // scadute. Le completate e le archiviate come scadute non sono più da
+    // tenere d'occhio, cosi' come quelle con la data ormai passata; cedolare
+    // secca e date oltre il termine del contratto non prevedono versamenti.
     (appData.scadenze || []).forEach(function(s) {
         if (!s.prossima_scadenza) return;
-        if (isScadenzaCompletata(s)) return;
+        if (isScadenzaArchiviata(s)) return;
         if (isScadenzaCedolare(s) || isScadenzaOltreTermine(s)) return;
         var data = getScadenzaDataMostrata(s);
         if (!data) return;
+        if (daysUntil(data) < 0) return;
         var c = getContrattoById(s.contratto_id);
         var parti = c ? getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id) : '';
         items.push({
@@ -1645,9 +1649,11 @@ function renderGeneraleScadenze() {
         });
     });
 
-    // Scadenza dei contratti non chiusi (data di rinnovo se presente).
+    // Scadenza dei contratti non chiusi e non ancora scaduti (data di rinnovo
+    // se presente).
     (appData.contratti || []).forEach(function(c) {
         if (c.data_chiusura) return;
+        if (calcContrattoStato(c) === 'scaduto') return;
         var data = getContrattoScadenzaEffettiva(c);
         if (!data) return;
         items.push({
@@ -1659,7 +1665,7 @@ function renderGeneraleScadenze() {
         });
     });
 
-    // Le tre date delle deleghe.
+    // Le tre date delle deleghe, solo se non ancora passate.
     var TIPI_DELEGA = [
         { campo: 'data_scadenza_delega_unica', label: 'Delega Unica' },
         { campo: 'data_scadenza_cassetto_fiscale', label: 'Cassetto Fiscale' },
@@ -1669,6 +1675,7 @@ function renderGeneraleScadenze() {
         TIPI_DELEGA.forEach(function(t) {
             var data = d[t.campo];
             if (!data) return;
+            if (daysUntil(String(data).slice(0, 10)) < 0) return;
             items.push({
                 data: String(data).slice(0, 10),
                 tipo: 'Delega',
@@ -1678,9 +1685,10 @@ function renderGeneraleScadenze() {
         });
     });
 
-    // Scadenza dei marchi.
+    // Scadenza dei marchi, solo se non ancora passata.
     (appData.marchi || []).forEach(function(m) {
         if (!m.data_scadenza) return;
+        if (daysUntil(String(m.data_scadenza).slice(0, 10)) < 0) return;
         items.push({
             data: String(m.data_scadenza).slice(0, 10),
             tipo: 'Marchio',
@@ -1689,43 +1697,28 @@ function renderGeneraleScadenze() {
         });
     });
 
-    // Promemoria: compaiono TUTTI, anche quelli con "Fatto" attivo (restano
-    // visibili, colorati in verde come nella pagina Promemoria). Quelli CON
-    // scadenza entrano nella lista datata qui sopra; quelli SENZA data non
-    // sono scadenze e restano a parte, per il blocco in fondo alla tabella
-    // (stessa divisione della pagina Promemoria).
-    var promemoriaSenzaData = [];
+    // Promemoria: nella lista datata restano solo quelli ancora da fare e con
+    // una data non ancora passata. I promemoria fatti e quelli senza data
+    // stanno nella tabella "Promemoria fatti e senza scadenza", più sotto.
     (appData.promemoria || []).forEach(function(p) {
-        var descrizione = p.descrizione || 'Promemoria #' + p.id;
-        var fatto = !!p.fatto;
-        if (!p.data_scadenza) {
-            promemoriaSenzaData.push({ id: p.id, dettaglio: descrizione, fatto: fatto, nota: p.note || '' });
-            return;
-        }
+        if (!p.data_scadenza) return;
+        if (p.fatto) return;
+        var data = String(p.data_scadenza).slice(0, 10);
+        // Promemoria scaduto: la data è ormai passata, non è più una scadenza
+        // da tenere d'occhio.
+        if (daysUntil(data) < 0) return;
         items.push({
-            data: String(p.data_scadenza).slice(0, 10),
+            data: data,
             tipo: 'Promemoria',
             icon: 'fa-bell',
-            dettaglio: descrizione,
-            fatto: fatto,
+            dettaglio: p.descrizione || 'Promemoria #' + p.id,
             nota: p.note || ''
         });
     });
-    promemoriaSenzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
 
     items.forEach(function(it) { it.giorni = daysUntil(it.data); });
     items.sort(function(a, b) {
-        // I promemoria con "Fatto" attivo stanno in cima alla lista
-        var aFatto = !!a.fatto;
-        var bFatto = !!b.fatto;
-        if (aFatto !== bFatto) return aFatto ? -1 : 1;
-        // Oggi (0 giorni) non è ancora passata: è la scadenza più prossima
-        var aPassata = a.giorni < 0;
-        var bPassata = b.giorni < 0;
-        if (aPassata !== bPassata) return aPassata ? 1 : -1;
-        var cmp = aPassata
-            ? b.data.localeCompare(a.data)
-            : a.data.localeCompare(b.data);
+        var cmp = a.data.localeCompare(b.data);
         if (cmp !== 0) return cmp;
         cmp = a.tipo.localeCompare(b.tipo, 'it');
         if (cmp !== 0) return cmp;
@@ -1733,26 +1726,19 @@ function renderGeneraleScadenze() {
     });
 
     // Snapshot della vista appena calcolata (ordine incluso)
-    ultimaVistaGenerale = { items: items, senzaData: promemoriaSenzaData };
+    ultimaVistaGenerale = { items: items };
 
-    if (items.length === 0 && promemoriaSenzaData.length === 0) {
+    if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza presente</p></div></td></tr>';
         return;
     }
 
     var html = items.map(function(it) {
-        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
-        // I promemoria fatti restano visibili ma in verde (come nella pagina
-        // Promemoria) e non vengono evidenziati come scaduti.
-        var rowCls = it.fatto
-            ? ' class="promemoria-fatto"'
-            : (it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 7 ? ' class="alert-in-scadenza"' : ''));
-        var giorniLabel = it.giorni > 0
-            ? 'tra ' + it.giorni + ' gg'
-            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
-        var stato = it.fatto
-            ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>'
-            : '<span class="status-badge ' + urg + '">' + giorniLabel + '</span>';
+        var urg = it.giorni <= 30 ? 'in-scadenza' : 'attivo';
+        // Evidenziazione arancione solo negli ultimi 7 giorni
+        var rowCls = it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
+        var giorniLabel = it.giorni > 0 ? 'tra ' + it.giorni + ' gg' : 'oggi';
+        var stato = '<span class="status-badge ' + urg + '">' + giorniLabel + '</span>';
         return '<tr' + rowCls + '>' +
             '<td><strong>' + formatDate(it.data) + '</strong></td>' +
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
@@ -1762,30 +1748,81 @@ function renderGeneraleScadenze() {
             '</tr>';
     }).join('');
 
-    // Promemoria senza data: blocco separato da una linea orizzontale, in
-    // ordine alfabetico. La linea compare solo se ci sono anche scadenze
-    // datate sopra, come nella pagina Promemoria.
-    if (items.length && promemoriaSenzaData.length) {
-        html += '<tr class="promemoria-divisore"><td colspan="5"><span>Promemoria senza scadenza</span></td></tr>';
-    }
-    html += promemoriaSenzaData.map(function(p) {
-        return '<tr' + (p.fatto ? ' class="promemoria-fatto"' : '') + '>' +
-            '<td>-</td>' +
-            '<td><i class="fas fa-bell"></i> Promemoria</td>' +
-            '<td>' + p.dettaglio + '</td>' +
-            '<td>' + (p.fatto ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') + '</td>' +
-            '<td>' + promemoriaCellaNote(p.nota) + '</td>' +
-            '</tr>';
-    }).join('');
-
     tbody.innerHTML = html;
 }
 
+// --- Pagina Generale: promemoria fatti e senza scadenza ---
+// Seconda tabella della pagina Generale, sotto "Tutte le scadenze": raccoglie
+// i promemoria che non sono più scadenze da tenere d'occhio, cioè quelli con
+// "Fatto" attivo e quelli senza data di scadenza. I fatti stanno sempre in
+// cima, ordinati per data di scadenza (dalla più imminente alla meno
+// imminente) e poi per descrizione; sotto, i promemoria senza data, in ordine
+// di descrizione. I promemoria fatti senza data chiudono il gruppo dei fatti.
+var ultimaVistaGeneralePromemoria = null;
+
+function renderGeneralePromemoria() {
+    var tbody = document.getElementById('generalePromemoriaTableBody');
+    if (!tbody) return;
+
+    var fatti = [];
+    var senzaData = [];
+    (appData.promemoria || []).forEach(function(p) {
+        var riga = {
+            dettaglio: p.descrizione || 'Promemoria #' + p.id,
+            data: p.data_scadenza ? String(p.data_scadenza).slice(0, 10) : null,
+            nota: p.note || ''
+        };
+        if (p.fatto) {
+            fatti.push(riga);
+        } else if (!riga.data) {
+            // Senza data di scadenza non è una scadenza: i promemoria da fare
+            // con una data futura stanno nella tabella "Tutte le scadenze".
+            senzaData.push(riga);
+        }
+    });
+
+    // Fatti: prima quelli con una data, dalla più imminente alla meno
+    // imminente; a parità di data la descrizione. Quelli senza data chiudono
+    // il gruppo, sempre in ordine di descrizione.
+    fatti.sort(function(a, b) {
+        if (a.data !== b.data) {
+            if (!a.data) return 1;
+            if (!b.data) return -1;
+            return a.data.localeCompare(b.data);
+        }
+        return a.dettaglio.localeCompare(b.dettaglio, 'it');
+    });
+    senzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
+
+    var righe = fatti.map(function(r) { return { riga: r, fatto: true }; })
+        .concat(senzaData.map(function(r) { return { riga: r, fatto: false }; }));
+
+    // Snapshot della vista (ordine incluso): lo usa l'esportazione Excel
+    ultimaVistaGeneralePromemoria = { righe: righe };
+
+    if (righe.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-bell"></i><p>Nessun promemoria fatto o senza scadenza</p></div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = righe.map(function(r) {
+        return '<tr' + (r.fatto ? ' class="promemoria-fatto"' : '') + '>' +
+            '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
+            '<td><i class="fas fa-bell"></i> Promemoria</td>' +
+            '<td>' + r.riga.dettaglio + '</td>' +
+            '<td>' + (r.fatto ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : 'Senza scadenza') + '</td>' +
+            '<td>' + promemoriaCellaNote(r.riga.nota) + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
 // --- Pagina Generale: tutte le scadenze ---
-// La schermata "Generale" mostra solo l'elenco di tutte le scadenze
-// (pagamenti, contratti, deleghe, marchi e promemoria).
+// La schermata "Generale" mostra l'elenco di tutte le scadenze (pagamenti,
+// contratti, deleghe, marchi e promemoria da fare) e, sotto, la tabella dei
+// promemoria fatti e senza scadenza.
 function renderGenerale() {
     renderGeneraleScadenze();
+    renderGeneralePromemoria();
 }
 
 // Mostra/nasconde un elenco della pagina Generale dalla freccia accanto al
@@ -2255,42 +2292,77 @@ function ordinaPromemoriaPerLista(list) {
     });
 }
 
-function renderPromemoria() {
-    var tbody = document.getElementById('promemoriaTableBody');
-    if (!tbody) return;
-    var list = ordinaPromemoriaPerLista(appData.promemoria);
-    if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria presente</td></tr>';
-        return;
-    }
+// Riga delle tabelle della pagina Promemoria (promemoria da fare e promemoria
+// fatti): descrizione, scadenza, note e azioni.
+function rigaPromemoria(p) {
     var esc = function(x) {
         return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
     };
-    // Due blocchi separati da una linea: sopra i promemoria CON scadenza,
-    // ordinati da ordinaPromemoriaPerLista dalla data più vicina a oggi fino
-    // alla più lontana; sotto quelli SENZA data, in ordine alfabetico.
-    var conData = list.filter(function(p) { return !!p.data_scadenza; });
-    var senzaData = list.filter(function(p) { return !p.data_scadenza; });
-    function rigaPromemoria(p) {
-        var fatto = !!p.fatto;
-        return '<tr' + (fatto ? ' class="promemoria-fatto"' : '') + '>' +
-            '<td><strong>' + esc(p.descrizione || '-') + '</strong>' +
-            (fatto ? ' <span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') +
-            '</td>' +
-            '<td>' + formatDate(p.data_scadenza) + '</td>' +
-            '<td>' + promemoriaCellaNote(p.note) + '</td>' +
-            '<td><div class="td-actions">' +
-            '<button type="button" data-action="view-promemoria" data-id="' + p.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
-            '<button type="button" data-action="edit-promemoria" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
-            '<button type="button" class="danger" data-action="delete-promemoria" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
-            '</div></td></tr>';
+    var fatto = !!p.fatto;
+    return '<tr' + (fatto ? ' class="promemoria-fatto"' : '') + '>' +
+        '<td><strong>' + esc(p.descrizione || '-') + '</strong>' +
+        (fatto ? ' <span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') +
+        '</td>' +
+        '<td>' + formatDate(p.data_scadenza) + '</td>' +
+        '<td>' + promemoriaCellaNote(p.note) + '</td>' +
+        '<td><div class="td-actions">' +
+        '<button type="button" data-action="view-promemoria" data-id="' + p.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
+        '<button type="button" data-action="edit-promemoria" data-id="' + p.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+        '<button type="button" class="danger" data-action="delete-promemoria" data-id="' + p.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+        '</div></td></tr>';
+}
+
+function renderPromemoria() {
+    var tbody = document.getElementById('promemoriaTableBody');
+    if (!tbody) return;
+    // In questa tabella stanno solo i promemoria ancora da fare con una data,
+    // ordinati dalla scadenza più vicina: quelli fatti e quelli senza data
+    // stanno nella tabella qui sotto (renderPromemoriaFatti).
+    var list = ordinaPromemoriaPerLista(appData.promemoria).filter(function(p) {
+        return !!p.data_scadenza && !p.fatto;
+    });
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria da fare</td></tr>';
+    } else {
+        tbody.innerHTML = list.map(rigaPromemoria).join('');
     }
-    var html = conData.map(rigaPromemoria).join('');
-    if (conData.length && senzaData.length) {
-        html += '<tr class="promemoria-divisore"><td colspan="3"><span>Senza scadenza</span></td></tr>';
+    renderPromemoriaFatti();
+}
+
+// --- Promemoria fatti e senza scadenza ---
+// Seconda tabella della pagina Promemoria, sotto i promemoria da fare:
+// raccoglie quelli con "Fatto" attivo e quelli senza data di scadenza. I fatti
+// stanno sempre in cima, ordinati per data di scadenza (dalla più imminente
+// alla meno imminente) e poi per descrizione; sotto, quelli senza data, in
+// ordine di descrizione. I fatti senza data chiudono il gruppo dei fatti.
+function renderPromemoriaFatti() {
+    var tbody = document.getElementById('promemoriaArchiviatiTableBody');
+    if (!tbody) return;
+    var fatti = [];
+    var senzaData = [];
+    (appData.promemoria || []).forEach(function(p) {
+        if (p.fatto) fatti.push(p);
+        else if (!p.data_scadenza) senzaData.push(p);
+    });
+    fatti.sort(function(a, b) {
+        var da = a.data_scadenza ? String(a.data_scadenza).slice(0, 10) : '';
+        var db = b.data_scadenza ? String(b.data_scadenza).slice(0, 10) : '';
+        if (da !== db) {
+            if (!da) return 1;
+            if (!db) return -1;
+            return da.localeCompare(db);
+        }
+        return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
+    });
+    senzaData.sort(function(a, b) {
+        return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
+    });
+    var list = fatti.concat(senzaData);
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria fatto o senza scadenza</td></tr>';
+        return;
     }
-    html += senzaData.map(rigaPromemoria).join('');
-    tbody.innerHTML = html;
+    tbody.innerHTML = list.map(rigaPromemoria).join('');
 }
 
 function promemoriaFormHtml(p) {
@@ -5065,12 +5137,14 @@ async function exportScadenzeExcel() {
     scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_' + suffissoTipo + '_' + suffissoStato, 'Scadenze esportate');
 }
 
-// Esporta in Excel l'elenco "Tutte le scadenze" della pagina Generale: le
-// righe datate nello stesso ordine della tabella, poi i promemoria senza
-// scadenza in fondo, come si vedono a video.
+// Esporta in Excel gli elenchi della pagina Generale: prima le righe di
+// "Tutte le scadenze", poi quelle di "Promemoria fatti e senza scadenza",
+// nello stesso ordine delle tabelle a video.
 function exportGeneraleExcel() {
     var vista = ultimaVistaGenerale;
-    if (!vista || (vista.items.length === 0 && vista.senzaData.length === 0)) {
+    var vistaPromemoria = ultimaVistaGeneralePromemoria;
+    var righePromemoria = (vistaPromemoria && vistaPromemoria.righe) || [];
+    if ((!vista || vista.items.length === 0) && righePromemoria.length === 0) {
         showToast('Nessuna scadenza da esportare', 'error');
         return;
     }
@@ -5082,11 +5156,9 @@ function exportGeneraleExcel() {
     var COLONNE = ['Data', 'Tipo', 'Dettaglio', 'Stato', 'Note'];
     var LARGHEZZE = [16, 20, 50, 20, 10];
 
-    var righeDati = vista.items.map(function(it) {
+    var righeDati = (vista ? vista.items : []).map(function(it) {
         var g = it.giorni;
-        var stato = it.fatto
-            ? 'Fatto'
-            : (g > 0 ? 'tra ' + g + ' gg' : (g === 0 ? 'oggi' : Math.abs(g) + ' gg fa'));
+        var stato = g > 0 ? 'tra ' + g + ' gg' : 'oggi';
         return [
             { t: 's', s: S_TESTO, v: formatDateExcel(it.data) },
             { t: 's', s: S_TESTO, v: it.tipo },
@@ -5094,13 +5166,13 @@ function exportGeneraleExcel() {
             { t: 's', s: S_TESTO, v: stato },
             { t: 's', s: S_TESTO, v: it.tipo === 'Promemoria' ? notaTxt(it.nota) : '-' }
         ];
-    }).concat(vista.senzaData.map(function(p) {
+    }).concat(righePromemoria.map(function(r) {
         return [
-            { t: 's', s: S_TESTO, v: '-' },
+            { t: 's', s: S_TESTO, v: r.riga.data ? formatDateExcel(r.riga.data) : '-' },
             { t: 's', s: S_TESTO, v: 'Promemoria' },
-            { t: 's', s: S_TESTO, v: p.dettaglio },
-            { t: 's', s: S_TESTO, v: p.fatto ? 'Fatto' : 'Senza scadenza' },
-            { t: 's', s: S_TESTO, v: notaTxt(p.nota) }
+            { t: 's', s: S_TESTO, v: r.riga.dettaglio },
+            { t: 's', s: S_TESTO, v: r.fatto ? 'Fatto' : 'Senza scadenza' },
+            { t: 's', s: S_TESTO, v: notaTxt(r.riga.nota) }
         ];
     }));
 
