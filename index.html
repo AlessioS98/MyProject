@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=40">
+    <link rel="stylesheet" href="styles.css?v=42">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -591,6 +591,25 @@
 
     </main>
 
+    <!-- Finestra di dettaglio della pagina Generale: si sovrappone alla
+         pagina e mostra i dati della scadenza o del promemoria cliccato -->
+    <div class="dettaglio-panel" id="dettaglioPanel" hidden>
+        <div class="dettaglio-grip" id="dettaglioGrip" title="Trascina per regolare l'altezza · doppio clic per l'altezza predefinita"><span></span></div>
+        <div class="dettaglio-panel-header">
+            <h2 id="dettaglioPanelTitle">Benvenuto</h2>
+            <div class="dettaglio-panel-actions">
+                <button type="button" class="dettaglio-panel-btn" id="dettaglioFullBtn" title="Schermo intero" aria-label="Schermo intero"><i class="fas fa-expand"></i></button>
+                <button type="button" class="dettaglio-panel-btn" id="dettaglioMinBtn" title="Riduci a icona" aria-label="Riduci a icona"><i class="fas fa-window-minimize"></i></button>
+            </div>
+        </div>
+        <div class="dettaglio-panel-body" id="dettaglioPanelBody"></div>
+    </div>
+
+    <!-- Icona della finestra ridotta a icona: cliccandola si riapre -->
+    <button type="button" class="dettaglio-mini" id="dettaglioMini" hidden title="Apri la finestra" aria-label="Apri la finestra">
+        <i class="fas fa-window-restore"></i>
+    </button>
+
     <!-- Modal Overlay -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal" id="modal">
@@ -770,6 +789,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="db-client.js?v=1"></script>
-    <script src="app.js?v=73"></script>
+    <script src="app.js?v=76"></script>
 </body>
 </html>

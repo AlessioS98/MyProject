@@ -1593,6 +1593,8 @@ function navigateTo(page) {
     if (ne) ne.classList.add('active');
     closeSidebar();
     aggiornaTitoloSezione(page);
+    // La finestra di dettaglio si vede solo nella pagina Generale
+    aggiornaVisibilitaDettaglio(page);
     refreshPage(page);
 }
 // Colonna "Note" dei promemoria: dice se l'utente ha scritto qualcosa nelle
@@ -1638,14 +1640,23 @@ function renderGeneraleScadenze() {
         if (!data) return;
         if (daysUntil(data) < 0) return;
         var c = getContrattoById(s.contratto_id);
-        var parti = c ? getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id) : '';
+        var locPag = c ? getLocatoriCognomeNomeLabel(c.id) : '';
+        var condPag = c ? getConduttoriCognomeNomeLabel(c.id) : '';
+        var parti = c ? locPag + ' / ' + condPag : '';
         items.push({
+            key: 'pag:' + s.id,
             data: data,
             tipo: 'Pagamento',
             icon: 'fa-euro-sign',
             dettaglio: (c ? c.identificativo : 'Contratto #' + s.contratto_id) +
                 (parti ? ' · ' + parti : '') +
-                (s.importo != null ? ' · ' + formatCurrency(s.importo) : '')
+                (s.importo != null ? ' · ' + formatCurrency(s.importo) : ''),
+            campi: [
+                { label: 'Contratto', value: c ? (c.identificativo || 'Contratto #' + c.id) : 'Contratto #' + s.contratto_id },
+                { label: 'Locatori', value: locPag || '-' },
+                { label: 'Conduttori', value: condPag || '-' },
+                { label: 'Importo', value: s.importo != null ? formatCurrency(s.importo) : '-' }
+            ]
         });
     });
 
@@ -1657,11 +1668,20 @@ function renderGeneraleScadenze() {
         var data = getContrattoScadenzaEffettiva(c);
         if (!data) return;
         items.push({
+            key: 'contr:' + c.id,
             data: String(data).slice(0, 10),
             tipo: 'Contratto',
             icon: 'fa-file-contract',
             dettaglio: (c.identificativo || 'Contratto #' + c.id) + ' · ' +
-                getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id)
+                getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id),
+            campi: [
+                { label: 'Identificativo', value: c.identificativo || 'Contratto #' + c.id },
+                { label: 'Locatori', value: getLocatoriCognomeNomeLabel(c.id) || '-' },
+                { label: 'Conduttori', value: getConduttoriCognomeNomeLabel(c.id) || '-' },
+                { label: 'Decorrenza', value: formatDate(c.data_decorrenza) },
+                { label: 'Scadenza contratto', value: formatDate(c.data_scadenza) },
+                { label: 'Scadenza rinnovo', value: c.data_scadenza_rinnovo ? formatDate(c.data_scadenza_rinnovo) : '–' }
+            ]
         });
     });
 
@@ -1677,10 +1697,16 @@ function renderGeneraleScadenze() {
             if (!data) return;
             if (daysUntil(String(data).slice(0, 10)) < 0) return;
             items.push({
+                key: 'delega:' + d.id + ':' + t.campo,
                 data: String(data).slice(0, 10),
                 tipo: 'Delega',
                 icon: 'fa-file-signature',
-                dettaglio: t.label + ' · ' + getDelegaLabel(d)
+                dettaglio: t.label + ' · ' + getDelegaLabel(d),
+                campi: [
+                    { label: 'Tipo delega', value: t.label },
+                    { label: 'Soggetto', value: getDelegaLabel(d) },
+                    { label: 'Codice Fiscale', value: d.codice_fiscale || '-' }
+                ]
             });
         });
     });
@@ -1690,10 +1716,16 @@ function renderGeneraleScadenze() {
         if (!m.data_scadenza) return;
         if (daysUntil(String(m.data_scadenza).slice(0, 10)) < 0) return;
         items.push({
+            key: 'marchio:' + m.id,
             data: String(m.data_scadenza).slice(0, 10),
             tipo: 'Marchio',
             icon: 'fa-registered',
-            dettaglio: (m.numero_identificativo ? 'N. ' + m.numero_identificativo + ' · ' : '') + getMarchioLabel(m)
+            dettaglio: (m.numero_identificativo ? 'N. ' + m.numero_identificativo + ' · ' : '') + getMarchioLabel(m),
+            campi: [
+                { label: 'Numero identificativo', value: m.numero_identificativo || '-' },
+                { label: 'Soggetto', value: getMarchioLabel(m) },
+                { label: 'Codice Fiscale', value: m.codice_fiscale || '-' }
+            ]
         });
     });
 
@@ -1708,11 +1740,15 @@ function renderGeneraleScadenze() {
         // da tenere d'occhio.
         if (daysUntil(data) < 0) return;
         items.push({
+            key: 'prom:' + p.id,
             data: data,
             tipo: 'Promemoria',
             icon: 'fa-bell',
             dettaglio: p.descrizione || 'Promemoria #' + p.id,
-            nota: p.note || ''
+            nota: p.note || '',
+            campi: [
+                { label: 'Descrizione', value: p.descrizione || 'Promemoria #' + p.id }
+            ]
         });
     });
 
@@ -1739,7 +1775,7 @@ function renderGeneraleScadenze() {
         var rowCls = it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
         var giorniLabel = it.giorni > 0 ? 'tra ' + it.giorni + ' gg' : 'oggi';
         var stato = '<span class="status-badge ' + urg + '">' + giorniLabel + '</span>';
-        return '<tr' + rowCls + '>' +
+        return '<tr' + rowCls + ' data-dettaglio="scadenza" data-key="' + it.key + '">' +
             '<td><strong>' + formatDate(it.data) + '</strong></td>' +
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
             '<td>' + it.dettaglio + '</td>' +
@@ -1770,6 +1806,7 @@ function renderGeneralePromemoria() {
     var senzaData = [];
     (appData.promemoria || []).forEach(function(p) {
         var riga = {
+            key: 'prom:' + p.id,
             dettaglio: p.descrizione || 'Promemoria #' + p.id,
             data: p.data_scadenza ? String(p.data_scadenza).slice(0, 10) : null,
             nota: p.note || ''
@@ -1826,13 +1863,295 @@ function renderGeneralePromemoria() {
             : r.stato === 'scaduto'
                 ? '<span class="status-badge scaduto">Scaduto</span>'
                 : 'Senza scadenza';
-        return '<tr' + rowCls + '>' +
+        return '<tr' + rowCls + ' data-dettaglio="promemoria" data-key="' + r.riga.key + '">' +
             '<td>' + r.riga.dettaglio + '</td>' +
             '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
             '<td>' + statoCell + '</td>' +
             '<td>' + promemoriaCellaNote(r.riga.nota) + '</td>' +
             '</tr>';
     }).join('');
+}
+
+// --- Pagina Generale: finestra di dettaglio ---
+// Cliccando una riga delle due tabelle del Generale si apre questa finestra,
+// sovrapposta alla pagina e ancorata in basso: mostra i dati della voce
+// selezionata (scadenza o promemoria), si ridimensiona in altezza trascinando
+// il grip in alto e con il pulsante apposito passa a schermo intero e torna
+// poi all'altezza che aveva prima.
+var DETTAGLIO_ALTEZZA_DEFAULT = 340;
+var DETTAGLIO_ALTEZZA_MIN = 150;
+// Altezza della finestra prima di andare a schermo intero (da ripristinare)
+var dettaglioAltezzaPrima = 0;
+var dettaglioInFullscreen = false;
+// true quando la finestra è ridotta a icona
+var dettaglioRidotto = false;
+
+function escDettaglio(x) {
+    return x == null ? '' : String(x)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function getDettaglioPanelElements() {
+    return {
+        panel: document.getElementById('dettaglioPanel'),
+        title: document.getElementById('dettaglioPanelTitle'),
+        body: document.getElementById('dettaglioPanelBody'),
+        fullBtn: document.getElementById('dettaglioFullBtn')
+    };
+}
+
+function dettaglioRigaHtml(label, valoreHtml) {
+    return '<div class="contract-detail"><label>' + escDettaglio(label) +
+        '</label><span>' + valoreHtml + '</span></div>';
+}
+
+function dettaglioNotaHtml(nota) {
+    var testo = (nota && String(nota).trim()) ? escDettaglio(nota) : 'Nessuna nota';
+    return '<div class="dettaglio-nota"><label>Note</label>' + testo + '</div>';
+}
+
+// Badge dello stato di una scadenza del Generale (stessi colori della tabella)
+function dettaglioStatoScadenzaHtml(giorni) {
+    var urg = giorni <= 30 ? 'in-scadenza' : 'attivo';
+    var testo = giorni > 0 ? 'tra ' + giorni + ' gg' : 'oggi';
+    return '<span class="status-badge ' + urg + '">' + testo + '</span>';
+}
+
+function dettaglioScadenzaHtml(it) {
+    var righe = [
+        dettaglioRigaHtml('Data', escDettaglio(formatDate(it.data))),
+        dettaglioRigaHtml('Tipo', escDettaglio(it.tipo))
+    ];
+    (it.campi || []).forEach(function(c) {
+        righe.push(dettaglioRigaHtml(c.label, escDettaglio(c.value)));
+    });
+    righe.push(dettaglioRigaHtml('Stato', dettaglioStatoScadenzaHtml(it.giorni)));
+    var html = '<div class="contract-details">' + righe.join('') + '</div>';
+    if (it.tipo === 'Promemoria') html += dettaglioNotaHtml(it.nota);
+    return html;
+}
+
+function dettaglioPromemoriaHtml(r, stato) {
+    var statoHtml;
+    if (stato === 'fatto') {
+        statoHtml = '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>';
+    } else if (stato === 'scaduto') {
+        statoHtml = '<span class="status-badge scaduto">Scaduto da ' + Math.abs(daysUntil(r.data)) + ' gg</span>';
+    } else {
+        statoHtml = 'Senza scadenza';
+    }
+    var righe = [
+        dettaglioRigaHtml('Descrizione', escDettaglio(r.dettaglio)),
+        dettaglioRigaHtml('Data', r.data ? escDettaglio(formatDate(r.data)) : '-'),
+        dettaglioRigaHtml('Stato', statoHtml)
+    ];
+    return '<div class="contract-details">' + righe.join('') + '</div>' + dettaglioNotaHtml(r.nota);
+}
+
+// Cerca la voce selezionata negli snapshot delle due tabelle del Generale
+function trovaVoceDettaglio(kind, key) {
+    var i;
+    if (kind === 'promemoria') {
+        var righe = (ultimaVistaGeneralePromemoria && ultimaVistaGeneralePromemoria.righe) || [];
+        for (i = 0; i < righe.length; i++) {
+            if (righe[i].riga.key === key) {
+                return { tipo: 'Promemoria', html: dettaglioPromemoriaHtml(righe[i].riga, righe[i].stato) };
+            }
+        }
+        return null;
+    }
+    var items = (ultimaVistaGenerale && ultimaVistaGenerale.items) || [];
+    for (i = 0; i < items.length; i++) {
+        if (items[i].key === key) {
+            return { tipo: items[i].tipo, html: dettaglioScadenzaHtml(items[i]) };
+        }
+    }
+    return null;
+}
+
+function aggiornaPulsanteDettaglio() {
+    var el = getDettaglioPanelElements();
+    if (!el.fullBtn) return;
+    var icona = el.fullBtn.querySelector('i');
+    var titolo = dettaglioInFullscreen ? 'Torna alla finestra' : 'Schermo intero';
+    el.fullBtn.title = titolo;
+    el.fullBtn.setAttribute('aria-label', titolo);
+    if (icona) icona.className = dettaglioInFullscreen ? 'fas fa-compress' : 'fas fa-expand';
+}
+
+function toggleDettaglioFullscreen(attiva) {
+    var el = getDettaglioPanelElements();
+    if (!el.panel) return;
+    if (typeof attiva !== 'boolean') attiva = !dettaglioInFullscreen;
+    if (attiva === dettaglioInFullscreen) return;
+    if (attiva) {
+        // Memorizza l'altezza attuale per rimetterla tornando alla finestra
+        dettaglioAltezzaPrima = el.panel.offsetHeight;
+        el.panel.classList.add('fullscreen');
+    } else {
+        el.panel.classList.remove('fullscreen');
+        if (dettaglioAltezzaPrima > 0) el.panel.style.height = dettaglioAltezzaPrima + 'px';
+    }
+    dettaglioInFullscreen = attiva;
+    aggiornaPulsanteDettaglio();
+}
+
+// La finestra non si chiude: il pulsante la riduce a icona, l'icona la riapre
+function minimizzaDettaglioGenerale() {
+    var el = getDettaglioPanelElements();
+    var mini = document.getElementById('dettaglioMini');
+    if (!el.panel) return;
+    if (dettaglioInFullscreen) toggleDettaglioFullscreen(false);
+    dettaglioRidotto = true;
+    el.panel.hidden = true;
+    if (mini) mini.hidden = false;
+}
+
+function ripristinaDettaglioGenerale() {
+    var el = getDettaglioPanelElements();
+    var mini = document.getElementById('dettaglioMini');
+    if (!el.panel) return;
+    dettaglioRidotto = false;
+    el.panel.hidden = false;
+    if (mini) mini.hidden = true;
+    aggiornaPulsanteDettaglio();
+}
+
+// La finestra si vede solo nella pagina Generale: sulle altre pagine sparisce
+// (icona compresa) e tornando al Generale si ripresenta com'era, normale o
+// ridotta a icona.
+function aggiornaVisibilitaDettaglio(page) {
+    var el = getDettaglioPanelElements();
+    var mini = document.getElementById('dettaglioMini');
+    if (!el.panel) return;
+    if (page !== 'generale') {
+        if (dettaglioInFullscreen) toggleDettaglioFullscreen(false);
+        el.panel.hidden = true;
+        if (mini) mini.hidden = true;
+        return;
+    }
+    el.panel.hidden = !!dettaglioRidotto;
+    if (mini) mini.hidden = !dettaglioRidotto;
+}
+
+// Contenuto iniziale della finestra: messaggio di benvenuto in piattaforma
+function dettaglioBenvenutoHtml() {
+    return '<div class="dettaglio-benvenuto">' +
+        '<div class="dettaglio-benvenuto-icona"><i class="fas fa-hand-sparkles"></i></div>' +
+        '<div>' +
+        '<h3>Ciao, benvenuto in piattaforma!</h3>' +
+        '<p>Qui trovi i dettagli di tutto quello che ti serve: clicca una riga delle tabelle del Generale ' +
+        'e la scadenza o il promemoria comparirà in questa finestra.</p>' +
+        '<p>Puoi regolarne l\'altezza trascinando la maniglia in alto, portarla a schermo intero con il pulsante ' +
+        'apposito e ridurla a icona quando non ti serve: resta sempre a portata di mano.</p>' +
+        '</div>' +
+        '</div>';
+}
+
+function dettaglioBenvenuto() {
+    var el = getDettaglioPanelElements();
+    var mini = document.getElementById('dettaglioMini');
+    if (!el.panel || !el.body) return;
+    if (el.title) el.title.textContent = 'Benvenuto';
+    el.body.innerHTML = dettaglioBenvenutoHtml();
+    el.body.scrollTop = 0;
+    dettaglioRidotto = false;
+    el.panel.hidden = false;
+    if (mini) mini.hidden = true;
+    aggiornaPulsanteDettaglio();
+}
+
+function apriDettaglioGenerale(kind, key) {
+    var el = getDettaglioPanelElements();
+    var mini = document.getElementById('dettaglioMini');
+    if (!el.panel || !el.body) return;
+    var voce = trovaVoceDettaglio(kind, key);
+    if (!voce) return;
+    if (el.title) el.title.textContent = kind === 'promemoria' ? 'Promemoria' : voce.tipo;
+    el.body.innerHTML = voce.html;
+    el.body.scrollTop = 0;
+    dettaglioRidotto = false;
+    el.panel.hidden = false;
+    if (mini) mini.hidden = true;
+    aggiornaPulsanteDettaglio();
+}
+
+function initDettaglioGenerale() {
+    var el = getDettaglioPanelElements();
+    var grip = document.getElementById('dettaglioGrip');
+    if (!el.panel || !el.body) return;
+
+    // Altezza scelta l'ultima volta (o quella predefinita)
+    var salvata = parseInt(localStorage.getItem('altezzaDettaglioGenerale'), 10);
+    if (salvata > 0) el.panel.style.height = salvata + 'px';
+
+    if (el.fullBtn) {
+        el.fullBtn.addEventListener('click', function() { toggleDettaglioFullscreen(); });
+        aggiornaPulsanteDettaglio();
+    }
+    // Il pulsante la riduce a icona, l'icona la riapre
+    var minBtn = document.getElementById('dettaglioMinBtn');
+    if (minBtn) minBtn.addEventListener('click', minimizzaDettaglioGenerale);
+    var mini = document.getElementById('dettaglioMini');
+    if (mini) mini.addEventListener('click', ripristinaDettaglioGenerale);
+
+    // La finestra è sempre visibile: si apre con il messaggio di benvenuto
+    dettaglioBenvenuto();
+
+    // Grip in alto: trascinando verso l'alto la finestra cresce
+    if (grip) {
+        var attivo = false;
+        var startY = 0;
+        var startH = 0;
+        var altezza = 0;
+
+        grip.addEventListener('pointerdown', function(e) {
+            if (e.button || dettaglioInFullscreen) return;
+            e.preventDefault();
+            attivo = true;
+            startY = e.clientY;
+            startH = el.panel.offsetHeight;
+            altezza = startH;
+            el.panel.classList.add('dragging');
+            document.body.classList.add('tabella-resize');
+            if (grip.setPointerCapture) {
+                try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+            }
+        });
+
+        grip.addEventListener('pointermove', function(e) {
+            if (!attivo) return;
+            e.preventDefault();
+            var max = Math.max(DETTAGLIO_ALTEZZA_MIN, window.innerHeight - 60);
+            altezza = Math.min(max, Math.max(DETTAGLIO_ALTEZZA_MIN, startH + (startY - e.clientY)));
+            el.panel.style.height = altezza + 'px';
+        });
+
+        function fineTrascinamento() {
+            if (!attivo) return;
+            attivo = false;
+            el.panel.classList.remove('dragging');
+            document.body.classList.remove('tabella-resize');
+            try { localStorage.setItem('altezzaDettaglioGenerale', String(Math.round(altezza))); } catch (err) {}
+        }
+
+        grip.addEventListener('pointerup', fineTrascinamento);
+        grip.addEventListener('pointercancel', fineTrascinamento);
+
+        // Doppio clic sul grip: torna all'altezza predefinita
+        grip.addEventListener('dblclick', function() {
+            el.panel.style.height = DETTAGLIO_ALTEZZA_DEFAULT + 'px';
+            try { localStorage.removeItem('altezzaDettaglioGenerale'); } catch (err) {}
+        });
+    }
+
+    // Apertura cliccando una riga delle due tabelle del Generale
+    document.addEventListener('click', function(e) {
+        var tr = e.target.closest ? e.target.closest('tr[data-dettaglio]') : null;
+        if (!tr) return;
+        apriDettaglioGenerale(tr.getAttribute('data-dettaglio'), tr.getAttribute('data-key'));
+    });
 }
 
 // --- Pagina Generale: tutte le scadenze ---
@@ -6837,4 +7156,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Altezza regolabile della tabella "Promemoria fatti e senza scadenza"
     // della pagina Promemoria (l'altezza scelta resta memorizzata).
     initTabellaRidimensionabile('promemoriaArchiviati', 'altezzaPromemoriaArchiviati');
+
+    // Finestra di dettaglio della pagina Generale (grip in alto, schermo intero)
+    initDettaglioGenerale();
 });
