@@ -1616,8 +1616,8 @@ function promemoriaCellaNote(note) {
 // marchi scaduti e i promemoria scaduti non entrano nell'elenco: sono voci
 // già chiuse, che restano nelle rispettive pagine. I promemoria fatti e
 // quelli senza data stanno nella tabella qui sotto (vedi
-// renderGeneralePromemoria). L'ordine è quello della scadenza più prossima,
-// con oggi per primo e le date future dalla più vicina in avanti.
+// renderGeneralePromemoria). L'ordine è per data, dalla più imminente alla
+// meno imminente, e a parità di data per nominativi.
 // Snapshot della vista (ordine incluso): lo usa l'esportazione Excel per
 // riprodurre la tabella a video.
 var ultimaVistaGenerale = null;
@@ -1642,12 +1642,17 @@ function renderGeneraleScadenze() {
         var c = getContrattoById(s.contratto_id);
         var locPag = c ? getLocatoriCognomeNomeLabel(c.id) : '';
         var condPag = c ? getConduttoriCognomeNomeLabel(c.id) : '';
-        var parti = c ? locPag + ' / ' + condPag : '';
+        var parti = c ? condPag + ' / ' + locPag : '';
         items.push({
             key: 'pag:' + s.id,
             data: data,
             tipo: 'Pagamento',
             icon: 'fa-euro-sign',
+            // Colonna Soggetti: prima i conduttori, poi i locatori
+            nominativi: ([condPag, locPag].filter(Boolean).join(' / ')) || '-',
+            // Colonna Dettaglio: contratto e importo
+            dettaglioInfo: (c ? (c.identificativo || 'Contratto #' + c.id) : 'Contratto #' + s.contratto_id) +
+                (s.importo != null ? ' · ' + formatCurrency(s.importo) : ''),
             dettaglio: (c ? c.identificativo : 'Contratto #' + s.contratto_id) +
                 (parti ? ' · ' + parti : '') +
                 (s.importo != null ? ' · ' + formatCurrency(s.importo) : ''),
@@ -1672,6 +1677,8 @@ function renderGeneraleScadenze() {
             data: String(data).slice(0, 10),
             tipo: 'Contratto',
             icon: 'fa-file-contract',
+            nominativi: ([getLocatoriCognomeNomeLabel(c.id), getConduttoriCognomeNomeLabel(c.id)].filter(Boolean).join(' / ')) || '-',
+            dettaglioInfo: c.identificativo || 'Contratto #' + c.id,
             dettaglio: (c.identificativo || 'Contratto #' + c.id) + ' · ' +
                 getLocatoriCognomeNomeLabel(c.id) + ' / ' + getConduttoriCognomeNomeLabel(c.id),
             campi: [
@@ -1701,6 +1708,8 @@ function renderGeneraleScadenze() {
                 data: String(data).slice(0, 10),
                 tipo: 'Delega',
                 icon: 'fa-file-signature',
+                nominativi: getDelegaLabel(d) || '-',
+                dettaglioInfo: t.label,
                 dettaglio: t.label + ' · ' + getDelegaLabel(d),
                 campi: [
                     { label: 'Tipo delega', value: t.label },
@@ -1720,6 +1729,8 @@ function renderGeneraleScadenze() {
             data: String(m.data_scadenza).slice(0, 10),
             tipo: 'Marchio',
             icon: 'fa-registered',
+            nominativi: getMarchioLabel(m) || '-',
+            dettaglioInfo: m.numero_identificativo ? 'N. ' + m.numero_identificativo : '-',
             dettaglio: (m.numero_identificativo ? 'N. ' + m.numero_identificativo + ' · ' : '') + getMarchioLabel(m),
             campi: [
                 { label: 'Numero identificativo', value: m.numero_identificativo || '-' },
@@ -1744,6 +1755,8 @@ function renderGeneraleScadenze() {
             data: data,
             tipo: 'Promemoria',
             icon: 'fa-bell',
+            nominativi: '-',
+            dettaglioInfo: p.descrizione || 'Promemoria #' + p.id,
             dettaglio: p.descrizione || 'Promemoria #' + p.id,
             nota: p.note || '',
             campi: [
@@ -1753,12 +1766,12 @@ function renderGeneraleScadenze() {
     });
 
     items.forEach(function(it) { it.giorni = daysUntil(it.data); });
+    // Ordine: prima per data, dalla più imminente alla meno imminente; a
+    // parità di data per nominativi.
     items.sort(function(a, b) {
         var cmp = a.data.localeCompare(b.data);
         if (cmp !== 0) return cmp;
-        cmp = a.tipo.localeCompare(b.tipo, 'it');
-        if (cmp !== 0) return cmp;
-        return a.dettaglio.localeCompare(b.dettaglio, 'it');
+        return String(a.nominativi || '').localeCompare(String(b.nominativi || ''), 'it');
     });
 
     // Snapshot della vista appena calcolata (ordine incluso)
@@ -1770,16 +1783,13 @@ function renderGeneraleScadenze() {
     }
 
     var html = items.map(function(it) {
-        var urg = it.giorni <= 30 ? 'in-scadenza' : 'attivo';
         // Evidenziazione arancione solo negli ultimi 7 giorni
         var rowCls = it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
-        var giorniLabel = it.giorni > 0 ? 'tra ' + it.giorni + ' gg' : 'oggi';
-        var stato = '<span class="status-badge ' + urg + '">' + giorniLabel + '</span>';
         return '<tr' + rowCls + ' data-dettaglio="scadenza" data-key="' + it.key + '">' +
-            '<td><strong>' + formatDate(it.data) + '</strong></td>' +
+            '<td><strong>' + it.nominativi + '</strong></td>' +
+            '<td>' + formatDate(it.data) + '</td>' +
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
-            '<td>' + it.dettaglio + '</td>' +
-            '<td>' + stato + '</td>' +
+            '<td>' + it.dettaglioInfo + '</td>' +
             '<td>' + (it.tipo === 'Promemoria' ? promemoriaCellaNote(it.nota) : '-') + '</td>' +
             '</tr>';
     }).join('');
@@ -1792,9 +1802,9 @@ function renderGeneraleScadenze() {
 // i promemoria che non sono più scadenze da tenere d'occhio, cioè quelli con
 // "Fatto" attivo, quelli ancora da fare con la data ormai passata (scaduti,
 // evidenziati in rosso) e quelli senza data di scadenza. I fatti stanno sempre
-// in cima, ordinati per data dalla più recente alla più vecchia; seguono gli
-// scaduti con lo stesso ordinamento; chiudono i promemoria senza data, in
-// ordine di descrizione. I fatti senza data chiudono il gruppo dei fatti.
+// in cima, poi gli scaduti, poi quelli senza data; dentro ogni gruppo l'ordine
+// è alfabetico per descrizione (anche i fatti senza data stanno nel gruppo
+// dei fatti).
 var ultimaVistaGeneralePromemoria = null;
 
 function renderGeneralePromemoria() {
@@ -1824,24 +1834,12 @@ function renderGeneralePromemoria() {
         }
     });
 
-    // Fatti: prima quelli con una data, dalla più recente alla più vecchia; a
-    // parità di data la descrizione. Quelli senza data chiudono il gruppo,
-    // sempre in ordine di descrizione.
-    fatti.sort(function(a, b) {
-        if (a.data !== b.data) {
-            if (!a.data) return 1;
-            if (!b.data) return -1;
-            return b.data.localeCompare(a.data);
-        }
-        return a.dettaglio.localeCompare(b.dettaglio, 'it');
-    });
-    // Scaduti: dal più recente al più vecchio, a parità di data la descrizione.
-    scaduti.sort(function(a, b) {
-        var cmp = b.data.localeCompare(a.data);
-        if (cmp !== 0) return cmp;
-        return a.dettaglio.localeCompare(b.dettaglio, 'it');
-    });
-    senzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
+    // Dentro ogni gruppo (fatti, scaduti, senza scadenza) l'ordine è
+    // alfabetico per descrizione.
+    var perDescrizione = function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); };
+    fatti.sort(perDescrizione);
+    scaduti.sort(perDescrizione);
+    senzaData.sort(perDescrizione);
 
     var righe = fatti.map(function(r) { return { riga: r, stato: 'fatto' }; })
         .concat(scaduti.map(function(r) { return { riga: r, stato: 'scaduto' }; }))
