@@ -3844,7 +3844,6 @@ function openModal(type, id) {
         html += '</div>';
 
         html += '<div style="padding:12px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px"><strong>Note:</strong> ' + (cv.note || 'Nessuna nota') + '</div>';
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
 
     } else if (type === 'deleteContrattoConfirm') {
         var cd = appData.contratti.find(function(x) { return x.id === id; });
@@ -3888,7 +3887,6 @@ function openModal(type, id) {
         html += '<div class="contract-detail"><label>Data Scadenza Cassetto Fiscale</label><span>' + formatDate(dv.data_scadenza_cassetto_fiscale) + '</span></div>';
         html += '<div class="contract-detail"><label>Data Scadenza Fatture e Corrispettivi</label><span>' + formatDate(dv.data_scadenza_fatture_corrispettivi) + '</span></div>';
         html += '</div>';
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
 
     } else if (type === 'deleteDelegaConfirm') {
         var dd = appData.deleghe.find(function(x) { return x.id === id; });
@@ -3926,7 +3924,6 @@ function openModal(type, id) {
         html += '<div class="contract-detail"><label>Data Scadenza</label><span>' + formatDate(mv.data_scadenza) + '</span></div>';
         html += '<div class="contract-detail"><label>Note</label><span>' + (mv.note || '-') + '</span></div>';
         html += '</div>';
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
 
     } else if (type === 'deleteMarchioConfirm') {
         var md = appData.marchi.find(function(x) { return x.id === id; });
@@ -3965,7 +3962,6 @@ function openModal(type, id) {
         html += '<div class="contract-detail"><label>Data Fine Mandato</label><span>' + formatDate(vw.data_fine_mandato) + '</span></div>';
         html += '<div class="contract-detail"><label>Note</label><span style="white-space:pre-wrap">' + (escVw(vw.note) || '-') + '</span></div>';
         html += '</div>';
-        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
 
     } else if (type === 'editVerifica') {
         var vv = appData.verifiche.find(function(x) { return x.id === id; });
