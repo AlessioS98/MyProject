@@ -1751,13 +1751,14 @@ function renderGeneraleScadenze() {
     tbody.innerHTML = html;
 }
 
-// --- Pagina Generale: promemoria fatti e senza scadenza ---
+// --- Pagina Generale: promemoria fatti, scaduti e senza scadenza ---
 // Seconda tabella della pagina Generale, sotto "Tutte le scadenze": raccoglie
 // i promemoria che non sono più scadenze da tenere d'occhio, cioè quelli con
-// "Fatto" attivo e quelli senza data di scadenza. I fatti stanno sempre in
-// cima, ordinati per data di scadenza (dalla più imminente alla meno
-// imminente) e poi per descrizione; sotto, i promemoria senza data, in ordine
-// di descrizione. I promemoria fatti senza data chiudono il gruppo dei fatti.
+// "Fatto" attivo, quelli ancora da fare con la data ormai passata (scaduti,
+// evidenziati in rosso) e quelli senza data di scadenza. I fatti stanno sempre
+// in cima, ordinati per data dalla più recente alla più vecchia; seguono gli
+// scaduti con lo stesso ordinamento; chiudono i promemoria senza data, in
+// ordine di descrizione. I fatti senza data chiudono il gruppo dei fatti.
 var ultimaVistaGeneralePromemoria = null;
 
 function renderGeneralePromemoria() {
@@ -1765,6 +1766,7 @@ function renderGeneralePromemoria() {
     if (!tbody) return;
 
     var fatti = [];
+    var scaduti = [];
     var senzaData = [];
     (appData.promemoria || []).forEach(function(p) {
         var riga = {
@@ -1778,39 +1780,56 @@ function renderGeneralePromemoria() {
             // Senza data di scadenza non è una scadenza: i promemoria da fare
             // con una data futura stanno nella tabella "Tutte le scadenze".
             senzaData.push(riga);
+        } else if (daysUntil(riga.data) < 0) {
+            // Scaduto: non compare più tra le scadenze, ma resta qui in rosso
+            // finché non viene segnato come fatto.
+            scaduti.push(riga);
         }
     });
 
-    // Fatti: prima quelli con una data, dalla più imminente alla meno
-    // imminente; a parità di data la descrizione. Quelli senza data chiudono
-    // il gruppo, sempre in ordine di descrizione.
+    // Fatti: prima quelli con una data, dalla più recente alla più vecchia; a
+    // parità di data la descrizione. Quelli senza data chiudono il gruppo,
+    // sempre in ordine di descrizione.
     fatti.sort(function(a, b) {
         if (a.data !== b.data) {
             if (!a.data) return 1;
             if (!b.data) return -1;
-            return a.data.localeCompare(b.data);
+            return b.data.localeCompare(a.data);
         }
+        return a.dettaglio.localeCompare(b.dettaglio, 'it');
+    });
+    // Scaduti: dal più recente al più vecchio, a parità di data la descrizione.
+    scaduti.sort(function(a, b) {
+        var cmp = b.data.localeCompare(a.data);
+        if (cmp !== 0) return cmp;
         return a.dettaglio.localeCompare(b.dettaglio, 'it');
     });
     senzaData.sort(function(a, b) { return a.dettaglio.localeCompare(b.dettaglio, 'it'); });
 
-    var righe = fatti.map(function(r) { return { riga: r, fatto: true }; })
-        .concat(senzaData.map(function(r) { return { riga: r, fatto: false }; }));
+    var righe = fatti.map(function(r) { return { riga: r, stato: 'fatto' }; })
+        .concat(scaduti.map(function(r) { return { riga: r, stato: 'scaduto' }; }))
+        .concat(senzaData.map(function(r) { return { riga: r, stato: 'senza' }; }));
 
     // Snapshot della vista (ordine incluso): lo usa l'esportazione Excel
     ultimaVistaGeneralePromemoria = { righe: righe };
 
     if (righe.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-bell"></i><p>Nessun promemoria fatto o senza scadenza</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-bell"></i><p>Nessun promemoria fatto, scaduto o senza scadenza</p></div></td></tr>';
         return;
     }
 
     tbody.innerHTML = righe.map(function(r) {
-        return '<tr' + (r.fatto ? ' class="promemoria-fatto"' : '') + '>' +
-            '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
-            '<td><i class="fas fa-bell"></i> Promemoria</td>' +
+        var rowCls = r.stato === 'fatto' ? ' class="promemoria-fatto"'
+            : r.stato === 'scaduto' ? ' class="promemoria-scaduto"' : '';
+        var statoCell = r.stato === 'fatto'
+            ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>'
+            : r.stato === 'scaduto'
+                ? '<span class="status-badge scaduto">Scaduto</span>'
+                : 'Senza scadenza';
+        return '<tr' + rowCls + '>' +
             '<td>' + r.riga.dettaglio + '</td>' +
-            '<td>' + (r.fatto ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : 'Senza scadenza') + '</td>' +
+            '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
+            '<td>' + statoCell + '</td>' +
             '<td>' + promemoriaCellaNote(r.riga.nota) + '</td>' +
             '</tr>';
     }).join('');
@@ -2006,6 +2025,13 @@ async function saveDelega() {
         data_scadenza_cassetto_fiscale: decCassetto || null
     };
     var id = parseInt((document.getElementById('dl_id') || {}).value) || 0;
+
+    // Nella Nuova Delega il Codice Fiscale è obbligatorio
+    if (!id && !cf) {
+        showToast('Inserisci il codice fiscale.', 'error');
+        return;
+    }
+
     if (id) {
         // Modifica di una delega esistente
         var upd = await db.from('deleghe').update(dati).eq('id', id);
@@ -2159,7 +2185,9 @@ function delegaFormHtml(d) {
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Persona Fisica</label>';
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="dl_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleDelegaType(this.value)"> Azienda</label>';
     html += '</div></div>';
-    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="dl_cf" autocomplete="off" value="' + esc(d && d.codice_fiscale) + '"></div>';
+    // Nella Nuova Delega (nessuna delega da modificare) il Codice Fiscale è obbligatorio
+    var cfObbligatorio = !d;
+    html += '<div class="form-group"><label>Codice Fiscale' + (cfObbligatorio ? ' <span class="req">*</span>' : '') + '</label><input type="text" id="dl_cf" autocomplete="off" value="' + esc(d && d.codice_fiscale) + '"' + (cfObbligatorio ? ' required' : '') + '></div>';
     html += '<div class="form-group" id="dlGrpCognome"><label>Cognome</label><input type="text" id="dl_cognome" autocomplete="off" value="' + esc(d && d.cognome) + '"></div>';
     html += '<div class="form-group" id="dlGrpNome"><label>Nome</label><input type="text" id="dl_nome" autocomplete="off" value="' + esc(d && d.nome) + '"></div>';
     html += '<div class="form-group" id="dlGrpRs"><label>Ragione Sociale</label><input type="text" id="dl_rs" autocomplete="off" value="' + esc(d && d.ragione_sociale) + '"></div>';
@@ -2267,7 +2295,9 @@ function marchioFormHtml(m) {
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mk_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleMarchioType(this.value)"> Persona Fisica</label>';
     html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="mk_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleMarchioType(this.value)"> Azienda</label>';
     html += '</div></div>';
-    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="mk_cf" autocomplete="off" value="' + esc(m && m.codice_fiscale) + '"></div>';
+    // Nel Nuovo Marchio (nessun marchio da modificare) il Codice Fiscale è obbligatorio
+    var cfObbligatorio = !m;
+    html += '<div class="form-group"><label>Codice Fiscale' + (cfObbligatorio ? ' <span class="req">*</span>' : '') + '</label><input type="text" id="mk_cf" autocomplete="off" value="' + esc(m && m.codice_fiscale) + '"' + (cfObbligatorio ? ' required' : '') + '></div>';
     html += '<div class="form-group" id="mkGrpCognome"><label>Cognome</label><input type="text" id="mk_cognome" autocomplete="off" value="' + esc(m && m.cognome) + '"></div>';
     html += '<div class="form-group" id="mkGrpNome"><label>Nome</label><input type="text" id="mk_nome" autocomplete="off" value="' + esc(m && m.nome) + '"></div>';
     html += '<div class="form-group" id="mkGrpRs"><label>Ragione Sociale</label><input type="text" id="mk_rs" autocomplete="off" value="' + esc(m && m.ragione_sociale) + '"></div>';
@@ -2289,6 +2319,11 @@ async function saveMarchio() {
     var note = document.getElementById('mk_note').value.trim() || null;
     if (!numero) {
         showToast('Inserisci il numero identificativo del marchio.', 'error');
+        return;
+    }
+    // Nel Nuovo Marchio il Codice Fiscale è obbligatorio
+    if (!id && !cf) {
+        showToast('Inserisci il codice fiscale.', 'error');
         return;
     }
     // Il tipo scelto determina quali campi valgono (come nel contratto:
@@ -2456,7 +2491,7 @@ function promemoriaFormHtml(p) {
     html += '<div class="form-group"><label>Scadenza</label><input type="date" id="pr_scadenza" autocomplete="off" value="' + dataVal(p && p.data_scadenza) + '"></div>';
     html += '<div class="form-group"><label>Fatto</label><label class="radio-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px"><input type="checkbox" id="pr_fatto"' + (p && p.fatto ? ' checked' : '') + '> Fatto</label></div>';
     html += '<div class="form-group full"><label>Note</label><textarea id="pr_note">' + esc(p && p.note) + '</textarea></div>';
-    html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
     html += '</form>';
     return html;
 }
@@ -3469,11 +3504,17 @@ function openModal(type, id) {
             html += '<input type="hidden" id="pf_tipo" value="' + (torrePersona ? 'azienda' : 'pf') + '">';
             html += '<div class="form-section-title full"><i class="fas fa-user-tag"></i> Tipo: ' + (torrePersona ? 'Azienda' : 'Persona Fisica') + '</div>';
         }
+        // Codice Fiscale, Cognome e Nome affiancati sulla stessa riga.
+        // Con Azienda selezionata Cognome e Nome sono nascosti e restano
+        // affiancati Codice Fiscale e Ragione Sociale.
+        html += '<div class="persona-fields-row">';
+        // Nella Nuova Anagrafica il Codice Fiscale è obbligatorio
+        html += '<div class="form-group"><label>Codice Fiscale' + (type === 'newPersona' ? ' <span class="req">*</span>' : '') + '</label><input type="text" id="pf_cf" value="' + (pe ? (pe.codice_fiscale || '') : '') + '"' + (type === 'newPersona' ? ' required' : '') + '></div>';
         html += '<div class="form-group" id="pfGrpCognome"><label>Cognome</label><input type="text" id="pf_cognome" value="' + (pe ? (pe.cognome || '') : '') + '"></div>';
         html += '<div class="form-group" id="pfGrpNome"><label>Nome</label><input type="text" id="pf_nome" value="' + (pe ? (pe.nome || '') : '') + '"></div>';
-        html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="pf_cf" value="' + (pe ? (pe.codice_fiscale || '') : '') + '"></div>';
         html += '<div class="form-group" id="pfGrpRs"><label>Ragione Sociale</label><input type="text" id="pf_rs" value="' + (pe ? (pe.ragione_sociale || '') : '') + '"></div>';
-        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '</div>';
+        html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
         modal._returnToList = 'listaPersone';
 
@@ -3509,13 +3550,16 @@ function openModal(type, id) {
         html = '<form id="immobileForm" class="form-grid">';
         html += '<div class="form-group"><label>Indirizzo</label><input type="text" id="if_indirizzo" value="' + (ie ? (ie.indirizzo || '') : '') + '" required></div>';
         html += '<div class="form-group"><label>Città</label><input type="text" id="if_citta" value="' + (ie ? (ie.citta || '') : '') + '" required></div>';
-        html += '<div class="form-group"><label>Foglio</label><input type="text" id="if_foglio" value="' + (ie ? (ie.foglio || '') : '') + '"></div>';
-        html += '<div class="form-group"><label>Particella</label><input type="text" id="if_particella" value="' + (ie ? (ie.particella || '') : '') + '"></div>';
-        html += '<div class="form-group"><label>Sub</label><input type="text" id="if_sub" value="' + (ie ? (ie.sub || '') : '') + '"></div>';
+        // Nel Nuovo Immobile i dati catastali sono obbligatori
+        var immoStar = type === 'newImmobile' ? ' <span class="req">*</span>' : '';
+        var immoReq = type === 'newImmobile' ? ' required' : '';
+        html += '<div class="form-group"><label>Foglio' + immoStar + '</label><input type="text" id="if_foglio" value="' + (ie ? (ie.foglio || '') : '') + '"' + immoReq + '></div>';
+        html += '<div class="form-group"><label>Particella' + immoStar + '</label><input type="text" id="if_particella" value="' + (ie ? (ie.particella || '') : '') + '"' + immoReq + '></div>';
+        html += '<div class="form-group"><label>Sub' + immoStar + '</label><input type="text" id="if_sub" value="' + (ie ? (ie.sub || '') : '') + '"' + immoReq + '></div>';
         html += '<div class="form-group"><label>APE</label><div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
         html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="if_ape" value="true"' + (!(ie && ie.ape) ? ' checked' : '') + '> Sì</label>';
         html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="if_ape" value="false"' + ((ie && ie.ape) ? ' checked' : '') + '> No</label></div></div>';
-        html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+        html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
         html += '</form>';
         modal._returnToList = 'listaImmobili';
 
@@ -4383,6 +4427,12 @@ async function savePersona(id) {
         };
     }
 
+    // Nella Nuova Anagrafica il Codice Fiscale è obbligatorio
+    if (!id && !d.codice_fiscale) {
+        showToast('Il Codice Fiscale è obbligatorio', 'error');
+        return;
+    }
+
     if (id) {
         var { error } = await db.from('anagrafica_persona').update(d).eq('id', id);
         if (error) { console.error('Errore update persona:', error); showToast('Errore salvataggio', 'error'); return; }
@@ -4408,6 +4458,13 @@ async function saveImmobile(id) {
         sub: document.getElementById('if_sub').value.trim() || null,
         ape: document.querySelector('input[name="if_ape"]:checked').value === 'true'
     };
+
+    // Nel Nuovo Immobile foglio, particella e sub sono obbligatori
+    if (!id && (!d.foglio || !d.particella || !d.sub)) {
+        showToast('Foglio, Particella e Sub sono obbligatori', 'error');
+        return;
+    }
+
     if (id) {
         var { error } = await db.from('immobili').update(d).eq('id', id);
         if (error) { console.error('Errore update immobile:', error); showToast('Errore salvataggio', 'error'); return; }
@@ -5251,7 +5308,7 @@ function exportGeneraleExcel() {
             { t: 's', s: S_TESTO, v: r.riga.data ? formatDateExcel(r.riga.data) : '-' },
             { t: 's', s: S_TESTO, v: 'Promemoria' },
             { t: 's', s: S_TESTO, v: r.riga.dettaglio },
-            { t: 's', s: S_TESTO, v: r.fatto ? 'Fatto' : 'Senza scadenza' },
+            { t: 's', s: S_TESTO, v: r.stato === 'fatto' ? 'Fatto' : r.stato === 'scaduto' ? 'Scaduto' : 'Senza scadenza' },
             { t: 's', s: S_TESTO, v: notaTxt(r.riga.nota) }
         ];
     }));
