@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS canoni_annuali;
 DROP TABLE IF EXISTS scadenze;
 DROP TABLE IF EXISTS deleghe;
 DROP TABLE IF EXISTS promemoria;
+DROP TABLE IF EXISTS verifiche_antiriciclaggio;
 DROP TABLE IF EXISTS contratti;
 DROP TABLE IF EXISTS immobili;
 DROP TABLE IF EXISTS anagrafica_persona;
@@ -66,6 +67,24 @@ CREATE TABLE marchi (
   ragione_sociale VARCHAR(255) NULL,
   codice_fiscale VARCHAR(16) NULL,
   data_scadenza DATE NULL,
+  note TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Verifiche antiriciclaggio
+CREATE TABLE verifiche_antiriciclaggio (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tipo VARCHAR(10) NOT NULL DEFAULT 'pf',
+  codice_fiscale VARCHAR(16) NOT NULL,
+  cognome VARCHAR(255) NULL,
+  nome VARCHAR(255) NULL,
+  ragione_sociale VARCHAR(255) NULL,
+  codice_fascicolo VARCHAR(64) NOT NULL,
+  data_prossima_verifica DATE NULL,
+  data_fine_monitoraggio DATE NULL,
+  data_cessazione DATE NULL,
+  data_fine_mandato DATE NULL,
   note TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id)

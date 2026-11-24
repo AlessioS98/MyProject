@@ -28,10 +28,27 @@
                 <i class="fas fa-home"></i>
                 <span>Generale</span>
             </a>
+            <div class="nav-group" data-group="antiriciclaggio">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupAntiriciclaggio">
+                    <i class="fas fa-shield-halved"></i>
+                    <span class="nav-group-label">Antiriciclaggio</span>
+                    <i class="fas fa-chevron-down nav-group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="navGroupAntiriciclaggio">
+                    <a href="#" class="nav-item" data-page="antiriciclaggio">
+                        <i class="fas fa-shield-halved"></i>
+                        <span>Verifiche</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="scadenze-antiriciclaggio">
+                        <i class="fas fa-calendar-check"></i>
+                        <span>Scadenze</span>
+                    </a>
+                </div>
+            </div>
             <div class="nav-group" data-group="contratti">
                 <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupContratti">
                     <i class="fas fa-file-contract"></i>
-                    <span class="nav-group-label">Gestione Contratti di Locazione</span>
+                    <span class="nav-group-label">Contratti di Locazione</span>
                     <i class="fas fa-chevron-down nav-group-chevron"></i>
                 </button>
                 <div class="nav-group-items" id="navGroupContratti">
@@ -52,7 +69,7 @@
             <div class="nav-group" data-group="deleghe">
                 <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupDeleghe">
                     <i class="fas fa-file-signature"></i>
-                    <span class="nav-group-label">Gestione Deleghe</span>
+                    <span class="nav-group-label">Deleghe</span>
                     <i class="fas fa-chevron-down nav-group-chevron"></i>
                 </button>
                 <div class="nav-group-items" id="navGroupDeleghe">
@@ -69,7 +86,7 @@
             <div class="nav-group" data-group="marchi">
                 <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupMarchi">
                     <i class="fas fa-registered"></i>
-                    <span class="nav-group-label">Gestione Marchi</span>
+                    <span class="nav-group-label">Marchi</span>
                     <i class="fas fa-chevron-down nav-group-chevron"></i>
                 </button>
                 <div class="nav-group-items" id="navGroupMarchi">
@@ -321,6 +338,64 @@
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <!-- Page: Antiriciclaggio - Verifiche -->
+        <section class="page" id="page-antiriciclaggio">
+            <div class="page-header">
+                <div>
+                    <h1>Verifiche</h1>
+                    <p class="page-subtitle">Antiriciclaggio</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-verifiche-excel" title="Scarica in Excel l'elenco delle verifiche antiriciclaggio">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
+                    <button class="btn btn-primary" data-action="new-verifica">
+                        <i class="fas fa-plus"></i> Aggiungi Verifica
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Soggetto</th>
+                            <th>Data Prossima Verifica</th>
+                            <th>Data Fine Monitoraggio</th>
+                            <th>Data Cessazione</th>
+                            <th>Data Fine Mandato</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="verificheTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Antiriciclaggio - Scadenze -->
+        <section class="page" id="page-scadenze-antiriciclaggio">
+            <div class="page-header">
+                <div>
+                    <h1>Scadenze</h1>
+                    <p class="page-subtitle">Antiriciclaggio</p>
+                </div>
+            </div>
+
+            <div class="section-heading">
+                <h2><i class="fas fa-calendar-day"></i> Scadenze</h2>
+                <p>Scadenze delle verifiche antiriciclaggio</p>
+            </div>
+
+            <div class="table-container" id="antiriciclaggioScadenze">
+                <div class="empty-state">
+                    <i class="fas fa-calendar-day"></i>
+                    <p>Nessuna scadenza presente</p>
+                </div>
             </div>
         </section>
 
@@ -789,6 +864,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="db-client.js?v=1"></script>
-    <script src="app.js?v=83"></script>
+    <script src="app.js?v=88"></script>
 </body>
 </html>

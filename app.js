@@ -11,7 +11,7 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [], promemoria: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [], promemoria: [], verifiche: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -1101,8 +1101,8 @@ function prefissoCampiSoggetto(inputEl) {
     // Righe locatore/conduttore del contratto (classi loc-* e cond-*)
     if (cl.indexOf('loc-cognome') >= 0 || cl.indexOf('loc-nome') >= 0 || cl.indexOf('loc-rs') >= 0) return 'loc-';
     if (cl.indexOf('cond-cognome') >= 0 || cl.indexOf('cond-nome') >= 0 || cl.indexOf('cond-rs') >= 0) return 'cond-';
-    // Form delega, marchio e persona (id dl_*, mk_*, pf_*)
-    var m = /^(dl|mk|pf)_(cognome|nome|rs)$/.exec(inputEl.id || '');
+    // Form delega, marchio, persona e verifica antiriciclaggio (id dl_*, mk_*, pf_*, vf_*)
+    var m = /^(dl|mk|pf|vf)_(cognome|nome|rs)$/.exec(inputEl.id || '');
     return m ? m[1] + '_' : '';
 }
 
@@ -1140,6 +1140,10 @@ function compilaCampiSoggettoDaPersona(inputEl, p) {
         var rMk = document.querySelector('input[name="mk_tipo"][value="' + tipo + '"]');
         if (rMk) rMk.checked = true;
         toggleMarchioType(tipo);
+    } else if (document.getElementById('verificaForm') && document.getElementById('verificaForm').contains(inputEl)) {
+        var rVf = document.querySelector('input[name="vf_tipo"][value="' + tipo + '"]');
+        if (rVf) rVf.checked = true;
+        toggleVerificaType(tipo);
     }
 }
 
@@ -1487,7 +1491,8 @@ async function loadAllData() {
             db.from('contratto_immobili').select('*'),
             db.from('deleghe').select('*'),
             db.from('marchi').select('*'),
-            db.from('promemoria').select('*')
+            db.from('promemoria').select('*'),
+            db.from('verifiche_antiriciclaggio').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1502,7 +1507,7 @@ async function loadAllData() {
         var persone = results[0], immobili = results[1], contratti = results[2],
             scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
             immRel = results[7], deleghe = results[8], marchi = results[9],
-            promemoria = results[10];
+            promemoria = results[10], verifiche = results[11];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1514,6 +1519,7 @@ async function loadAllData() {
         appData.deleghe = deleghe.data || [];
         appData.marchi = marchi.data || [];
         appData.promemoria = promemoria.data || [];
+        appData.verifiche = verifiche.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1563,7 +1569,7 @@ function aggiornaTitoloSezione(page) {
     var voce = document.querySelector('.nav-item[data-page="' + page + '"]');
     if (!voce) return;
     // Titolo della sezione = titolo del gruppo del menu che contiene la voce
-    // (es. "Gestione Contratti di Locazione"); le voci fuori dai gruppi
+    // (es. "Contratti di Locazione"); le voci fuori dai gruppi
     // (es. "Generale") usano solo il proprio nome.
     var gruppo = voce.closest('.nav-group');
     // La tendina della voce attiva si apre da sola (le altre si chiudono)
@@ -2702,6 +2708,192 @@ async function deleteMarchio(id) {
     showToast('Marchio eliminato', 'info');
 }
 
+// --- Verifiche antiriciclaggio ---
+// Etichetta del soggetto: ragione sociale per le aziende, cognome e nome per le
+// persone fisiche (il codice fiscale resta come ultima risorsa).
+function getVerificaLabel(v) {
+    if (!v) return '';
+    if (v.tipo === 'azienda' || (v.ragione_sociale && !v.cognome && !v.nome)) {
+        return v.ragione_sociale || v.codice_fiscale || '';
+    }
+    var nome = [v.cognome, v.nome].filter(Boolean).join(' ').trim();
+    return nome || v.ragione_sociale || v.codice_fiscale || '';
+}
+
+// Elenco in ordine alfabetico per soggetto
+function ordinaVerifichePerLista(list) {
+    return (list || []).slice().sort(function(a, b) {
+        return getVerificaLabel(a).localeCompare(getVerificaLabel(b), 'it');
+    });
+}
+
+// Scheda della verifica antiriciclaggio, condivisa da creazione e modifica.
+// Il tipo scelto abilita i campi del soggetto: persona fisica usa cognome e
+// nome, azienda usa la ragione sociale.
+function verificaFormHtml(v) {
+    var isAz = !!(v && v.tipo === 'azienda');
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+    };
+    var dataVal = function(x) { return x ? String(x).slice(0, 10) : ''; };
+    var html = '<form id="verificaForm" class="form-grid">';
+    html += '<input type="hidden" id="vf_id" value="' + (v && v.id ? v.id : '') + '">';
+    html += '<div class="form-group full"><label>Tipo</label>';
+    html += '<div class="radio-group" style="display:flex;gap:16px;margin-top:6px">';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="vf_tipo" value="pf"' + (!isAz ? ' checked' : '') + ' onchange="toggleVerificaType(this.value)"> Persona Fisica</label>';
+    html += '<label class="radio-label" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="vf_tipo" value="azienda"' + (isAz ? ' checked' : '') + ' onchange="toggleVerificaType(this.value)"> Azienda</label>';
+    html += '</div></div>';
+    html += '<div class="form-group"><label>Codice Fiscale <span class="req">*</span></label><input type="text" id="vf_cf" autocomplete="off" value="' + esc(v && v.codice_fiscale) + '" required></div>';
+    html += '<div class="form-group" id="vfGrpCognome"><label>Cognome</label><input type="text" id="vf_cognome" autocomplete="off" value="' + esc(v && v.cognome) + '"></div>';
+    html += '<div class="form-group" id="vfGrpNome"><label>Nome</label><input type="text" id="vf_nome" autocomplete="off" value="' + esc(v && v.nome) + '"></div>';
+    html += '<div class="form-group" id="vfGrpRs"><label>Ragione Sociale</label><input type="text" id="vf_rs" autocomplete="off" value="' + esc(v && v.ragione_sociale) + '"></div>';
+    // Il codice fascicolo identifica la pratica: formato AAAA/NNN (anno + numero a 3 cifre)
+    html += '<div class="form-group"><label>Codice Fascicolo <span class="req">*</span></label><input type="text" id="vf_fascicolo" autocomplete="off" placeholder="AAAA/NNN" maxlength="8" title="Formato AAAA/NNN (es. 2026/001)" value="' + esc(v && v.codice_fascicolo) + '" required></div>';
+    html += '<div class="form-group"><label>Data Prossima Verifica</label><input type="date" id="vf_data_prossima_verifica" autocomplete="off" value="' + dataVal(v && v.data_prossima_verifica) + '"></div>';
+    html += '<div class="form-group"><label>Data Fine Monitoraggio</label><input type="date" id="vf_data_fine_monitoraggio" autocomplete="off" value="' + dataVal(v && v.data_fine_monitoraggio) + '"></div>';
+    html += '<div class="form-group"><label>Data Cessazione</label><input type="date" id="vf_data_cessazione" autocomplete="off" value="' + dataVal(v && v.data_cessazione) + '"></div>';
+    html += '<div class="form-group"><label>Data Fine Mandato</label><input type="date" id="vf_data_fine_mandato" autocomplete="off" value="' + dataVal(v && v.data_fine_mandato) + '"></div>';
+    html += '<div class="form-group full"><label>Note</label><textarea id="vf_note">' + esc(v && v.note) + '</textarea></div>';
+    html += '<div class="form-actions full"><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button></div>';
+    html += '</form>';
+    return html;
+}
+
+function getVerificaTipo() {
+    var radio = document.querySelector('input[name="vf_tipo"]:checked');
+    return radio ? radio.value : 'pf';
+}
+
+// Persona fisica / azienda: i campi del tipo non scelto vengono disabilitati
+function toggleVerificaType(tipo) {
+    var isAzienda = tipo === 'azienda';
+    var cogEl = document.getElementById('vf_cognome');
+    var nomEl = document.getElementById('vf_nome');
+    var rsEl = document.getElementById('vf_rs');
+    var grpCog = document.getElementById('vfGrpCognome');
+    var grpNom = document.getElementById('vfGrpNome');
+    var grpRs = document.getElementById('vfGrpRs');
+    if (cogEl) cogEl.disabled = isAzienda;
+    if (nomEl) nomEl.disabled = isAzienda;
+    if (rsEl) rsEl.disabled = !isAzienda;
+    if (grpCog) grpCog.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpNom) grpNom.style.opacity = isAzienda ? '0.4' : '1';
+    if (grpRs) grpRs.style.opacity = isAzienda ? '1' : '0.4';
+}
+
+async function saveVerifica() {
+    var id = parseInt((document.getElementById('vf_id') || {}).value) || 0;
+    var tipo = getVerificaTipo();
+    var cf = document.getElementById('vf_cf').value.trim().toUpperCase();
+    var fascicolo = document.getElementById('vf_fascicolo').value.trim();
+    if (!cf) {
+        showToast('Inserisci il codice fiscale.', 'error');
+        return;
+    }
+    if (!fascicolo) {
+        showToast('Inserisci il codice fascicolo.', 'error');
+        return;
+    }
+    if (!/^\d{4}\/\d{3}$/.test(fascicolo)) {
+        showToast('Codice fascicolo: usa il formato AAAA/NNN (es. 2026/001).', 'error');
+        return;
+    }
+    var isAzienda = tipo === 'azienda';
+    var d = {
+        tipo: tipo,
+        codice_fiscale: cf,
+        codice_fascicolo: fascicolo,
+        cognome: isAzienda ? null : (document.getElementById('vf_cognome').value.trim() || null),
+        nome: isAzienda ? null : (document.getElementById('vf_nome').value.trim() || null),
+        ragione_sociale: isAzienda ? (document.getElementById('vf_rs').value.trim() || null) : null,
+        data_prossima_verifica: document.getElementById('vf_data_prossima_verifica').value || null,
+        data_fine_monitoraggio: document.getElementById('vf_data_fine_monitoraggio').value || null,
+        data_cessazione: document.getElementById('vf_data_cessazione').value || null,
+        data_fine_mandato: document.getElementById('vf_data_fine_mandato').value || null,
+        note: (document.getElementById('vf_note') || {}).value ? document.getElementById('vf_note').value.trim() || null : null
+    };
+
+    if (id) {
+        var { error } = await db.from('verifiche_antiriciclaggio').update(d).eq('id', id);
+        if (error) { console.error('Errore update verifica:', error); showToast('Errore salvataggio', 'error'); return; }
+        var idx = appData.verifiche.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) Object.assign(appData.verifiche[idx], d);
+    } else {
+        var { data, error } = await db.from('verifiche_antiriciclaggio').insert(d).select('id').single();
+        if (error) { console.error('Errore insert verifica:', error); showToast('Errore salvataggio', 'error'); return; }
+        appData.verifiche.push(Object.assign({ id: data.id }, d));
+    }
+    closeModal();
+    renderVerifiche();
+    showToast('Verifica salvata!', 'success');
+}
+
+async function deleteVerifica(id) {
+    var { error } = await db.from('verifiche_antiriciclaggio').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.verifiche = appData.verifiche.filter(function(v) { return v.id !== id; });
+    closeModal();
+    renderVerifiche();
+    showToast('Verifica eliminata', 'info');
+}
+
+function renderVerifiche() {
+    var tbody = document.getElementById('verificheTableBody');
+    if (!tbody) return;
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+    };
+    var list = ordinaVerifichePerLista(appData.verifiche);
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="table-empty-cell">Nessuna verifica presente</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(v) {
+        return '<tr>' +
+            '<td><strong>' + esc(getVerificaLabel(v)) + '</strong></td>' +
+            '<td>' + formatDate(v.data_prossima_verifica) + '</td>' +
+            '<td>' + formatDate(v.data_fine_monitoraggio) + '</td>' +
+            '<td>' + formatDate(v.data_cessazione) + '</td>' +
+            '<td>' + formatDate(v.data_fine_mandato) + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="view-verifica" data-id="' + v.id + '" title="Dettagli"><i class="fas fa-eye"></i></button>' +
+            '<button type="button" data-action="edit-verifica" data-id="' + v.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-verifica" data-id="' + v.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
+    }).join('');
+}
+
+function exportVerificheExcel() {
+    var list = ordinaVerifichePerLista(appData.verifiche);
+    if (list.length === 0) {
+        showToast('Nessuna verifica da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Tipo', 'Codice Fiscale', 'Cognome', 'Nome', 'Ragione Sociale', 'Codice Fascicolo', 'Prossima Verifica', 'Fine Monitoraggio', 'Cessazione', 'Fine Mandato', 'Note'];
+    var LARGHEZZE = [14, 20, 22, 22, 34, 18, 18, 18, 16, 16, 40];
+
+    var righeDati = list.map(function(v) {
+        return [
+            { t: 's', s: S_TESTO, v: v.tipo === 'azienda' ? 'Azienda' : 'Persona Fisica' },
+            { t: 's', s: S_TESTO, v: v.codice_fiscale || '' },
+            { t: 's', s: S_TESTO, v: v.cognome || '' },
+            { t: 's', s: S_TESTO, v: v.nome || '' },
+            { t: 's', s: S_TESTO, v: v.ragione_sociale || '' },
+            { t: 's', s: S_TESTO, v: v.codice_fascicolo || '' },
+            { t: 's', s: S_TESTO, v: v.data_prossima_verifica ? formatDateExcel(v.data_prossima_verifica) : '' },
+            { t: 's', s: S_TESTO, v: v.data_fine_monitoraggio ? formatDateExcel(v.data_fine_monitoraggio) : '' },
+            { t: 's', s: S_TESTO, v: v.data_cessazione ? formatDateExcel(v.data_cessazione) : '' },
+            { t: 's', s: S_TESTO, v: v.data_fine_mandato ? formatDateExcel(v.data_fine_mandato) : '' },
+            { t: 's', s: S_TESTO, v: v.note || '' }
+        ];
+    });
+
+    var titolo = 'Elenco verifiche antiriciclaggio - esportate il ' + istanteExcel() + ' (' + list.length + ' verifiche)';
+    var blob = creaXlsxListaBlob('Verifiche', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Verifiche_Antiriciclaggio', 'Elenco verifiche esportato');
+}
+
 // --- Promemoria ---
 // Elenco ordinato per data più prossima: prima oggi e le date future dalla più
 // vicina in avanti, poi le date passate dalla più recente alla più vecchia.
@@ -2979,6 +3171,7 @@ async function refreshPage(page) {
         case 'marchi': renderMarchi(); break;
         case 'scadenze-marchi': renderScadenzeMarchi(); break;
         case 'promemoria': renderPromemoria(); break;
+        case 'antiriciclaggio': renderVerifiche(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -3018,6 +3211,12 @@ document.addEventListener('click', function(e) {
         case 'view-marchio': openModal('viewMarchio', id); break;
         case 'delete-marchio': openModal('deleteMarchioConfirm', id); break;
         case 'confirm-delete-marchio': deleteMarchio(id); break;
+        case 'new-verifica': openModal('newVerifica'); break;
+        case 'view-verifica': openModal('viewVerifica', id); break;
+        case 'edit-verifica': openModal('editVerifica', id); break;
+        case 'delete-verifica': openModal('deleteVerificaConfirm', id); break;
+        case 'confirm-delete-verifica': deleteVerifica(id); break;
+        case 'export-verifiche-excel': exportVerificheExcel(); break;
         case 'export-marchi-excel': exportMarchiExcel(); break;
         case 'export-scadenze-marchi-excel': exportScadenzeMarchiExcel(); break;
         case 'export-promemoria-excel': exportPromemoriaExcel(); break;
@@ -3741,6 +3940,52 @@ function openModal(type, id) {
         html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-marchio" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
         html += '</div>';
 
+    } else if (type === 'newVerifica') {
+        title.textContent = 'Nuova Verifica';
+        html = verificaFormHtml(null);
+
+    } else if (type === 'viewVerifica') {
+        var vw = appData.verifiche.find(function(x) { return x.id === id; });
+        if (!vw) return;
+        title.textContent = 'Dettagli Verifica';
+        var escVw = function(x) {
+            return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+        };
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md)">';
+        html += '<div class="contract-detail"><label>Tipo</label><span>' + (vw.tipo === 'azienda' ? 'Azienda' : 'Persona Fisica') + '</span></div>';
+        html += '<div class="contract-detail"><label>Soggetto</label><span>' + escVw(getVerificaLabel(vw)) + '</span></div>';
+        html += '<div class="contract-detail"><label>Codice Fiscale</label><span>' + escVw(vw.codice_fiscale) + '</span></div>';
+        html += '<div class="contract-detail"><label>Cognome</label><span>' + escVw(vw.cognome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Nome</label><span>' + escVw(vw.nome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Ragione Sociale</label><span>' + escVw(vw.ragione_sociale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Codice Fascicolo</label><span>' + escVw(vw.codice_fascicolo || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Prossima Verifica</label><span>' + formatDate(vw.data_prossima_verifica) + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Fine Monitoraggio</label><span>' + formatDate(vw.data_fine_monitoraggio) + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Cessazione</label><span>' + formatDate(vw.data_cessazione) + '</span></div>';
+        html += '<div class="contract-detail"><label>Data Fine Mandato</label><span>' + formatDate(vw.data_fine_mandato) + '</span></div>';
+        html += '<div class="contract-detail"><label>Note</label><span style="white-space:pre-wrap">' + (escVw(vw.note) || '-') + '</span></div>';
+        html += '</div>';
+        html += '<div class="form-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Chiudi</button></div>';
+
+    } else if (type === 'editVerifica') {
+        var vv = appData.verifiche.find(function(x) { return x.id === id; });
+        if (!vv) return;
+        title.textContent = 'Modifica Verifica';
+        html = verificaFormHtml(vv);
+
+    } else if (type === 'deleteVerificaConfirm') {
+        var vd = appData.verifiche.find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Verifica';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare la verifica di <strong>' + (vd ? getVerificaLabel(vd) : 'N/A') + '</strong>';
+        html += (vd && vd.codice_fascicolo ? ' (fascicolo ' + vd.codice_fascicolo + ')' : '') + '.</span>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-verifica" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
     } else if (type === 'newPromemoria') {
         title.textContent = 'Nuovo Promemoria';
         html = promemoriaFormHtml(null);
@@ -4060,6 +4305,38 @@ function openModal(type, id) {
         toggleDelegaType(getDelegaType());
     }
 
+
+    var vf = document.getElementById('verificaForm');
+    if (vf) {
+        vf.addEventListener('submit', function(e) { e.preventDefault(); saveVerifica(); });
+        // Suggerimenti dai dati gia' presenti, stessa logica delle finestre
+        // Delega e Marchio: Cognome/Nome/Ragione Sociale propongono i valori
+        // dell'anagrafica, il Codice Fiscale propone solo i soggetti del tipo
+        // scelto (persona fisica o azienda) e alla scelta compila gli altri
+        // campi, impostando il tipo.
+        setupPersonFieldAutocomplete(document.getElementById('vf_cognome'), 'cognome');
+        setupPersonFieldAutocomplete(document.getElementById('vf_nome'), 'nome');
+        setupPersonFieldAutocomplete(document.getElementById('vf_rs'), 'ragione_sociale');
+        var vfCf = document.getElementById('vf_cf');
+        if (vfCf) setupCfAutocomplete(vfCf, vf, {
+            // Suggerimenti solo del tipo scelto nella finestra
+            getTipo: function() { return getVerificaTipo(); },
+            onPick: function(p) {
+                var isAz = !!(p.ragione_sociale && !p.nome);
+                var radio = vf.querySelector('input[name="vf_tipo"][value="' + (isAz ? 'azienda' : 'pf') + '"]');
+                if (radio) radio.checked = true;
+                var c = document.getElementById('vf_cognome');
+                var n = document.getElementById('vf_nome');
+                var r = document.getElementById('vf_rs');
+                if (c) c.value = p.cognome || '';
+                if (n) n.value = p.nome || '';
+                if (r) r.value = p.ragione_sociale || '';
+                toggleVerificaType(isAz ? 'azienda' : 'pf');
+            }
+        });
+        // Stato iniziale dei campi in base al tipo selezionato (default PF)
+        toggleVerificaType(getVerificaTipo());
+    }
 
     var mkf = document.getElementById('marchioForm');
     if (mkf) {
