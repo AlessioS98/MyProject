@@ -240,3 +240,6 @@ Cose da tenere presenti:
   pannello** le notifiche mostrate vengono eliminate automaticamente.
   L'eliminazione resta legata alla data di riferimento e alla fascia: se la
   scadenza cambia, la notifica per la nuova data arriva regolarmente.
+- Le scadenze della pagina **Scadenze antiriciclaggio** hanno i propri
+  promemoria: 30, 20 e 15 giorni prima della Data scadenza e poi ogni giorno
+  negli ultimi 10 giorni (il giorno della scadenza non viene notificato).

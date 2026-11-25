@@ -1616,8 +1616,10 @@ function promemoriaCellaNote(note) {
 // --- Pagina Generale: tutte le scadenze ---
 // Raccoglie in un'unica lista le scadenze di pagamento ancora da saldare, la
 // scadenza dei contratti non chiusi e non ancora scaduti, le tre date delle
-// deleghe e la scadenza dei marchi (solo quelle non ancora passate), più i
-// promemoria ancora da fare con una data non ancora scaduta. Le scadenze di
+// deleghe, la scadenza dei marchi e quella delle verifiche antiriciclaggio
+// (solo quelle non ancora passate; le verifiche con monitoraggio scaduto, che
+// stanno nell'archivio, non entrano), più i promemoria ancora da fare con una
+// data non ancora scaduta. Le scadenze di
 // pagamento scadute o completate, i contratti scaduti, le deleghe scadute, i
 // marchi scaduti e i promemoria scaduti non entrano nell'elenco: sono voci
 // già chiuse, che restano nelle rispettive pagine. I promemoria fatti e
@@ -1742,6 +1744,35 @@ function renderGeneraleScadenze() {
                 { label: 'Numero identificativo', value: m.numero_identificativo || '-' },
                 { label: 'Soggetto', value: getMarchioLabel(m) },
                 { label: 'Codice Fiscale', value: m.codice_fiscale || '-' }
+            ]
+        });
+    });
+
+    // Scadenze delle verifiche antiriciclaggio: solo quelle dell'elenco (le
+    // verifiche con il monitoraggio già scaduto stanno nell'archivio e non
+    // entrano nella lista), e solo se la data non è ancora passata.
+    (appData.verifiche || []).forEach(function(v) {
+        if (isVerificaScaduta(v)) return;
+        var data = getVerificaDataScadenza(v);
+        if (!data) return;
+        if (daysUntil(data) < 0) return;
+        var tipoScadenza = getVerificaTipoScadenza(v) || 'Verifica';
+        var fascicolo = v.codice_fascicolo ? 'Fasc. ' + v.codice_fascicolo : '';
+        items.push({
+            key: 'verifica:' + v.id,
+            data: data,
+            tipo: 'Antiriciclaggio',
+            icon: 'fa-user-shield',
+            nominativi: getVerificaLabel(v) || '-',
+            dettaglioInfo: tipoScadenza + (fascicolo ? ' · ' + fascicolo : ''),
+            dettaglio: tipoScadenza + ' · ' + (getVerificaLabel(v) || 'Verifica #' + v.id) +
+                (fascicolo ? ' · ' + fascicolo : ''),
+            campi: [
+                { label: 'Soggetto', value: getVerificaLabel(v) || '-' },
+                { label: 'Codice Fascicolo', value: v.codice_fascicolo || '-' },
+                { label: 'Tipo scadenza', value: tipoScadenza },
+                { label: 'Prossima verifica', value: v.data_prossima_verifica ? formatDate(v.data_prossima_verifica) : '–' },
+                { label: 'Fine monitoraggio', value: v.data_fine_monitoraggio ? formatDate(v.data_fine_monitoraggio) : '–' }
             ]
         });
     });
@@ -2907,26 +2938,29 @@ function ordinaScadenzeVerifichePerLista(list) {
     });
 }
 
-// Una verifica ha il monitoraggio scaduto quando la data di fine monitoraggio
-// è già passata: queste verifiche vanno nella tabella sotto l'elenco
-// principale, non nell'elenco stesso.
-function isVerificaMonitoraggioScaduto(v) {
-    if (!v || !v.data_fine_monitoraggio) return false;
-    return String(v.data_fine_monitoraggio).slice(0, 10) < toLocalDateStr(new Date());
+// Una verifica è scaduta (e va nell'Archivio) quando la sua Data scadenza è
+// già passata. La Data scadenza è la stessa mostrata nell'elenco: la prossima
+// verifica, oppure la fine monitoraggio se anteriore (vedi
+// getVerificaDataScadenza). Così una verifica con prossima verifica al 24/11
+// finisce nell'Archivio dal 25/11 in poi.
+function isVerificaScaduta(v) {
+    var data = getVerificaDataScadenza(v);
+    if (!data) return false;
+    return data < toLocalDateStr(new Date());
 }
 
-// Verifiche della tabella principale: monitoraggio non ancora scaduto (o
+// Verifiche della tabella principale: Data scadenza non ancora passata (o
 // assente).
 function getVerificheScadenzeAntiriciclaggio() {
-    return (appData.verifiche || []).filter(function(v) { return !isVerificaMonitoraggioScaduto(v); });
+    return (appData.verifiche || []).filter(function(v) { return !isVerificaScaduta(v); });
 }
 
-// Verifiche con la fine monitoraggio scaduta, dalla più recente alla più
+// Verifiche con la Data scadenza già passata, dalla più recente alla più
 // vecchia; a parità di data in ordine alfabetico.
-function getVerificheMonitoraggioScaduto() {
-    return (appData.verifiche || []).filter(isVerificaMonitoraggioScaduto).slice().sort(function(a, b) {
-        var da = String(a.data_fine_monitoraggio).slice(0, 10);
-        var db = String(b.data_fine_monitoraggio).slice(0, 10);
+function getVerificheScadute() {
+    return (appData.verifiche || []).filter(isVerificaScaduta).slice().sort(function(a, b) {
+        var da = getVerificaDataScadenza(a);
+        var db = getVerificaDataScadenza(b);
         if (da !== db) return da < db ? 1 : -1;
         return verificheCollator.compare(chiaveSoggettoVerifica(a), chiaveSoggettoVerifica(b));
     });
@@ -2952,8 +2986,8 @@ function scadenzaVerificaRowHtml(v, data, tipoLabel) {
         '</div></td></tr>';
 }
 
-// Vista scelta nel menu a tendina: "elenco" (scadenze delle verifiche) oppure
-// "archivio" (scadenze con monitoraggio già scaduto).
+// Vista scelta nel menu a tendina: "elenco" (scadenze delle verifiche non
+// ancora passate) oppure "archivio" (scadenze già passate).
 function getVistaScadenzeAntiriciclaggio() {
     var sel = document.getElementById('filterVistaScadenzeAntiriciclaggio');
     return sel && sel.value === 'archivio' ? 'archivio' : 'elenco';
@@ -2967,10 +3001,8 @@ function renderScadenzeAntiriciclaggio() {
     var mostraElenco = vista === 'elenco';
     var contElenco = document.getElementById('antiriciclaggioScadenze');
     var contArchivio = document.getElementById('antiriciclaggioMonitoraggioScaduto');
-    var headArchivio = document.getElementById('antiriciclaggioArchivioHeading');
     if (contElenco) contElenco.style.display = mostraElenco ? '' : 'none';
     if (contArchivio) contArchivio.style.display = mostraElenco ? 'none' : '';
-    if (headArchivio) headArchivio.style.display = mostraElenco ? 'none' : '';
 
     var tbody = document.getElementById('scadenzeAntiriciclaggioTableBody');
     if (tbody) {
@@ -2983,21 +3015,22 @@ function renderScadenzeAntiriciclaggio() {
             }).join('');
         }
     }
-    renderScadenzeMonitoraggioScaduto();
+    renderScadenzeArchivio();
 }
 
-// Tabella sotto l'elenco: scadenze con la data di fine monitoraggio passata.
-// La data mostrata è sempre la fine monitoraggio.
-function renderScadenzeMonitoraggioScaduto() {
+// Tabella dell'Archivio: scadenze con la Data scadenza già passata. La data
+// mostrata è la stessa Data scadenza dell'elenco (prossima verifica oppure
+// fine monitoraggio).
+function renderScadenzeArchivio() {
     var tbody = document.getElementById('scadenzeAntiriciclaggioMonitoraggioTableBody');
     if (!tbody) return;
-    var list = getVerificheMonitoraggioScaduto();
+    var list = getVerificheScadute();
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessun monitoraggio scaduto</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessuna scadenza archiviata</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(function(v) {
-        return scadenzaVerificaRowHtml(v, String(v.data_fine_monitoraggio).slice(0, 10), 'Monitoraggio');
+        return scadenzaVerificaRowHtml(v, getVerificaDataScadenza(v), getVerificaTipoScadenza(v));
     }).join('');
 }
 
@@ -3007,33 +3040,31 @@ function renderScadenzeMonitoraggioScaduto() {
 function exportScadenzeAntiriciclaggioExcel() {
     var archivio = getVistaScadenzeAntiriciclaggio() === 'archivio';
     var list = archivio
-        ? getVerificheMonitoraggioScaduto()
+        ? getVerificheScadute()
         : ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
     if (list.length === 0) {
-        showToast(archivio ? 'Nessun monitoraggio scaduto da esportare' : 'Nessuna scadenza da esportare', 'error');
+        showToast(archivio ? 'Nessuna scadenza archiviata da esportare' : 'Nessuna scadenza da esportare', 'error');
         return;
     }
 
-    var COLONNE = ['Soggetto', 'Codice Fascicolo', archivio ? 'Data Fine Monitoraggio' : 'Data Scadenza', 'Tipo'];
+    var COLONNE = ['Soggetto', 'Codice Fascicolo', 'Data Scadenza', 'Tipo'];
     var LARGHEZZE = [40, 18, 22, 16];
 
     var righeDati = list.map(function(v) {
-        // Nell'archivio la data è sempre la fine monitoraggio; nell'elenco è la
-        // data scadenza calcolata (prossima verifica o fine monitoraggio).
-        var data = archivio
-            ? String(v.data_fine_monitoraggio).slice(0, 10)
-            : getVerificaDataScadenza(v);
+        // La data è sempre la Data scadenza mostrata nella lista (prossima
+        // verifica oppure fine monitoraggio), sia nell'elenco sia nell'archivio.
+        var data = getVerificaDataScadenza(v);
         return [
             { t: 's', s: S_TESTO, v: getVerificaLabel(v) },
             { t: 's', s: S_TESTO, v: v.codice_fascicolo || '' },
             { t: 's', s: S_TESTO, v: data ? formatDateExcel(data) : '' },
-            { t: 's', s: S_TESTO, v: archivio ? 'Monitoraggio' : getVerificaTipoScadenza(v) }
+            { t: 's', s: S_TESTO, v: getVerificaTipoScadenza(v) }
         ];
     });
 
-    var titolo = 'Scadenze verifiche antiriciclaggio (' + (archivio ? 'archivio monitoraggio scaduto' : 'elenco') + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
-    var blob = creaXlsxListaBlob(archivio ? 'Monitoraggio scaduto' : 'Scadenze antiriciclaggio', titolo, COLONNE, LARGHEZZE, righeDati, null);
-    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Antiriciclaggio_' + (archivio ? 'Archivio' : 'Elenco'), archivio ? 'Archivio monitoraggio esportato' : 'Elenco scadenze esportato');
+    var titolo = 'Scadenze verifiche antiriciclaggio (' + (archivio ? 'archivio' : 'elenco') + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
+    var blob = creaXlsxListaBlob(archivio ? 'Archivio' : 'Scadenze antiriciclaggio', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Antiriciclaggio_' + (archivio ? 'Archivio' : 'Elenco'), archivio ? 'Archivio scadenze esportato' : 'Elenco scadenze esportato');
 }
 
 function exportVerificheExcel() {
@@ -6505,6 +6536,45 @@ function buildPromemoriaNotifItems() {
     return items;
 }
 
+// Notifiche delle scadenze delle verifiche antiriciclaggio: un avviso a 30
+// giorni, uno a 20 e uno a 15, poi ogni giorno negli ultimi 10 giorni prima
+// della Data scadenza mostrata nella pagina Scadenze antiriciclaggio (prossima
+// verifica, oppure fine monitoraggio se anteriore). Il giorno della scadenza
+// non viene notificato. Le fasce 30/20/15 hanno un'identità fissa, quindi
+// chiudendo il pannello l'avviso non torna fino alla fascia successiva; la
+// fascia quotidiana contiene il giorno corrente e torna ogni giorno.
+function buildVerificaScadenzaNotifItems() {
+    var items = [];
+    var oggiKey = toLocalDateStr(new Date());
+    (appData.verifiche || []).forEach(function(v) {
+        var data = getVerificaDataScadenza(v);
+        if (!data) return;
+        var giorni = daysUntil(data);
+        if (giorni <= 0) return;             // scaduta o scade oggi: stop
+        var phase;
+        if (giorni <= 10) phase = '10-' + oggiKey;       // ogni giorno
+        else if (giorni <= 15) phase = '15';
+        else if (giorni <= 20) phase = '20';
+        else if (giorni <= 30) phase = '30';
+        else return;                        // più di 30 giorni: nessun avviso
+        var quando;
+        if (phase === '30') quando = 'fra 30 giorni';
+        else if (phase === '20') quando = 'fra 20 giorni';
+        else if (phase === '15') quando = 'fra 15 giorni';
+        else quando = giorni === 1 ? 'domani' : 'fra ' + giorni + ' giorni';
+        items.push({
+            key: 'verifica_' + v.id,
+            date: data,
+            phase: phase,
+            icon: 'fa-user-shield',
+            cls: giorni <= 10 ? 'danger' : (giorni <= 20 ? 'warning' : 'info'),
+            txt: 'Scadenza antiriciclaggio di ' + getVerificaLabel(v) + ' ' + quando,
+            meta: 'Antiriciclaggio · ' + getVerificaTipoScadenza(v) + ' · ' + formatDate(data)
+        });
+    });
+    return items;
+}
+
 function renderNotifications() {
     var items = [];
 
@@ -6519,6 +6589,10 @@ function renderNotifications() {
     // Promemoria delle scadenze dei promemoria (30, 20, 15 giorni e ogni
     // giorno negli ultimi 10).
     buildPromemoriaNotifItems().forEach(function(it) { items.push(it); });
+
+    // Scadenze delle verifiche antiriciclaggio (30, 20, 15 giorni e ogni
+    // giorno negli ultimi 10 giorni prima della Data scadenza).
+    buildVerificaScadenzaNotifItems().forEach(function(it) { items.push(it); });
 
     // Scadenze di pagamento: stesse fasce dei contratti (30 gg, 15 gg, 10 gg
     // e ultimi 7 giorni). La data di riferimento è quella MOSTRATA nella lista
