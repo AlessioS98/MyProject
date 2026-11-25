@@ -2473,21 +2473,16 @@ function renderScadenzeDeleghe() {
     items = getScadenzeDelegheFiltrate();
 
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
         return;
     }
 
     tbody.innerHTML = items.map(function(it) {
-        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
         var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
-        var giorniLabel = it.giorni > 0
-            ? 'tra ' + it.giorni + ' gg'
-            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
         return '<tr' + rowCls + '>' +
             '<td><strong>' + it.delegato + '</strong></td>' +
             '<td>' + it.tipoLabel + '</td>' +
             '<td>' + formatDate(it.data) + '</td>' +
-            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
             '<td><div class="td-actions"><button type="button" data-action="view-delega" data-id="' + it.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td>' +
             '</tr>';
     }).join('');
@@ -2714,16 +2709,27 @@ async function deleteMarchio(id) {
 function getVerificaLabel(v) {
     if (!v) return '';
     if (v.tipo === 'azienda' || (v.ragione_sociale && !v.cognome && !v.nome)) {
-        return v.ragione_sociale || v.codice_fiscale || '';
+        return String(v.ragione_sociale || v.codice_fiscale || '').trim();
     }
     var nome = [v.cognome, v.nome].filter(Boolean).join(' ').trim();
-    return nome || v.ragione_sociale || v.codice_fiscale || '';
+    return (nome || String(v.ragione_sociale || v.codice_fiscale || '')).trim();
 }
 
-// Elenco in ordine alfabetico per soggetto
+// Confronto alfabetico italiano del soggetto: ignora maiuscole, accenti e
+// spazi accidentali (dati inseriti in maiuscolo o con spazi di troppo restano
+// comunque in ordine A-Z).
+var verificheCollator = new Intl.Collator('it', { sensitivity: 'base', numeric: true });
+function chiaveSoggettoVerifica(v) {
+    return getVerificaLabel(v).replace(/\s+/g, ' ').trim();
+}
+
+// Elenco in ordine alfabetico per soggetto; a parità di soggetto ordina per
+// codice fiscale, così l'ordine è sempre stabile.
 function ordinaVerifichePerLista(list) {
     return (list || []).slice().sort(function(a, b) {
-        return getVerificaLabel(a).localeCompare(getVerificaLabel(b), 'it');
+        var cmp = verificheCollator.compare(chiaveSoggettoVerifica(a), chiaveSoggettoVerifica(b));
+        if (cmp !== 0) return cmp;
+        return verificheCollator.compare(String(a.codice_fiscale || ''), String(b.codice_fiscale || ''));
     });
 }
 
@@ -2861,6 +2867,146 @@ function renderVerifiche() {
             '<button type="button" class="danger" data-action="delete-verifica" data-id="' + v.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
             '</div></td></tr>';
     }).join('');
+}
+
+// Data che l'elenco Scadenze mostra per una verifica: di norma la prossima
+// verifica, ma se la fine monitoraggio è precedente (oppure la prossima
+// verifica non è indicata) la scadenza è la fine monitoraggio.
+function getVerificaDataScadenza(v) {
+    if (!v) return '';
+    var pv = v.data_prossima_verifica ? String(v.data_prossima_verifica).slice(0, 10) : '';
+    var fm = v.data_fine_monitoraggio ? String(v.data_fine_monitoraggio).slice(0, 10) : '';
+    if (fm && (!pv || fm < pv)) return fm;
+    return pv;
+}
+
+// Tipo della data mostrata nella colonna Data Scadenza: "Verifica" quando è la
+// prossima verifica, "Monitoraggio" quando è la fine monitoraggio.
+function getVerificaTipoScadenza(v) {
+    if (!v) return '';
+    var pv = v.data_prossima_verifica ? String(v.data_prossima_verifica).slice(0, 10) : '';
+    var fm = v.data_fine_monitoraggio ? String(v.data_fine_monitoraggio).slice(0, 10) : '';
+    if (fm && (!pv || fm < pv)) return 'Monitoraggio';
+    return pv ? 'Verifica' : '';
+}
+
+// Scadenze delle verifiche antiriciclaggio: una riga per soggetto, con la data
+// della prossima verifica (o della fine monitoraggio se anteriore). Le
+// verifiche senza data vanno in fondo (data "-"), così l'elenco resta lo
+// stesso della pagina Verifiche. A parità di data i soggetti sono in ordine
+// alfabetico.
+function ordinaScadenzeVerifichePerLista(list) {
+    return (list || []).slice().sort(function(a, b) {
+        var da = getVerificaDataScadenza(a);
+        var db = getVerificaDataScadenza(b);
+        if (!da && !db) return verificheCollator.compare(chiaveSoggettoVerifica(a), chiaveSoggettoVerifica(b));
+        if (!da) return 1;
+        if (!db) return -1;
+        if (da !== db) return da < db ? -1 : 1;
+        return verificheCollator.compare(chiaveSoggettoVerifica(a), chiaveSoggettoVerifica(b));
+    });
+}
+
+// Una verifica ha il monitoraggio scaduto quando la data di fine monitoraggio
+// è già passata: queste verifiche vanno nella tabella sotto l'elenco
+// principale, non nell'elenco stesso.
+function isVerificaMonitoraggioScaduto(v) {
+    if (!v || !v.data_fine_monitoraggio) return false;
+    return String(v.data_fine_monitoraggio).slice(0, 10) < toLocalDateStr(new Date());
+}
+
+// Verifiche della tabella principale: monitoraggio non ancora scaduto (o
+// assente).
+function getVerificheScadenzeAntiriciclaggio() {
+    return (appData.verifiche || []).filter(function(v) { return !isVerificaMonitoraggioScaduto(v); });
+}
+
+// Verifiche con la fine monitoraggio scaduta, dalla più recente alla più
+// vecchia; a parità di data in ordine alfabetico.
+function getVerificheMonitoraggioScaduto() {
+    return (appData.verifiche || []).filter(isVerificaMonitoraggioScaduto).slice().sort(function(a, b) {
+        var da = String(a.data_fine_monitoraggio).slice(0, 10);
+        var db = String(b.data_fine_monitoraggio).slice(0, 10);
+        if (da !== db) return da < db ? 1 : -1;
+        return verificheCollator.compare(chiaveSoggettoVerifica(a), chiaveSoggettoVerifica(b));
+    });
+}
+
+// Riga condivisa dalle due tabelle: soggetto, codice fascicolo, data scadenza,
+// tipo e azioni. Il badge "Verifica scaduta" segnala la data prossima verifica
+// già passata.
+function scadenzaVerificaRowHtml(v, data, tipoLabel) {
+    var esc = function(x) {
+        return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
+    };
+    var pv = v.data_prossima_verifica ? String(v.data_prossima_verifica).slice(0, 10) : '';
+    var pvScaduta = !!pv && pv < toLocalDateStr(new Date());
+    return '<tr>' +
+        '<td><strong>' + esc(getVerificaLabel(v)) + '</strong></td>' +
+        '<td>' + esc(v.codice_fascicolo || '-') + '</td>' +
+        '<td>' + (data ? formatDate(data) : '-') +
+        (pvScaduta ? ' <span class="status-badge scaduto" title="Data prossima verifica già passata"><i class="fas fa-triangle-exclamation"></i> Verifica scaduta</span>' : '') + '</td>' +
+        '<td>' + tipoLabel + '</td>' +
+        '<td><div class="td-actions">' +
+        '<button type="button" data-action="view-verifica" data-id="' + v.id + '" title="Visualizza verifica"><i class="fas fa-eye"></i></button>' +
+        '</div></td></tr>';
+}
+
+function renderScadenzeAntiriciclaggio() {
+    var tbody = document.getElementById('scadenzeAntiriciclaggioTableBody');
+    if (tbody) {
+        var list = ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessuna scadenza presente</td></tr>';
+        } else {
+            tbody.innerHTML = list.map(function(v) {
+                return scadenzaVerificaRowHtml(v, getVerificaDataScadenza(v), getVerificaTipoScadenza(v));
+            }).join('');
+        }
+    }
+    renderScadenzeMonitoraggioScaduto();
+}
+
+// Tabella sotto l'elenco: scadenze con la data di fine monitoraggio passata.
+// La data mostrata è sempre la fine monitoraggio.
+function renderScadenzeMonitoraggioScaduto() {
+    var tbody = document.getElementById('scadenzeAntiriciclaggioMonitoraggioTableBody');
+    if (!tbody) return;
+    var list = getVerificheMonitoraggioScaduto();
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessun monitoraggio scaduto</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(v) {
+        return scadenzaVerificaRowHtml(v, String(v.data_fine_monitoraggio).slice(0, 10), 'Monitoraggio');
+    }).join('');
+}
+
+// Esportazione Excel della pagina Scadenze antiriciclaggio: stesse righe e
+// stesso ordine della tabella (data scadenza calcolata come a video).
+function exportScadenzeAntiriciclaggioExcel() {
+    var list = ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
+    if (list.length === 0) {
+        showToast('Nessuna scadenza da esportare', 'error');
+        return;
+    }
+
+    var COLONNE = ['Soggetto', 'Codice Fascicolo', 'Data Scadenza', 'Tipo'];
+    var LARGHEZZE = [40, 18, 18, 16];
+
+    var righeDati = list.map(function(v) {
+        var data = getVerificaDataScadenza(v);
+        return [
+            { t: 's', s: S_TESTO, v: getVerificaLabel(v) },
+            { t: 's', s: S_TESTO, v: v.codice_fascicolo || '' },
+            { t: 's', s: S_TESTO, v: data ? formatDateExcel(data) : '' },
+            { t: 's', s: S_TESTO, v: getVerificaTipoScadenza(v) }
+        ];
+    });
+
+    var titolo = 'Scadenze verifiche antiriciclaggio - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
+    var blob = creaXlsxListaBlob('Scadenze antiriciclaggio', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Antiriciclaggio', 'Scadenze antiriciclaggio esportate');
 }
 
 function exportVerificheExcel() {
@@ -3140,22 +3286,17 @@ function renderScadenzeMarchi() {
     var items = getScadenzeMarchiFiltrate();
 
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-calendar"></i><p>Nessuna scadenza trovata</p></div></td></tr>';
         return;
     }
 
     tbody.innerHTML = items.map(function(it) {
-        var urg = it.giorni < 0 ? 'scaduto' : (it.giorni <= 30 ? 'in-scadenza' : 'attivo');
         var rowCls = it.giorni < 0 ? ' class="alert-scaduta"' : (it.giorni <= 30 ? ' class="alert-in-scadenza"' : '');
-        var giorniLabel = it.giorni > 0
-            ? 'tra ' + it.giorni + ' gg'
-            : (it.giorni === 0 ? 'oggi' : Math.abs(it.giorni) + ' gg fa');
-        // Colonne: Soggetto, Data Scadenza, N. Identificativo, Giorni, Azioni
+        // Colonne: Soggetto, Data Scadenza, N. Identificativo, Azioni
         return '<tr' + rowCls + '>' +
             '<td>' + it.soggetto + '</td>' +
             '<td>' + formatDate(it.data) + '</td>' +
             '<td><strong>' + it.numero + '</strong></td>' +
-            '<td><span class="status-badge ' + urg + '">' + giorniLabel + '</span></td>' +
             '<td><div class="td-actions"><button type="button" data-action="view-marchio" data-id="' + it.id + '" title="Dettagli"><i class="fas fa-eye"></i></button></div></td>' +
             '</tr>';
     }).join('');
@@ -3172,6 +3313,7 @@ async function refreshPage(page) {
         case 'scadenze-marchi': renderScadenzeMarchi(); break;
         case 'promemoria': renderPromemoria(); break;
         case 'antiriciclaggio': renderVerifiche(); break;
+        case 'scadenze-antiriciclaggio': renderScadenzeAntiriciclaggio(); break;
 
     }
     // Le notifiche vengono ricalcolate a ogni navigazione/aggiornamento:
@@ -3217,6 +3359,7 @@ document.addEventListener('click', function(e) {
         case 'delete-verifica': openModal('deleteVerificaConfirm', id); break;
         case 'confirm-delete-verifica': deleteVerifica(id); break;
         case 'export-verifiche-excel': exportVerificheExcel(); break;
+        case 'export-scadenze-antiriciclaggio-excel': exportScadenzeAntiriciclaggioExcel(); break;
         case 'export-marchi-excel': exportMarchiExcel(); break;
         case 'export-scadenze-marchi-excel': exportScadenzeMarchiExcel(); break;
         case 'export-promemoria-excel': exportPromemoriaExcel(); break;
