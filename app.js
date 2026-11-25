@@ -2952,7 +2952,26 @@ function scadenzaVerificaRowHtml(v, data, tipoLabel) {
         '</div></td></tr>';
 }
 
+// Vista scelta nel menu a tendina: "elenco" (scadenze delle verifiche) oppure
+// "archivio" (scadenze con monitoraggio già scaduto).
+function getVistaScadenzeAntiriciclaggio() {
+    var sel = document.getElementById('filterVistaScadenzeAntiriciclaggio');
+    return sel && sel.value === 'archivio' ? 'archivio' : 'elenco';
+}
+
 function renderScadenzeAntiriciclaggio() {
+    // Il menu a tendina mostra una tabella per volta: "Elenco scadenze" o
+    // "Archivio". Le due tabelle vengono comunque ridisegnate, così cambiando
+    // vista i dati sono già aggiornati.
+    var vista = getVistaScadenzeAntiriciclaggio();
+    var mostraElenco = vista === 'elenco';
+    var contElenco = document.getElementById('antiriciclaggioScadenze');
+    var contArchivio = document.getElementById('antiriciclaggioMonitoraggioScaduto');
+    var headArchivio = document.getElementById('antiriciclaggioArchivioHeading');
+    if (contElenco) contElenco.style.display = mostraElenco ? '' : 'none';
+    if (contArchivio) contArchivio.style.display = mostraElenco ? 'none' : '';
+    if (headArchivio) headArchivio.style.display = mostraElenco ? 'none' : '';
+
     var tbody = document.getElementById('scadenzeAntiriciclaggioTableBody');
     if (tbody) {
         var list = ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
@@ -2982,31 +3001,39 @@ function renderScadenzeMonitoraggioScaduto() {
     }).join('');
 }
 
-// Esportazione Excel della pagina Scadenze antiriciclaggio: stesse righe e
-// stesso ordine della tabella (data scadenza calcolata come a video).
+// Esportazione Excel della pagina Scadenze antiriciclaggio: esporta la vista
+// scelta nel menu a tendina (Elenco scadenze oppure Archivio), con le stesse
+// righe e lo stesso ordine della tabella a video.
 function exportScadenzeAntiriciclaggioExcel() {
-    var list = ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
+    var archivio = getVistaScadenzeAntiriciclaggio() === 'archivio';
+    var list = archivio
+        ? getVerificheMonitoraggioScaduto()
+        : ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
     if (list.length === 0) {
-        showToast('Nessuna scadenza da esportare', 'error');
+        showToast(archivio ? 'Nessun monitoraggio scaduto da esportare' : 'Nessuna scadenza da esportare', 'error');
         return;
     }
 
-    var COLONNE = ['Soggetto', 'Codice Fascicolo', 'Data Scadenza', 'Tipo'];
-    var LARGHEZZE = [40, 18, 18, 16];
+    var COLONNE = ['Soggetto', 'Codice Fascicolo', archivio ? 'Data Fine Monitoraggio' : 'Data Scadenza', 'Tipo'];
+    var LARGHEZZE = [40, 18, 22, 16];
 
     var righeDati = list.map(function(v) {
-        var data = getVerificaDataScadenza(v);
+        // Nell'archivio la data è sempre la fine monitoraggio; nell'elenco è la
+        // data scadenza calcolata (prossima verifica o fine monitoraggio).
+        var data = archivio
+            ? String(v.data_fine_monitoraggio).slice(0, 10)
+            : getVerificaDataScadenza(v);
         return [
             { t: 's', s: S_TESTO, v: getVerificaLabel(v) },
             { t: 's', s: S_TESTO, v: v.codice_fascicolo || '' },
             { t: 's', s: S_TESTO, v: data ? formatDateExcel(data) : '' },
-            { t: 's', s: S_TESTO, v: getVerificaTipoScadenza(v) }
+            { t: 's', s: S_TESTO, v: archivio ? 'Monitoraggio' : getVerificaTipoScadenza(v) }
         ];
     });
 
-    var titolo = 'Scadenze verifiche antiriciclaggio - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
-    var blob = creaXlsxListaBlob('Scadenze antiriciclaggio', titolo, COLONNE, LARGHEZZE, righeDati, null);
-    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Antiriciclaggio', 'Scadenze antiriciclaggio esportate');
+    var titolo = 'Scadenze verifiche antiriciclaggio (' + (archivio ? 'archivio monitoraggio scaduto' : 'elenco') + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';
+    var blob = creaXlsxListaBlob(archivio ? 'Monitoraggio scaduto' : 'Scadenze antiriciclaggio', titolo, COLONNE, LARGHEZZE, righeDati, null);
+    scaricaXlsx(blob, 'Gestione_Contratti_Scadenze_Antiriciclaggio_' + (archivio ? 'Archivio' : 'Elenco'), archivio ? 'Archivio monitoraggio esportato' : 'Elenco scadenze esportato');
 }
 
 function exportVerificheExcel() {
