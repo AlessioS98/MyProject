@@ -1659,8 +1659,8 @@ function renderGeneraleScadenze() {
             data: data,
             tipo: 'Pagamento',
             icon: 'fa-euro-sign',
-            // Colonna Soggetti: prima i conduttori, poi i locatori
-            nominativi: ([condPag, locPag].filter(Boolean).join(' / ')) || '-',
+            // Colonna Soggetti: prima i locatori, poi i conduttori
+            nominativi: ([locPag, condPag].filter(Boolean).join(' / ')) || '-',
             // Colonna Dettaglio: contratto e importo
             dettaglioInfo: (c ? (c.identificativo || 'Contratto #' + c.id) : 'Contratto #' + s.contratto_id) +
                 (s.importo != null ? ' · ' + formatCurrency(s.importo) : ''),
@@ -1828,7 +1828,7 @@ function renderGeneraleScadenze() {
         // hanno l'evidenziazione arancione solo negli ultimi 7 giorni.
         var rowCls = it.giorni < 0 ? ' class="scadenza-verifica-scaduta"'
             : it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
-        return '<tr' + rowCls + ' data-dettaglio="scadenza" data-key="' + it.key + '">' +
+        return '<tr' + rowCls + '>' +
             '<td><strong>' + it.nominativi + '</strong></td>' +
             '<td>' + formatDate(it.data) + '</td>' +
             '<td><i class="fas ' + it.icon + '"></i> ' + it.tipo + '</td>' +
@@ -1841,9 +1841,9 @@ function renderGeneraleScadenze() {
 }
 
 // --- Pagina Generale: promemoria fatti, scaduti e senza scadenza ---
-// Seconda tabella della pagina Generale, sotto "Tutte le scadenze": raccoglie
-// i promemoria che non sono più scadenze da tenere d'occhio, cioè quelli con
-// "Fatto" attivo, quelli ancora da fare con la data ormai passata (scaduti,
+// Elenco della finestra in basso della pagina Generale: raccoglie i promemoria
+// che non sono più scadenze da tenere d'occhio, cioè quelli con "Fatto"
+// attivo, quelli ancora da fare con la data ormai passata (scaduti,
 // evidenziati in rosso) e quelli senza data di scadenza. I fatti stanno sempre
 // in cima, poi gli scaduti, poi quelli senza data; dentro ogni gruppo l'ordine
 // è alfabetico per descrizione (anche i fatti senza data stanno nel gruppo
@@ -1851,9 +1851,6 @@ function renderGeneraleScadenze() {
 var ultimaVistaGeneralePromemoria = null;
 
 function renderGeneralePromemoria() {
-    var tbody = document.getElementById('generalePromemoriaTableBody');
-    if (!tbody) return;
-
     var fatti = [];
     var scaduti = [];
     var senzaData = [];
@@ -1891,231 +1888,86 @@ function renderGeneralePromemoria() {
     // Snapshot della vista (ordine incluso): lo usa l'esportazione Excel
     ultimaVistaGeneralePromemoria = { righe: righe };
 
-    if (righe.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><i class="fas fa-bell"></i><p>Nessun promemoria fatto, scaduto o senza scadenza</p></div></td></tr>';
-        return;
+    // L'elenco sta nella finestra in basso della pagina Generale
+    if (paginaAttiva() === 'generale') {
+        renderDettaglioPromemoria('Promemoria fatti, scaduti e senza scadenza',
+            ['Descrizione', 'Data', 'Stato', 'Note'],
+            righe.map(rigaPromemoriaGeneraleHtml),
+            'Nessun promemoria fatto, scaduto o senza scadenza');
     }
-
-    tbody.innerHTML = righe.map(function(r) {
-        var rowCls = r.stato === 'fatto' ? ' class="promemoria-fatto"'
-            : r.stato === 'scaduto' ? ' class="promemoria-scaduto"' : '';
-        var statoCell = r.stato === 'fatto'
-            ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>'
-            : r.stato === 'scaduto'
-                ? '<span class="status-badge scaduto">Scaduto</span>'
-                : 'Senza scadenza';
-        return '<tr' + rowCls + ' data-dettaglio="promemoria" data-key="' + r.riga.key + '">' +
-            '<td>' + r.riga.dettaglio + '</td>' +
-            '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
-            '<td>' + statoCell + '</td>' +
-            '<td>' + promemoriaCellaNote(r.riga.nota) + '</td>' +
-            '</tr>';
-    }).join('');
 }
 
-// --- Pagina Generale: finestra di dettaglio ---
-// Cliccando una riga delle due tabelle del Generale si apre questa finestra,
-// sovrapposta alla pagina e ancorata in basso: mostra i dati della voce
-// selezionata (scadenza o promemoria), si ridimensiona in altezza trascinando
-// il grip in alto e con il pulsante apposito passa a schermo intero e torna
-// poi all'altezza che aveva prima.
+// Riga condivisa dalla tabella "Promemoria fatti, scaduti e senza scadenza" e
+// dalla finestra in basso del Generale: descrizione, data, stato e note.
+function rigaPromemoriaGeneraleHtml(r) {
+    var rowCls = r.stato === 'fatto' ? ' class="promemoria-fatto"'
+        : r.stato === 'scaduto' ? ' class="promemoria-scaduto"' : '';
+    var statoCell = r.stato === 'fatto'
+        ? '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>'
+        : r.stato === 'scaduto'
+            ? '<span class="status-badge scaduto">Scaduto</span>'
+            : 'Senza scadenza';
+    return '<tr' + rowCls + '>' +
+        '<td>' + r.riga.dettaglio + '</td>' +
+        '<td>' + (r.riga.data ? '<strong>' + formatDate(r.riga.data) + '</strong>' : '-') + '</td>' +
+        '<td>' + statoCell + '</td>' +
+        '<td>' + promemoriaCellaNote(r.riga.nota) + '</td>' +
+        '</tr>';
+}
+
+// --- Finestra in basso (Generale e Promemoria) ---
+// Finestra ancorata in basso con l'altezza regolabile trascinando il grip in
+// alto: mostra l'elenco dei promemoria che non stanno più nell'elenco
+// principale della pagina (quelli con "Fatto" attivo, quelli scaduti e quelli
+// senza data). Si vede solo nelle pagine Generale e Promemoria.
 var DETTAGLIO_ALTEZZA_DEFAULT = 340;
 var DETTAGLIO_ALTEZZA_MIN = 150;
-// Altezza della finestra prima di andare a schermo intero (da ripristinare)
-var dettaglioAltezzaPrima = 0;
-var dettaglioInFullscreen = false;
-// true quando la finestra è ridotta a icona
-var dettaglioRidotto = false;
-
-function escDettaglio(x) {
-    return x == null ? '' : String(x)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
 
 function getDettaglioPanelElements() {
     return {
         panel: document.getElementById('dettaglioPanel'),
         title: document.getElementById('dettaglioPanelTitle'),
-        body: document.getElementById('dettaglioPanelBody'),
-        fullBtn: document.getElementById('dettaglioFullBtn')
+        body: document.getElementById('dettaglioPanelBody')
     };
 }
 
-function dettaglioRigaHtml(label, valoreHtml) {
-    return '<div class="contract-detail"><label>' + escDettaglio(label) +
-        '</label><span>' + valoreHtml + '</span></div>';
+// Pagina che si sta vedendo, ricavata dalla sezione attiva (es. "generale")
+function paginaAttiva() {
+    var p = document.querySelector('.page.active');
+    return p && p.id.indexOf('page-') === 0 ? p.id.slice(5) : '';
 }
 
-function dettaglioNotaHtml(nota) {
-    var testo = (nota && String(nota).trim()) ? escDettaglio(nota) : 'Nessuna nota';
-    return '<div class="dettaglio-nota"><label>Note</label>' + testo + '</div>';
-}
-
-// Badge dello stato di una scadenza del Generale (stessi colori della tabella)
-function dettaglioStatoScadenzaHtml(giorni) {
-    var urg = giorni <= 30 ? 'in-scadenza' : 'attivo';
-    var testo = giorni > 0 ? 'tra ' + giorni + ' gg' : 'oggi';
-    return '<span class="status-badge ' + urg + '">' + testo + '</span>';
-}
-
-function dettaglioScadenzaHtml(it) {
-    var righe = [
-        dettaglioRigaHtml('Data', escDettaglio(formatDate(it.data))),
-        dettaglioRigaHtml('Tipo', escDettaglio(it.tipo))
-    ];
-    (it.campi || []).forEach(function(c) {
-        righe.push(dettaglioRigaHtml(c.label, escDettaglio(c.value)));
-    });
-    righe.push(dettaglioRigaHtml('Stato', dettaglioStatoScadenzaHtml(it.giorni)));
-    var html = '<div class="contract-details">' + righe.join('') + '</div>';
-    if (it.tipo === 'Promemoria') html += dettaglioNotaHtml(it.nota);
-    return html;
-}
-
-function dettaglioPromemoriaHtml(r, stato) {
-    var statoHtml;
-    if (stato === 'fatto') {
-        statoHtml = '<span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>';
-    } else if (stato === 'scaduto') {
-        statoHtml = '<span class="status-badge scaduto">Scaduto da ' + Math.abs(daysUntil(r.data)) + ' gg</span>';
+// Disegna l'elenco nella finestra: titolo, intestazioni delle colonne, righe
+// già pronte in HTML e messaggio da mostrare quando l'elenco è vuoto.
+function renderDettaglioPromemoria(titolo, colonne, righeHtml, vuoto) {
+    var el = getDettaglioPanelElements();
+    if (!el.body) return;
+    if (el.title) el.title.textContent = titolo;
+    var righe = righeHtml || [];
+    if (righe.length === 0) {
+        el.body.innerHTML = '<div class="empty-state"><i class="fas fa-bell"></i><p>' + vuoto + '</p></div>';
     } else {
-        statoHtml = 'Senza scadenza';
+        el.body.innerHTML = '<table class="data-table"><thead><tr>' +
+            colonne.map(function(c) { return '<th>' + c + '</th>'; }).join('') +
+            '</tr></thead><tbody>' + righe.join('') + '</tbody></table>';
     }
-    var righe = [
-        dettaglioRigaHtml('Descrizione', escDettaglio(r.dettaglio)),
-        dettaglioRigaHtml('Data', r.data ? escDettaglio(formatDate(r.data)) : '-'),
-        dettaglioRigaHtml('Stato', statoHtml)
-    ];
-    return '<div class="contract-details">' + righe.join('') + '</div>' + dettaglioNotaHtml(r.nota);
+    el.body.scrollTop = 0;
 }
 
-// Cerca la voce selezionata negli snapshot delle due tabelle del Generale
-function trovaVoceDettaglio(kind, key) {
-    var i;
-    if (kind === 'promemoria') {
-        var righe = (ultimaVistaGeneralePromemoria && ultimaVistaGeneralePromemoria.righe) || [];
-        for (i = 0; i < righe.length; i++) {
-            if (righe[i].riga.key === key) {
-                return { tipo: 'Promemoria', html: dettaglioPromemoriaHtml(righe[i].riga, righe[i].stato) };
-            }
-        }
-        return null;
-    }
-    var items = (ultimaVistaGenerale && ultimaVistaGenerale.items) || [];
-    for (i = 0; i < items.length; i++) {
-        if (items[i].key === key) {
-            return { tipo: items[i].tipo, html: dettaglioScadenzaHtml(items[i]) };
-        }
-    }
-    return null;
-}
-
-function aggiornaPulsanteDettaglio() {
-    var el = getDettaglioPanelElements();
-    if (!el.fullBtn) return;
-    var icona = el.fullBtn.querySelector('i');
-    var titolo = dettaglioInFullscreen ? 'Torna alla finestra' : 'Schermo intero';
-    el.fullBtn.title = titolo;
-    el.fullBtn.setAttribute('aria-label', titolo);
-    if (icona) icona.className = dettaglioInFullscreen ? 'fas fa-compress' : 'fas fa-expand';
-}
-
-function toggleDettaglioFullscreen(attiva) {
+// Spazio in fondo alla pagina: segue l'altezza della finestra, così le ultime
+// righe degli elenchi non restano coperte.
+function aggiornaSpazioFinestra() {
     var el = getDettaglioPanelElements();
     if (!el.panel) return;
-    if (typeof attiva !== 'boolean') attiva = !dettaglioInFullscreen;
-    if (attiva === dettaglioInFullscreen) return;
-    if (attiva) {
-        // Memorizza l'altezza attuale per rimetterla tornando alla finestra
-        dettaglioAltezzaPrima = el.panel.offsetHeight;
-        el.panel.classList.add('fullscreen');
-    } else {
-        el.panel.classList.remove('fullscreen');
-        if (dettaglioAltezzaPrima > 0) el.panel.style.height = dettaglioAltezzaPrima + 'px';
-    }
-    dettaglioInFullscreen = attiva;
-    aggiornaPulsanteDettaglio();
+    var h = parseInt(el.panel.style.height, 10) || el.panel.offsetHeight || DETTAGLIO_ALTEZZA_DEFAULT;
+    document.documentElement.style.setProperty('--finestra-altezza', h + 'px');
 }
 
-// La finestra non si chiude: il pulsante la riduce a icona, l'icona la riapre
-function minimizzaDettaglioGenerale() {
-    var el = getDettaglioPanelElements();
-    var mini = document.getElementById('dettaglioMini');
-    if (!el.panel) return;
-    if (dettaglioInFullscreen) toggleDettaglioFullscreen(false);
-    dettaglioRidotto = true;
-    el.panel.hidden = true;
-    if (mini) mini.hidden = false;
-}
-
-function ripristinaDettaglioGenerale() {
-    var el = getDettaglioPanelElements();
-    var mini = document.getElementById('dettaglioMini');
-    if (!el.panel) return;
-    dettaglioRidotto = false;
-    el.panel.hidden = false;
-    if (mini) mini.hidden = true;
-    aggiornaPulsanteDettaglio();
-}
-
-// La finestra si vede solo nella pagina Generale: sulle altre pagine sparisce
-// (icona compresa) e tornando al Generale si ripresenta com'era, normale o
-// ridotta a icona.
+// La finestra si vede solo nelle pagine Generale e Promemoria
 function aggiornaVisibilitaDettaglio(page) {
     var el = getDettaglioPanelElements();
-    var mini = document.getElementById('dettaglioMini');
     if (!el.panel) return;
-    if (page !== 'generale') {
-        if (dettaglioInFullscreen) toggleDettaglioFullscreen(false);
-        el.panel.hidden = true;
-        if (mini) mini.hidden = true;
-        return;
-    }
-    el.panel.hidden = !!dettaglioRidotto;
-    if (mini) mini.hidden = !dettaglioRidotto;
-}
-
-// Contenuto iniziale della finestra: messaggio di benvenuto in piattaforma
-function dettaglioBenvenutoHtml() {
-    return '<div class="dettaglio-benvenuto">' +
-        '<div class="dettaglio-benvenuto-icona"><i class="fas fa-hand-sparkles"></i></div>' +
-        '<div>' +
-        '<h3>Ciao, benvenuto in piattaforma!</h3>' +
-        '<p>Qui trovi i dettagli di tutto quello che ti serve: clicca una riga delle tabelle del Generale ' +
-        'e la scadenza o il promemoria comparirà in questa finestra.</p>' +
-        '<p>Puoi regolarne l\'altezza trascinando la maniglia in alto, portarla a schermo intero con il pulsante ' +
-        'apposito e ridurla a icona quando non ti serve: resta sempre a portata di mano.</p>' +
-        '</div>' +
-        '</div>';
-}
-
-function dettaglioBenvenuto() {
-    var el = getDettaglioPanelElements();
-    var mini = document.getElementById('dettaglioMini');
-    if (!el.panel || !el.body) return;
-    if (el.title) el.title.textContent = 'Benvenuto';
-    el.body.innerHTML = dettaglioBenvenutoHtml();
-    el.body.scrollTop = 0;
-    dettaglioRidotto = false;
-    el.panel.hidden = false;
-    if (mini) mini.hidden = true;
-    aggiornaPulsanteDettaglio();
-}
-
-function apriDettaglioGenerale(kind, key) {
-    var el = getDettaglioPanelElements();
-    var mini = document.getElementById('dettaglioMini');
-    if (!el.panel || !el.body) return;
-    var voce = trovaVoceDettaglio(kind, key);
-    if (!voce) return;
-    if (el.title) el.title.textContent = kind === 'promemoria' ? 'Promemoria' : voce.tipo;
-    el.body.innerHTML = voce.html;
-    el.body.scrollTop = 0;
-    dettaglioRidotto = false;
-    el.panel.hidden = false;
-    if (mini) mini.hidden = true;
-    aggiornaPulsanteDettaglio();
+    el.panel.hidden = !(page === 'generale' || page === 'promemoria');
 }
 
 function initDettaglioGenerale() {
@@ -2127,18 +1979,10 @@ function initDettaglioGenerale() {
     var salvata = parseInt(localStorage.getItem('altezzaDettaglioGenerale'), 10);
     if (salvata > 0) el.panel.style.height = salvata + 'px';
 
-    if (el.fullBtn) {
-        el.fullBtn.addEventListener('click', function() { toggleDettaglioFullscreen(); });
-        aggiornaPulsanteDettaglio();
-    }
-    // Il pulsante la riduce a icona, l'icona la riapre
-    var minBtn = document.getElementById('dettaglioMinBtn');
-    if (minBtn) minBtn.addEventListener('click', minimizzaDettaglioGenerale);
-    var mini = document.getElementById('dettaglioMini');
-    if (mini) mini.addEventListener('click', ripristinaDettaglioGenerale);
-
-    // La finestra è sempre visibile: si apre con il messaggio di benvenuto
-    dettaglioBenvenuto();
+    // La finestra si vede nelle pagine Generale e Promemoria; l'elenco lo
+    // disegnano renderGeneralePromemoria e renderPromemoriaFatti.
+    aggiornaVisibilitaDettaglio(paginaAttiva());
+    aggiornaSpazioFinestra();
 
     // Grip in alto: trascinando verso l'alto la finestra cresce
     if (grip) {
@@ -2148,7 +1992,7 @@ function initDettaglioGenerale() {
         var altezza = 0;
 
         grip.addEventListener('pointerdown', function(e) {
-            if (e.button || dettaglioInFullscreen) return;
+            if (e.button) return;
             e.preventDefault();
             attivo = true;
             startY = e.clientY;
@@ -2167,6 +2011,7 @@ function initDettaglioGenerale() {
             var max = Math.max(DETTAGLIO_ALTEZZA_MIN, window.innerHeight - 60);
             altezza = Math.min(max, Math.max(DETTAGLIO_ALTEZZA_MIN, startH + (startY - e.clientY)));
             el.panel.style.height = altezza + 'px';
+            aggiornaSpazioFinestra();
         });
 
         function fineTrascinamento() {
@@ -2183,22 +2028,16 @@ function initDettaglioGenerale() {
         // Doppio clic sul grip: torna all'altezza predefinita
         grip.addEventListener('dblclick', function() {
             el.panel.style.height = DETTAGLIO_ALTEZZA_DEFAULT + 'px';
+            aggiornaSpazioFinestra();
             try { localStorage.removeItem('altezzaDettaglioGenerale'); } catch (err) {}
         });
     }
-
-    // Apertura cliccando una riga delle due tabelle del Generale
-    document.addEventListener('click', function(e) {
-        var tr = e.target.closest ? e.target.closest('tr[data-dettaglio]') : null;
-        if (!tr) return;
-        apriDettaglioGenerale(tr.getAttribute('data-dettaglio'), tr.getAttribute('data-key'));
-    });
 }
 
 // --- Pagina Generale: tutte le scadenze ---
 // La schermata "Generale" mostra l'elenco di tutte le scadenze (pagamenti,
-// contratti, deleghe, marchi e promemoria da fare) e, sotto, la tabella dei
-// promemoria fatti e senza scadenza.
+// contratti, deleghe, marchi e promemoria da fare); i promemoria fatti,
+// scaduti e senza scadenza stanno nella finestra in basso.
 function renderGenerale() {
     renderGeneraleScadenze();
     renderGeneralePromemoria();
@@ -3161,7 +3000,7 @@ function renderPromemoria() {
     if (!tbody) return;
     // In questa tabella stanno solo i promemoria ancora da fare con una data,
     // ordinati dalla scadenza più vicina: quelli fatti e quelli senza data
-    // stanno nella tabella qui sotto (renderPromemoriaFatti).
+    // stanno nella finestra in basso (renderPromemoriaFatti).
     var list = ordinaPromemoriaPerLista(appData.promemoria).filter(function(p) {
         return !!p.data_scadenza && !p.fatto;
     });
@@ -3174,14 +3013,12 @@ function renderPromemoria() {
 }
 
 // --- Promemoria fatti e senza scadenza ---
-// Seconda tabella della pagina Promemoria, sotto i promemoria da fare:
-// raccoglie quelli con "Fatto" attivo e quelli senza data di scadenza. I fatti
+// Elenco della finestra in basso della pagina Promemoria, sotto i promemoria da
+// fare: raccoglie quelli con "Fatto" attivo e quelli senza data di scadenza. I fatti
 // stanno sempre in cima, ordinati per data di scadenza (dalla più imminente
 // alla meno imminente) e poi per descrizione; sotto, quelli senza data, in
 // ordine di descrizione. I fatti senza data chiudono il gruppo dei fatti.
 function renderPromemoriaFatti() {
-    var tbody = document.getElementById('promemoriaArchiviatiTableBody');
-    if (!tbody) return;
     var fatti = [];
     var senzaData = [];
     (appData.promemoria || []).forEach(function(p) {
@@ -3202,11 +3039,13 @@ function renderPromemoriaFatti() {
         return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
     });
     var list = fatti.concat(senzaData);
-    if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria fatto o senza scadenza</td></tr>';
-        return;
+    // L'elenco sta nella finestra in basso della pagina Promemoria
+    if (paginaAttiva() === 'promemoria') {
+        renderDettaglioPromemoria('Promemoria fatti e senza scadenza',
+            ['Descrizione', 'Scadenza', 'Note', 'Azioni'],
+            list.map(rigaPromemoria),
+            'Nessun promemoria fatto o senza scadenza');
     }
-    tbody.innerHTML = list.map(rigaPromemoria).join('');
 }
 
 function promemoriaFormHtml(p) {
@@ -3262,6 +3101,7 @@ async function savePromemoria() {
     }
     closeModal();
     renderPromemoria();
+    renderGeneralePromemoria();
     renderNotifications();
     showToast(id ? 'Promemoria aggiornato!' : 'Promemoria salvato!', 'success');
 }
@@ -3272,6 +3112,7 @@ async function deletePromemoria(id) {
     appData.promemoria = appData.promemoria.filter(function(p) { return p.id !== id; });
     closeModal();
     renderPromemoria();
+    renderGeneralePromemoria();
     renderNotifications();
     showToast('Promemoria eliminato', 'info');
 }
@@ -3284,10 +3125,12 @@ async function togglePromemoria(id) {
     if (error) {
         showToast('Errore aggiornamento promemoria: ' + error.message, 'error');
         renderPromemoria();
+        renderGeneralePromemoria();
         return;
     }
     p.fatto = nuovo;
     renderPromemoria();
+    renderGeneralePromemoria();
     renderNotifications();
 }
 
@@ -4169,8 +4012,6 @@ function openModal(type, id) {
         html += '<div class="contract-detail"><label>Tipo</label><span>' + (vw.tipo === 'azienda' ? 'Azienda' : 'Persona Fisica') + '</span></div>';
         html += '<div class="contract-detail"><label>Soggetto</label><span>' + escVw(getVerificaLabel(vw)) + '</span></div>';
         html += '<div class="contract-detail"><label>Codice Fiscale</label><span>' + escVw(vw.codice_fiscale) + '</span></div>';
-        html += '<div class="contract-detail"><label>Cognome</label><span>' + escVw(vw.cognome || '-') + '</span></div>';
-        html += '<div class="contract-detail"><label>Nome</label><span>' + escVw(vw.nome || '-') + '</span></div>';
         html += '<div class="contract-detail"><label>Ragione Sociale</label><span>' + escVw(vw.ragione_sociale || '-') + '</span></div>';
         html += '<div class="contract-detail"><label>Codice Fascicolo</label><span>' + escVw(vw.codice_fascicolo || '-') + '</span></div>';
         html += '<div class="contract-detail"><label>Data Prossima Verifica</label><span>' + formatDate(vw.data_prossima_verifica) + '</span></div>';
@@ -7686,9 +7527,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     renderNotifications();
     try { renderGenerale(); } catch(e) { console.error('Generale error:', e); }
 
-    // Altezza regolabile della tabella "Promemoria fatti e senza scadenza"
-    // della pagina Promemoria (l'altezza scelta resta memorizzata).
-    initTabellaRidimensionabile('promemoriaArchiviati', 'altezzaPromemoriaArchiviati');
+    // Altezza regolabile della finestra in basso.
 
     // Finestra di dettaglio della pagina Generale (grip in alto, schermo intero)
     initDettaglioGenerale();

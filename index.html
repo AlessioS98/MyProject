@@ -296,7 +296,6 @@
             <div class="section-heading">
                 <h2><i class="fas fa-calendar-day"></i> Tutte le scadenze</h2>
                 <p>Dalla più imminente alla più lontana</p>
-                <button type="button" class="section-toggle" data-action="toggle-generale-section" data-target="generaleScadenze" data-label="scadenze" aria-expanded="true" title="Nascondi scadenze"><i class="fas fa-chevron-down"></i></button>
             </div>
 
             <div class="table-container" id="generaleScadenze">
@@ -311,30 +310,6 @@
                         </tr>
                     </thead>
                     <tbody id="generaleScadenzeTableBody">
-                        <!-- Populated by JS -->
-                    </tbody>
-                </table>
-            </div>
-
-            <hr class="section-divider">
-
-            <div class="section-heading">
-                <h2><i class="fas fa-bell"></i> Promemoria Fatti, Scaduti e Senza Scadenza</h2>
-                <p>Prima i fatti, poi gli scaduti, poi quelli senza data</p>
-                <button type="button" class="section-toggle" data-action="toggle-generale-section" data-target="generalePromemoria" data-label="promemoria" aria-expanded="true" title="Nascondi promemoria"><i class="fas fa-chevron-down"></i></button>
-            </div>
-
-            <div class="table-container" id="generalePromemoria">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Descrizione</th>
-                            <th>Data</th>
-                            <th>Stato</th>
-                            <th>Note</th>
-                        </tr>
-                    </thead>
-                    <tbody id="generalePromemoriaTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
@@ -672,55 +647,20 @@
                     </tbody>
                 </table>
             </div>
-
-            <hr class="section-divider">
-
-            <div class="section-heading">
-                <h2><i class="fas fa-check-circle"></i> Promemoria fatti e senza scadenza</h2>
-                <p>Prima i fatti, poi quelli senza data</p>
-                <button type="button" class="section-toggle" data-action="toggle-generale-section" data-target="promemoriaArchiviati" data-label="promemoria" aria-expanded="true" title="Nascondi promemoria"><i class="fas fa-chevron-down"></i></button>
-            </div>
-
-            <div class="table-container" id="promemoriaArchiviati">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Descrizione</th>
-                            <th>Scadenza</th>
-                            <th>Note</th>
-                            <th>Azioni</th>
-                        </tr>
-                    </thead>
-                    <tbody id="promemoriaArchiviatiTableBody">
-                        <!-- Populated by JS -->
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Grip per regolare a piacere l'altezza della tabella qui sopra -->
-            <div class="table-resizer" data-resize-target="promemoriaArchiviati" title="Trascina per regolare l'altezza della tabella · doppio clic per riportarla all'altezza naturale"><span></span></div>
         </section>
 
     </main>
 
-    <!-- Finestra di dettaglio della pagina Generale: si sovrappone alla
-         pagina e mostra i dati della scadenza o del promemoria cliccato -->
+    <!-- Finestra delle pagine Generale e Promemoria: si sovrappone alla
+         pagina e mostra l'elenco dei promemoria fatti, scaduti e senza
+         scadenza; l'altezza si regola trascinando il grip in alto -->
     <div class="dettaglio-panel" id="dettaglioPanel" hidden>
         <div class="dettaglio-grip" id="dettaglioGrip" title="Trascina per regolare l'altezza · doppio clic per l'altezza predefinita"><span></span></div>
         <div class="dettaglio-panel-header">
-            <h2 id="dettaglioPanelTitle">Benvenuto</h2>
-            <div class="dettaglio-panel-actions">
-                <button type="button" class="dettaglio-panel-btn" id="dettaglioFullBtn" title="Schermo intero" aria-label="Schermo intero"><i class="fas fa-expand"></i></button>
-                <button type="button" class="dettaglio-panel-btn" id="dettaglioMinBtn" title="Riduci a icona" aria-label="Riduci a icona"><i class="fas fa-window-minimize"></i></button>
-            </div>
+            <h2 id="dettaglioPanelTitle">Promemoria</h2>
         </div>
         <div class="dettaglio-panel-body" id="dettaglioPanelBody"></div>
     </div>
-
-    <!-- Icona della finestra ridotta a icona: cliccandola si riapre -->
-    <button type="button" class="dettaglio-mini" id="dettaglioMini" hidden title="Apri la finestra" aria-label="Apri la finestra">
-        <i class="fas fa-window-restore"></i>
-    </button>
 
     <!-- Modal Overlay -->
     <div class="modal-overlay" id="modalOverlay">

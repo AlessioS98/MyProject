@@ -1970,6 +1970,10 @@ body.tabella-resize * {
 
 .dettaglio-panel[hidden] { display: none; }
 
+/* Spazio in fondo alle pagine con la finestra: le ultime righe degli elenchi
+   non restano coperte dalla finestra */
+#page-generale, #page-promemoria { padding-bottom: calc(var(--finestra-altezza, 340px) + 24px); }
+
 .dettaglio-panel:not([hidden]) { animation: dettaglioIn 0.22s ease; }
 
 @keyframes dettaglioIn {
@@ -1978,18 +1982,6 @@ body.tabella-resize * {
 }
 
 .dettaglio-panel.dragging { transition: none; }
-
-/* Schermo intero: copre tutta la finestra del browser */
-.dettaglio-panel.fullscreen {
-    inset: 0;
-    height: auto !important;
-    border: none;
-    border-radius: 0;
-    transition: none;
-    animation: none;
-}
-
-.dettaglio-panel.fullscreen .dettaglio-grip { display: none; }
 
 .dettaglio-grip {
     display: flex;
@@ -2027,21 +2019,6 @@ body.tabella-resize * {
 
 .dettaglio-panel-header h2 { font-size: 1.05rem; font-weight: 700; }
 
-.dettaglio-panel-actions { display: flex; align-items: center; gap: 6px; }
-
-.dettaglio-panel-btn {
-    width: 34px;
-    height: 34px;
-    border-radius: var(--radius-full);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-    transition: all var(--transition);
-}
-
-.dettaglio-panel-btn:hover { background: var(--bg); color: var(--text); }
-
 .dettaglio-panel-body {
     padding: 16px 20px 24px;
     overflow-y: auto;
@@ -2069,69 +2046,8 @@ body.tabella-resize * {
     margin-bottom: 4px;
 }
 
-/* Messaggio di benvenuto mostrato all'apertura della finestra */
-.dettaglio-benvenuto {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-}
-
-.dettaglio-benvenuto-icona {
-    flex: 0 0 auto;
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-full);
-    background: var(--primary-bg);
-    color: var(--primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4rem;
-}
-
-.dettaglio-benvenuto h3 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    margin-bottom: 6px;
-}
-
-.dettaglio-benvenuto p {
-    font-size: 0.88rem;
-    color: var(--text-secondary);
-    line-height: 1.55;
-    margin-bottom: 8px;
-}
-
-.dettaglio-benvenuto p:last-child { margin-bottom: 0; }
-
-/* Icona della finestra ridotta a icona (in basso a destra) */
-.dettaglio-mini {
-    position: fixed;
-    right: 24px;
-    bottom: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: var(--radius-full);
-    background: var(--primary);
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    box-shadow: var(--shadow-xl);
-    z-index: 300;
-    transition: transform var(--transition), box-shadow var(--transition);
-}
-
-.dettaglio-mini[hidden] { display: none; }
-
-.dettaglio-mini:hover {
-    transform: translateY(-2px) scale(1.04);
-    box-shadow: var(--shadow-xl);
-}
-
-/* Le righe delle tabelle del Generale aprono la finestra di dettaglio */
-#page-generale .data-table tbody tr[data-dettaglio] { cursor: pointer; }
+/* La tabella dei promemoria dentro la finestra in basso usa tutta la larghezza */
+.dettaglio-panel-body .data-table { min-width: 0; }
 
 /* ---------- Modal ---------- */
 .modal-overlay {
@@ -2710,7 +2626,6 @@ body.tabella-resize * {
 
     /* Su schermi stretti la finestra usa tutta la larghezza (sidebar a scomparsa) */
     .dettaglio-panel { left: 12px; right: 12px; }
-    .dettaglio-mini { right: 16px; bottom: 16px; }
 
     .page-header { flex-direction: column; }
 
