@@ -1826,9 +1826,9 @@ function renderGeneraleScadenze() {
     }
 
     var html = items.map(function(it) {
-        // Evidenziazione gialla solo per le scadenze vicine (entro 7 giorni);
+        // Evidenziazione gialla per le scadenze vicine (entro 15 giorni);
         // le date già passate restano senza colore.
-        var rowCls = it.giorni >= 0 && it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
+        var rowCls = it.giorni >= 0 && it.giorni <= 15 ? ' class="alert-in-scadenza"' : '';
         return '<tr' + rowCls + '>' +
             '<td><strong>' + it.nominativi + '</strong></td>' +
             '<td>' + formatDate(it.data) + '</td>' +
@@ -2995,14 +2995,17 @@ function ordinaPromemoriaPerLista(list) {
     });
 }
 
-// Riga delle tabelle della pagina Promemoria (promemoria da fare e promemoria
-// fatti): descrizione, scadenza, note e azioni.
+// Riga delle tabelle della pagina Promemoria (promemoria da fare e finestra in
+// basso con fatti, scaduti e senza scadenza): descrizione, scadenza, note e azioni.
 function rigaPromemoria(p) {
     var esc = function(x) {
         return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
     };
     var fatto = !!p.fatto;
-    return '<tr' + (fatto ? ' class="promemoria-fatto"' : '') + '>' +
+    // Scaduto: ancora da fare ma con la data ormai passata: riga rossa.
+    var scaduto = !fatto && !!p.data_scadenza && daysUntil(String(p.data_scadenza).slice(0, 10)) < 0;
+    var rowCls = fatto ? ' class="promemoria-fatto"' : (scaduto ? ' class="promemoria-scaduto"' : '');
+    return '<tr' + rowCls + '>' +
         '<td><strong>' + esc(p.descrizione || '-') + '</strong>' +
         (fatto ? ' <span class="promemoria-ok"><i class="fas fa-check"></i> OK</span>' : '') +
         '</td>' +
@@ -3018,11 +3021,13 @@ function rigaPromemoria(p) {
 function renderPromemoria() {
     var tbody = document.getElementById('promemoriaTableBody');
     if (!tbody) return;
-    // In questa tabella stanno solo i promemoria ancora da fare con una data,
-    // ordinati dalla scadenza più vicina: quelli fatti e quelli senza data
-    // stanno nella finestra in basso (renderPromemoriaFatti).
+    // In questa tabella stanno solo i promemoria ancora da fare con una data
+    // non ancora passata, ordinati dalla scadenza più vicina: quelli fatti,
+    // quelli scaduti e quelli senza data stanno nella finestra in basso
+    // (renderPromemoriaFatti).
     var list = ordinaPromemoriaPerLista(appData.promemoria).filter(function(p) {
-        return !!p.data_scadenza && !p.fatto;
+        if (!p.data_scadenza || p.fatto) return false;
+        return daysUntil(String(p.data_scadenza).slice(0, 10)) >= 0;
     });
     if (list.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessun promemoria da fare</td></tr>';
@@ -3032,20 +3037,28 @@ function renderPromemoria() {
     renderPromemoriaFatti();
 }
 
-// --- Promemoria fatti e senza scadenza ---
+// --- Promemoria fatti, scaduti e senza scadenza ---
 // Elenco della finestra in basso della pagina Promemoria, sotto i promemoria da
-// fare: raccoglie quelli con "Fatto" attivo e quelli senza data di scadenza. I fatti
-// stanno sempre in cima, ordinati per data di scadenza (dalla più imminente
-// alla meno imminente) e poi per descrizione; sotto, quelli senza data, in
-// ordine di descrizione. I fatti senza data chiudono il gruppo dei fatti.
+// fare: raccoglie quelli con "Fatto" attivo, quelli scaduti (ancora da fare ma
+// con la data ormai passata) e quelli senza data di scadenza. I fatti stanno
+// sempre in cima, ordinati per data di scadenza (dalla più imminente alla meno
+// imminente) e poi per descrizione; sotto gli scaduti, con lo stesso ordine,
+// poi quelli senza data in ordine di descrizione. I fatti senza data chiudono
+// il gruppo dei fatti.
 function renderPromemoriaFatti() {
     var fatti = [];
+    var scaduti = [];
     var senzaData = [];
     (appData.promemoria || []).forEach(function(p) {
-        if (p.fatto) fatti.push(p);
-        else if (!p.data_scadenza) senzaData.push(p);
+        if (p.fatto) {
+            fatti.push(p);
+        } else if (!p.data_scadenza) {
+            senzaData.push(p);
+        } else if (daysUntil(String(p.data_scadenza).slice(0, 10)) < 0) {
+            scaduti.push(p);
+        }
     });
-    fatti.sort(function(a, b) {
+    var perDataEDescrizione = function(a, b) {
         var da = a.data_scadenza ? String(a.data_scadenza).slice(0, 10) : '';
         var db = b.data_scadenza ? String(b.data_scadenza).slice(0, 10) : '';
         if (da !== db) {
@@ -3054,17 +3067,19 @@ function renderPromemoriaFatti() {
             return da.localeCompare(db);
         }
         return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
-    });
+    };
+    fatti.sort(perDataEDescrizione);
+    scaduti.sort(perDataEDescrizione);
     senzaData.sort(function(a, b) {
         return (a.descrizione || '').localeCompare(b.descrizione || '', 'it');
     });
-    var list = fatti.concat(senzaData);
+    var list = fatti.concat(scaduti, senzaData);
     // L'elenco sta nella finestra in basso della pagina Promemoria
     if (paginaAttiva() === 'promemoria') {
-        renderDettaglioPromemoria('Promemoria fatti e senza scadenza',
+        renderDettaglioPromemoria('Promemoria fatti, scaduti e senza scadenza',
             ['Descrizione', 'Scadenza', 'Note', 'Azioni'],
             list.map(rigaPromemoria),
-            'Nessun promemoria fatto o senza scadenza');
+            'Nessun promemoria fatto, scaduto o senza scadenza');
     }
 }
 

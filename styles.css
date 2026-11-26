@@ -25,6 +25,12 @@
     --info: #3b82f6;
     --info-bg: rgba(59, 130, 246, 0.1);
 
+    /* Evidenziazione delle righe delle tabelle: tinta più scura delle sue
+       varianti -bg, così la riga si distingue subito tra le altre. */
+    --row-success-bg: rgba(16, 185, 129, 0.2);
+    --row-danger-bg: rgba(239, 68, 68, 0.2);
+    --row-warning-bg: rgba(245, 158, 11, 0.24);
+
     /* Neutrals */
     --bg: #f1f5f9;
     --surface: #ffffff;
@@ -71,6 +77,11 @@
     --text: #f1f5f9;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+    /* Sul tema scuro l'evidenziazione delle righe ha bisogno di più tinta
+       per risultare scura e leggibile come nel tema chiaro. */
+    --row-success-bg: rgba(16, 185, 129, 0.26);
+    --row-danger-bg: rgba(239, 68, 68, 0.26);
+    --row-warning-bg: rgba(245, 158, 11, 0.3);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
@@ -826,7 +837,7 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 
 /* Promemoria completati: riga verde e badge OK accanto alla descrizione */
 .data-table tr.promemoria-fatto td {
-    background: var(--success-bg);
+    background: var(--row-success-bg);
     color: var(--success);
 }
 
@@ -836,7 +847,7 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 
 /* Promemoria scaduti (ancora da fare con la data ormai passata): riga rossa */
 .data-table tr.promemoria-scaduto td {
-    background: var(--danger-bg);
+    background: var(--row-danger-bg);
     color: var(--danger);
 }
 
@@ -1490,9 +1501,9 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 /* Avvisi scadenze in arrivo (≤ 7 giorni dalla prossima scadenza) */
 .contract-card.alert-in-scadenza { border-color: var(--warning); }
 .contract-card.alert-scaduta { border-color: var(--danger); }
-.data-table tr.alert-in-scadenza td { background: var(--warning-bg); }
-.data-table tr.alert-scaduta td { background: var(--danger-bg); }
-.data-table tr.alert-completata td { background: var(--success-bg); }
+.data-table tr.alert-in-scadenza td { background: var(--row-warning-bg); }
+.data-table tr.alert-scaduta td { background: var(--row-danger-bg); }
+.data-table tr.alert-completata td { background: var(--row-success-bg); }
 .data-table tr.alert-chiusa td { color: var(--text); font-weight: 600; }
 
 /* Contratti scaduti o chiusi nella tabella Contratti: la riga e' evidenziata
@@ -1503,7 +1514,7 @@ input[type="week"]::-webkit-calendar-picker-indicator {
    del mouse. */
 .data-table tbody tr.alert-contratto-scaduto td,
 .data-table tbody tr.alert-contratto-chiuso td {
-    background: var(--danger-bg);
+    background: var(--row-danger-bg);
     color: var(--danger);
     font-weight: 600;
 }
