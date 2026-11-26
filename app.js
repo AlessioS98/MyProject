@@ -1752,25 +1752,27 @@ function renderGeneraleScadenze() {
     });
 
     // Scadenze delle verifiche antiriciclaggio: tutte quelle dell'elenco della
-    // pagina Scadenze antiriciclaggio (le verifiche con la fine monitoraggio
-    // antecedente alla prossima verifica stanno nell'archivio e non entrano).
-    // Anche le verifiche con la data già passata restano nella lista, come
-    // nella pagina Scadenze, ed evidenziate in rosso.
+    // pagina Scadenze antiriciclaggio (le verifiche con la data del monitoraggio
+    // già passata stanno nell'archivio e non entrano). Anche le verifiche con la
+    // data già passata restano nella lista, come nella pagina Scadenze, senza
+    // evidenziazione rossa.
     (appData.verifiche || []).forEach(function(v) {
         if (isVerificaInArchivio(v)) return;
         var data = getVerificaDataScadenza(v);
         if (!data) return;
-        var tipoScadenza = 'Verifica';
-        // Nel Generale il Dettaglio mostra solo il codice fascicolo.
+        var tipoScadenza = getVerificaTipoScadenzaLabel(v);
+        // Nel Generale il Dettaglio mostra il codice fascicolo e il tipo di
+        // scadenza (prossima verifica oppure fine monitoraggio).
         var fascicolo = v.codice_fascicolo || '-';
+        var dettaglioVerifica = fascicolo + (tipoScadenza ? ' · ' + tipoScadenza : '');
         items.push({
             key: 'verifica:' + v.id,
             data: data,
             tipo: 'Antiriciclaggio',
             icon: 'fa-user-shield',
             nominativi: getVerificaLabel(v) || '-',
-            dettaglioInfo: fascicolo,
-            dettaglio: fascicolo,
+            dettaglioInfo: dettaglioVerifica,
+            dettaglio: dettaglioVerifica,
             campi: [
                 { label: 'Soggetto', value: getVerificaLabel(v) || '-' },
                 { label: 'Codice Fascicolo', value: v.codice_fascicolo || '-' },
@@ -1824,10 +1826,9 @@ function renderGeneraleScadenze() {
     }
 
     var html = items.map(function(it) {
-        // Le scadenze antiriciclaggio già passate sono in rosso; le altre
-        // hanno l'evidenziazione arancione solo negli ultimi 7 giorni.
-        var rowCls = it.giorni < 0 ? ' class="scadenza-verifica-scaduta"'
-            : it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
+        // Evidenziazione gialla solo per le scadenze vicine (entro 7 giorni);
+        // le date già passate restano senza colore.
+        var rowCls = it.giorni >= 0 && it.giorni <= 7 ? ' class="alert-in-scadenza"' : '';
         return '<tr' + rowCls + '>' +
             '<td><strong>' + it.nominativi + '</strong></td>' +
             '<td>' + formatDate(it.data) + '</td>' +
@@ -2757,15 +2758,36 @@ function renderVerifiche() {
     }).join('');
 }
 
-// Data Scadenza mostrata nell'elenco e nell'Archivio: la Data prossima
-// verifica della verifica.
+// Data Scadenza dell'elenco e dell'Archivio e suo tipo. La data è la Data fine
+// monitoraggio quando questa è antecedente alla Data prossima verifica (il
+// monitoraggio finisce prima della verifica), altrimenti è la Data prossima
+// verifica. Il tipo dice quale delle due date è stata usata: "monitoraggio"
+// oppure "verifica".
+function getVerificaScadenzaInfo(v) {
+    if (!v) return null;
+    var pv = v.data_prossima_verifica ? String(v.data_prossima_verifica).slice(0, 10) : '';
+    var fm = v.data_fine_monitoraggio ? String(v.data_fine_monitoraggio).slice(0, 10) : '';
+    if (fm && (!pv || fm < pv)) return { data: fm, tipo: 'monitoraggio' };
+    if (pv) return { data: pv, tipo: 'verifica' };
+    return null;
+}
+
+// Data Scadenza mostrata nell'elenco e nell'Archivio (vedi getVerificaScadenzaInfo).
 function getVerificaDataScadenza(v) {
-    if (!v || !v.data_prossima_verifica) return '';
-    return String(v.data_prossima_verifica).slice(0, 10);
+    var info = getVerificaScadenzaInfo(v);
+    return info ? info.data : '';
+}
+
+// Etichetta della colonna Tipo scadenza: dice se la Data scadenza è la Data
+// prossima verifica oppure la Data fine monitoraggio.
+function getVerificaTipoScadenzaLabel(v) {
+    var info = getVerificaScadenzaInfo(v);
+    if (!info) return '';
+    return info.tipo === 'monitoraggio' ? 'Monitoraggio' : 'Prossima verifica';
 }
 
 // Scadenze delle verifiche antiriciclaggio: una riga per soggetto, con la Data
-// prossima verifica. Le verifiche con la data già passata restano nell'elenco
+// scadenza (prossima verifica o fine monitoraggio). Le verifiche con la data già passata restano nell'elenco
 // ma stanno in cima, dalla più recente alla più vecchia (e vengono evidenziate
 // in rosso). Le altre seguono in ordine crescente di data; le verifiche senza
 // data vanno in fondo (data "-"), così l'elenco resta lo stesso della pagina
@@ -2787,27 +2809,18 @@ function ordinaScadenzeVerifichePerLista(list) {
     });
 }
 
-// Una verifica va nell'Archivio quando la Data fine monitoraggio è
-// antecedente alla Data prossima verifica: il monitoraggio è finito prima
-// della verifica, quindi non è più una scadenza da tenere d'occhio.
+// Una verifica va nell'Archivio quando la sua Data scadenza è quella del
+// monitoraggio (Data fine monitoraggio antecedente alla Data prossima verifica)
+// ed è già passata: il monitoraggio è finito, quindi non è più una scadenza da
+// tenere d'occhio.
 function isVerificaInArchivio(v) {
-    if (!v) return false;
-    var pv = v.data_prossima_verifica ? String(v.data_prossima_verifica).slice(0, 10) : '';
-    var fm = v.data_fine_monitoraggio ? String(v.data_fine_monitoraggio).slice(0, 10) : '';
-    return !!pv && !!fm && fm < pv;
-}
-
-// Una verifica è scaduta quando la Data prossima verifica (la Data scadenza
-// mostrata in tabella) è già passata. Resta comunque nell'elenco, in cima e
-// evidenziata in rosso.
-function isVerificaScaduta(v) {
-    var data = getVerificaDataScadenza(v);
-    if (!data) return false;
-    return data < toLocalDateStr(new Date());
+    var info = getVerificaScadenzaInfo(v);
+    if (!info || info.tipo !== 'monitoraggio') return false;
+    return info.data < toLocalDateStr(new Date());
 }
 
 // Verifiche della tabella principale (Elenco scadenze): tutte tranne quelle
-// con la fine monitoraggio antecedente alla prossima verifica.
+// con la data del monitoraggio già passata (che stanno nell'Archivio).
 function getVerificheScadenzeAntiriciclaggio() {
     return (appData.verifiche || []).filter(function(v) { return !isVerificaInArchivio(v); });
 }
@@ -2823,19 +2836,20 @@ function getVerificheArchivio() {
     });
 }
 
-// Riga condivisa dalle due tabelle: soggetto, codice fascicolo, data scadenza
-// (Data prossima verifica) e azioni. La riga è rossa quando la data è già
-// passata.
-function scadenzaVerificaRowHtml(v) {
+// Riga condivisa dalle due tabelle: soggetto, codice fascicolo, data scadenza,
+// tipo di scadenza (prossima verifica o monitoraggio) e azioni. L'Archivio non
+// mostra la colonna Tipo scadenza (conTipo = false).
+function scadenzaVerificaRowHtml(v, conTipo) {
     var esc = function(x) {
         return x ? String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '';
     };
     var data = getVerificaDataScadenza(v);
-    var scaduta = isVerificaScaduta(v);
-    return '<tr' + (scaduta ? ' class="scadenza-verifica-scaduta"' : '') + '>' +
+    var tipoScadenza = getVerificaTipoScadenzaLabel(v);
+    return '<tr>' +
         '<td><strong>' + esc(getVerificaLabel(v)) + '</strong></td>' +
         '<td>' + esc(v.codice_fascicolo || '-') + '</td>' +
         '<td>' + (data ? formatDate(data) : '-') + '</td>' +
+        (conTipo === false ? '' : '<td>' + (tipoScadenza || '-') + '</td>') +
         '<td><div class="td-actions">' +
         '<button type="button" data-action="view-verifica" data-id="' + v.id + '" title="Visualizza verifica"><i class="fas fa-eye"></i></button>' +
         '<button type="button" data-action="edit-verifica" data-id="' + v.id + '" title="Modifica"><i class="fas fa-pen"></i></button>' +
@@ -2865,7 +2879,7 @@ function renderScadenzeAntiriciclaggio() {
     if (tbody) {
         var list = ordinaScadenzeVerifichePerLista(getVerificheScadenzeAntiriciclaggio());
         if (list.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nessuna scadenza presente</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessuna scadenza presente</td></tr>';
         } else {
             tbody.innerHTML = list.map(function(v) {
                 return scadenzaVerificaRowHtml(v);
@@ -2875,8 +2889,8 @@ function renderScadenzeAntiriciclaggio() {
     renderScadenzeArchivio();
 }
 
-// Tabella dell'Archivio: verifiche con la Data fine monitoraggio antecedente
-// alla Data prossima verifica. La data mostrata è la Data prossima verifica.
+// Tabella dell'Archivio: verifiche con la data del monitoraggio già passata.
+// La data mostrata è la Data fine monitoraggio (quella del monitoraggio).
 function renderScadenzeArchivio() {
     var tbody = document.getElementById('scadenzeAntiriciclaggioMonitoraggioTableBody');
     if (!tbody) return;
@@ -2886,7 +2900,7 @@ function renderScadenzeArchivio() {
         return;
     }
     tbody.innerHTML = list.map(function(v) {
-        return scadenzaVerificaRowHtml(v);
+        return scadenzaVerificaRowHtml(v, false);
     }).join('');
 }
 
@@ -2903,18 +2917,24 @@ function exportScadenzeAntiriciclaggioExcel() {
         return;
     }
 
-    var COLONNE = ['Soggetto', 'Codice Fascicolo', 'Data Scadenza'];
-    var LARGHEZZE = [40, 18, 22];
+    // Come a video: la colonna Tipo Scadenza c'è solo nell'Elenco, non
+    // nell'Archivio.
+    var COLONNE = archivio
+        ? ['Soggetto', 'Codice Fascicolo', 'Data Scadenza']
+        : ['Soggetto', 'Codice Fascicolo', 'Data Scadenza', 'Tipo Scadenza'];
+    var LARGHEZZE = archivio ? [40, 18, 22] : [40, 18, 22, 20];
 
     var righeDati = list.map(function(v) {
-        // La data è sempre la Data scadenza mostrata nella lista (Data
-        // prossima verifica), sia nell'elenco sia nell'archivio.
+        // La data è la Data scadenza mostrata nella lista (prossima verifica
+        // oppure fine monitoraggio), sia nell'elenco sia nell'archivio.
         var data = getVerificaDataScadenza(v);
-        return [
+        var riga = [
             { t: 's', s: S_TESTO, v: getVerificaLabel(v) },
             { t: 's', s: S_TESTO, v: v.codice_fascicolo || '' },
             { t: 's', s: S_TESTO, v: data ? formatDateExcel(data) : '' }
         ];
+        if (!archivio) riga.push({ t: 's', s: S_TESTO, v: getVerificaTipoScadenzaLabel(v) });
+        return riga;
     });
 
     var titolo = 'Scadenze verifiche antiriciclaggio (' + (archivio ? 'archivio' : 'elenco') + ') - esportate il ' + istanteExcel() + ' (' + list.length + ' scadenze)';

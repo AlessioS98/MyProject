@@ -243,3 +243,14 @@ Cose da tenere presenti:
 - Le scadenze della pagina **Scadenze antiriciclaggio** hanno i propri
   promemoria: 30, 20 e 15 giorni prima della Data scadenza e poi ogni giorno
   negli ultimi 10 giorni (il giorno della scadenza non viene notificato).
+- Nella pagina **Scadenze antiriciclaggio** la colonna "Data Scadenza" mostra
+  la **Data fine monitoraggio** quando questa è antecedente alla **Data
+  prossima verifica**, altrimenti la Data prossima verifica. La colonna "Tipo
+  Scadenza" (a destra, solo nell'Elenco: l'Archivio e il suo export non la
+  hanno) dice quale delle due date è stata usata: *Monitoraggio* oppure
+  *Prossima verifica* (`getVerificaScadenzaInfo`). Le verifiche con la data del
+  **monitoraggio** già passata finiscono nell'**Archivio**
+  (`isVerificaInArchivio`); le verifiche con la prossima verifica già passata
+  restano nell'elenco, in cima, ma senza evidenziazione rossa. Nella pagina
+  **Generale** la colonna Dettaglio delle scadenze antiriciclaggio mostra il
+  codice fascicolo seguito dal tipo di scadenza.

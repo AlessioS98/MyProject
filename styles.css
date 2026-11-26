@@ -844,14 +844,6 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     color: var(--danger);
 }
 
-/* Scadenze antiriciclaggio con la Data prossima verifica già passata: restano
-   nell'elenco, in cima, evidenziate in rosso. */
-.data-table tbody tr.scadenza-verifica-scaduta td {
-    background: var(--danger-bg);
-    color: var(--danger);
-    font-weight: 600;
-}
-
 .promemoria-ok {
     display: inline-flex;
     align-items: center;
