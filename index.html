@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=51">
+    <link rel="stylesheet" href="styles.css?v=55">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -101,10 +101,23 @@
                 </div>
             </div>
 
-            <a href="#" class="nav-item nav-item-firma nav-item-maiuscolo" data-page="firma-digitale">
-                <i class="fas fa-id-card-clip"></i>
-                <span>FIRMA DIGITALE - ADE - SPID - CIE - TESSERA SANITARIA</span>
-            </a>
+            <div class="nav-group" data-group="firma-digitale">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="navGroupFirmaDigitale">
+                    <i class="fas fa-id-card-clip"></i>
+                    <span class="nav-group-label">FIRMA DIGITALE - ADE - SPID - CIE - TESSERA SANITARIA</span>
+                    <i class="fas fa-chevron-down nav-group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="navGroupFirmaDigitale">
+                    <a href="#" class="nav-item" data-page="firma-digitale">
+                        <i class="fas fa-id-card-clip"></i>
+                        <span>Elenco</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="scadenze-firma-digitale">
+                        <i class="fas fa-calendar-check"></i>
+                        <span>Scadenze</span>
+                    </a>
+                </div>
+            </div>
 
             <a href="#" class="nav-item nav-item-maiuscolo" data-page="promemoria">
                 <i class="fas fa-thumbtack"></i>
@@ -623,9 +636,82 @@
                     <p class="page-subtitle">Firma digitale, Agenzia delle Entrate, SPID, CIE e Tessera Sanitaria</p>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-outline" data-action="export-servizi-firma-excel" title="Scarica in Excel l'elenco dei servizi di firma digitale">
+                        <i class="fas fa-file-excel"></i> Esporta Excel
+                    </button>
                     <button class="btn btn-primary" data-action="new-servizio-firma">
                         <i class="fas fa-plus"></i> Nuovo Inserimento
                     </button>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterFirmaSezione" class="filter-select" onchange="renderServiziFirma()" title="Scegli la parte da mostrare">
+                        <option value="">Elenco completo</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table" id="serviziFirmaTable">
+                    <thead>
+                        <tr>
+                            <th>Cognome</th>
+                            <th>Nome</th>
+                            <th>Compilati</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="serviziFirmaTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Page: Scadenze Firma Digitale -->
+        <section class="page" id="page-scadenze-firma-digitale">
+            <div class="page-header">
+                <div>
+                    <h1>Scadenze</h1>
+                    <p class="page-subtitle" id="scadenzeFirmaSubtitle">Scadenze dei servizi di firma digitale</p>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card stat-orange" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statFirmaNonScadute">0</span>
+                        <span class="stat-label">Non Scadute</span>
+                        <div class="stat-mini">
+                            <span><strong id="statFirmaScadute">0</strong> scadute</span>
+                            <span><strong id="statFirmaEntro20">0</strong> entro 20 gg</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card stat-blue" style="grid-column:span 2">
+                    <div class="stat-icon"><i class="fas fa-id-card-clip"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="statFirmaTotale">0</span>
+                        <span class="stat-label">Servizi</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterFirmaScadenzaTipo" class="filter-select" onchange="renderScadenzeFirma()">
+                        <option value="tutte">Tutte le scadenze</option>
+                        <option value="firma">Scadenza Firma</option>
+                        <option value="restituzione">Restituzione</option>
+                    </select>
+                    <select id="filterFirmaScadenzaStato" class="filter-select" onchange="renderScadenzeFirma()" title="Filtra per stato">
+                        <option value="future">Non scadute</option>
+                        <option value="scadute">Scadute</option>
+                        <option value="tutte">Tutte</option>
+                    </select>
                 </div>
             </div>
 
@@ -634,13 +720,12 @@
                     <thead>
                         <tr>
                             <th>Soggetto</th>
-                            <th>Codice Fiscale</th>
-                            <th>Scadenza Firma</th>
-                            <th>Restituzione</th>
+                            <th>Tipo Scadenza</th>
+                            <th>Data Scadenza</th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
-                    <tbody id="serviziFirmaTableBody">
+                    <tbody id="scadenzeFirmaTableBody">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
@@ -879,6 +964,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="db-client.js?v=1"></script>
-    <script src="app.js?v=108"></script>
+    <script src="app.js?v=120"></script>
 </body>
 </html>

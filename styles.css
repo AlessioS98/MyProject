@@ -259,6 +259,7 @@ input[type="week"]::-webkit-calendar-picker-indicator {
 .nav-group[data-group="contratti"] { --nav-accent: #7dd3fc; }
 .nav-group[data-group="deleghe"] { --nav-accent: #6ee7b7; }
 .nav-group[data-group="marchi"] { --nav-accent: #fcd34d; }
+.nav-group[data-group="firma-digitale"] { --nav-accent: #f9a8d4; }
 
 .nav-group {
     border-radius: var(--radius-md);
@@ -377,17 +378,16 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     font-weight: 600;
 }
 
-/* Voce lunga del menu (Firma digitale - ADE - SPID - CIE - Tessera
+/* Sezione lunga del menu (Firma digitale - ADE - SPID - CIE - Tessera
    Sanitaria): il testo va a capo su più righe restando allineato all'icona */
-.nav-item-firma {
+.nav-group[data-group="firma-digitale"] .nav-group-title {
     align-items: flex-start;
-    font-size: 0.72rem;
     line-height: 1.4;
     letter-spacing: 0.04em;
 }
 
-.nav-item-firma i {
-    margin-top: 2px;
+.nav-group[data-group="firma-digitale"] .nav-group-title > i {
+    margin-top: 1px;
 }
 
 /* Spazio tra una sezione del menu e la successiva (es. Deleghe) */
@@ -1854,6 +1854,25 @@ body.tabella-resize * {
     color: var(--text-muted);
     font-size: 0.85rem;
 }
+
+/* Stato di compilazione delle sezioni (elenco Firma digitale): etichetta
+   verde quando la sezione è completa, arancione con i campi pieni/totali
+   quando è parziale. */
+.firma-stato {
+    display: inline-block;
+    margin: 2px 4px 2px 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Verde se la sezione è compilata tutta, giallo se lo è solo in parte */
+.firma-stato.completa { background: var(--success-bg); color: var(--success); }
+.firma-stato.parziale { background: rgba(234, 179, 8, 0.1); color: #ca8a04; }
+
+[data-theme="dark"] .firma-stato.parziale { background: rgba(234, 179, 8, 0.18); color: #facc15; }
 
 /* Badge tipo anagrafica */
 .status-badge.tipo-fisica { background: var(--info-bg); color: var(--info); }
