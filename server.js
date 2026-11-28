@@ -94,7 +94,8 @@ const TABLES = new Set([
   'deleghe',
   'marchi',
   'promemoria',
-  'verifiche_antiriciclaggio'
+  'verifiche_antiriciclaggio',
+  'servizi_firma'
 ]);
 
 // Pool di connessioni verso il database dell'app.
@@ -222,6 +223,39 @@ const TABELLE_AGGIUNTE = [
       '  `data_scadenza` DATE NULL,' +
       '  `fatto` TINYINT(1) NOT NULL DEFAULT 0,' +
       '  `note` TEXT NULL,' +
+      '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
+      '  PRIMARY KEY (`id`)' +
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+  },
+  {
+    // Firma digitale - ADE - SPID - CIE - Tessera Sanitaria.
+    // Password e PIN sono di testo (non numerici): i PIN possono essere
+    // alfanumerici e iniziano spesso con lo 0.
+    nome: 'servizi_firma',
+    sql: 'CREATE TABLE IF NOT EXISTS `servizi_firma` (' +
+      '  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,' +
+      '  `cognome` VARCHAR(255) NULL,' +
+      '  `nome` VARCHAR(255) NULL,' +
+      '  `codice_fiscale` VARCHAR(16) NULL,' +
+      '  `firma_data_scadenza` DATE NULL,' +
+      '  `firma_data_restituzione` DATE NULL,' +
+      '  `firma_remota` TINYINT(1) NOT NULL DEFAULT 0,' +
+      '  `firma_note` TEXT NULL,' +
+      '  `ade_password_iniziale` VARCHAR(255) NULL,' +
+      '  `ade_codice_fiscale` VARCHAR(16) NULL,' +
+      '  `ade_password` VARCHAR(255) NULL,' +
+      '  `ade_pin` VARCHAR(255) NULL,' +
+      '  `ade_dismesso` TINYINT(1) NOT NULL DEFAULT 0,' +
+      '  `ade_ragione_sociale` VARCHAR(255) NULL,' +
+      '  `ade_pin_ragione_sociale` VARCHAR(255) NULL,' +
+      '  `ade_note` TEXT NULL,' +
+      '  `spid_gestore` VARCHAR(255) NULL,' +
+      '  `spid_nome_utente` VARCHAR(255) NULL,' +
+      '  `spid_password` VARCHAR(255) NULL,' +
+      '  `spid_pin_applicazione` VARCHAR(255) NULL,' +
+      '  `cie_password` VARCHAR(255) NULL,' +
+      '  `cie_pin` VARCHAR(255) NULL,' +
+      '  `ts_pin` VARCHAR(255) NULL,' +
       '  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,' +
       '  PRIMARY KEY (`id`)' +
       ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'

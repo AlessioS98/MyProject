@@ -369,6 +369,27 @@ input[type="week"]::-webkit-calendar-picker-indicator {
     margin-bottom: 10px;
 }
 
+/* Voci fuori dai gruppi scritte in maiuscolo (Generale, Promemoria,
+   Firma digitale - ADE - SPID - CIE - Tessera Sanitaria) */
+.nav-item-maiuscolo {
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+}
+
+/* Voce lunga del menu (Firma digitale - ADE - SPID - CIE - Tessera
+   Sanitaria): il testo va a capo su più righe restando allineato all'icona */
+.nav-item-firma {
+    align-items: flex-start;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+}
+
+.nav-item-firma i {
+    margin-top: 2px;
+}
+
 /* Spazio tra una sezione del menu e la successiva (es. Deleghe) */
 .nav-group + .nav-group {
     margin-top: 2px;
@@ -2454,6 +2475,17 @@ body.tabella-resize * {
 
 .form-group-box .form-group {
     margin-top: 4px;
+}
+
+/* Casella di spunta accanto a un campo (Remota, Dismesso) */
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
 }
 
 /* Canoni annuali: ogni canone è un riquadro separato per ordine visivo */

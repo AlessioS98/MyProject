@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Contratti di Affitto</title>
-    <link rel="stylesheet" href="styles.css?v=44">
+    <link rel="stylesheet" href="styles.css?v=51">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
             </button>
         </div>
         <nav class="sidebar-nav">
-            <a href="#" class="nav-item active" data-page="generale">
+            <a href="#" class="nav-item nav-item-maiuscolo active" data-page="generale">
                 <i class="fas fa-home"></i>
                 <span>Generale</span>
             </a>
@@ -101,7 +101,12 @@
                 </div>
             </div>
 
-            <a href="#" class="nav-item" data-page="promemoria">
+            <a href="#" class="nav-item nav-item-firma nav-item-maiuscolo" data-page="firma-digitale">
+                <i class="fas fa-id-card-clip"></i>
+                <span>FIRMA DIGITALE - ADE - SPID - CIE - TESSERA SANITARIA</span>
+            </a>
+
+            <a href="#" class="nav-item nav-item-maiuscolo" data-page="promemoria">
                 <i class="fas fa-thumbtack"></i>
                 <span>Promemoria</span>
             </a>
@@ -610,6 +615,38 @@
             </div>
         </section>
 
+        <!-- Page: Firma digitale - ADE - SPID - CIE - Tessera Sanitaria -->
+        <section class="page" id="page-firma-digitale">
+            <div class="page-header">
+                <div>
+                    <h1>Firma digitale - ADE - SPID - CIE - TESSERA SANITARIA</h1>
+                    <p class="page-subtitle">Firma digitale, Agenzia delle Entrate, SPID, CIE e Tessera Sanitaria</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" data-action="new-servizio-firma">
+                        <i class="fas fa-plus"></i> Nuovo Inserimento
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Soggetto</th>
+                            <th>Codice Fiscale</th>
+                            <th>Scadenza Firma</th>
+                            <th>Restituzione</th>
+                            <th>Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="serviziFirmaTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
         <!-- Page: Promemoria -->
         <section class="page" id="page-promemoria">
             <div class="page-header">
@@ -842,6 +879,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="db-client.js?v=1"></script>
-    <script src="app.js?v=98"></script>
+    <script src="app.js?v=108"></script>
 </body>
 </html>

@@ -11,7 +11,7 @@
 const db = new MySqlDb();
 
 // --- Data Cache ---
-var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [], promemoria: [], verifiche: [] };
+var appData = { contratti: [], persone: [], immobili: [], scadenze: [], canoni_annuali: [], contratto_locatori: [], contratto_conduttori: [], contratto_immobili: [], deleghe: [], marchi: [], promemoria: [], verifiche: [], servizi_firma: [] };
 
 // --- Utility Functions ---
 function formatCurrency(n) {
@@ -1101,8 +1101,9 @@ function prefissoCampiSoggetto(inputEl) {
     // Righe locatore/conduttore del contratto (classi loc-* e cond-*)
     if (cl.indexOf('loc-cognome') >= 0 || cl.indexOf('loc-nome') >= 0 || cl.indexOf('loc-rs') >= 0) return 'loc-';
     if (cl.indexOf('cond-cognome') >= 0 || cl.indexOf('cond-nome') >= 0 || cl.indexOf('cond-rs') >= 0) return 'cond-';
-    // Form delega, marchio, persona e verifica antiriciclaggio (id dl_*, mk_*, pf_*, vf_*)
-    var m = /^(dl|mk|pf|vf)_(cognome|nome|rs)$/.exec(inputEl.id || '');
+    // Form delega, marchio, persona, verifica antiriciclaggio e firma
+    // digitale (id dl_*, mk_*, pf_*, vf_*, sf_*)
+    var m = /^(dl|mk|pf|vf|sf)_(cognome|nome|rs)$/.exec(inputEl.id || '');
     return m ? m[1] + '_' : '';
 }
 
@@ -1492,7 +1493,8 @@ async function loadAllData() {
             db.from('deleghe').select('*'),
             db.from('marchi').select('*'),
             db.from('promemoria').select('*'),
-            db.from('verifiche_antiriciclaggio').select('*')
+            db.from('verifiche_antiriciclaggio').select('*'),
+            db.from('servizi_firma').select('*')
         ]);
         // Se una delle letture iniziali e' fallita non ha senso proseguire
         // con tabelle vuote: mostriamo subito il motivo (es. pagina aperta
@@ -1507,7 +1509,7 @@ async function loadAllData() {
         var persone = results[0], immobili = results[1], contratti = results[2],
             scadenze = results[3], canoni = results[4], locRel = results[5], condRel = results[6],
             immRel = results[7], deleghe = results[8], marchi = results[9],
-            promemoria = results[10], verifiche = results[11];
+            promemoria = results[10], verifiche = results[11], serviziFirma = results[12];
         appData.persone = persone.data || [];
         appData.immobili = immobili.data || [];
         appData.contratti = contratti.data || [];
@@ -1520,6 +1522,7 @@ async function loadAllData() {
         appData.marchi = marchi.data || [];
         appData.promemoria = promemoria.data || [];
         appData.verifiche = verifiche.data || [];
+        appData.servizi_firma = serviziFirma.data || [];
 
         // Backfill: per ogni contratto crea la scadenza di ogni canone senza
         // cedolare secca che manca (es. contratti creati prima di questa
@@ -1585,9 +1588,18 @@ function aggiornaTitoloSezione(page) {
     var nome = voce.querySelector('span');
     var nomeSezione = sezione ? sezione.textContent.trim() : '';
     var nomeVoce = nome ? nome.textContent.trim() : '';
-    // Se la voce ha lo stesso nome della sezione (es. Deleghe) il titolo non
-    // si ripete: "Deleghe", non "Deleghe - Deleghe".
-    var titolo = (nomeSezione && nomeSezione !== nomeVoce) ? nomeSezione + ' - ' + nomeVoce : (nomeVoce || nomeSezione);
+    // Il nome della sezione va sempre in maiuscolo, quello della voce resta
+    // com'è: "ANTIRICICLAGGIO - Verifiche", "CONTRATTI DI LOCAZIONE -
+    // Scadenze". Anche quando la voce si chiama come la sezione il titolo
+    // completo si ripete: "DELEGHE - Deleghe", "MARCHI - Marchi". Le voci
+    // fuori dai gruppi (Generale, Promemoria, Firma digitale) sono scritte
+    // tutte in maiuscolo, come nel menu.
+    var titolo;
+    if (nomeSezione && nomeVoce) {
+        titolo = nomeSezione.toUpperCase() + ' - ' + nomeVoce;
+    } else {
+        titolo = (nomeVoce || nomeSezione).toUpperCase();
+    }
     var h1 = document.querySelector('#page-' + page + ' .page-header h1');
     if (h1) h1.textContent = titolo;
     document.title = titolo;
@@ -2580,6 +2592,146 @@ async function deleteMarchio(id) {
     showToast('Marchio eliminato', 'info');
 }
 
+// --- Firma digitale - ADE - SPID - CIE - Tessera Sanitaria ---
+// Ogni riga di servizi_firma raccoglie i dati del soggetto (Inserimento) e
+// quelli dei cinque servizi. Password e PIN si salvano e si mostrano in
+// chiaro, come richiesto.
+function getServizioFirmaLabel(s) {
+    if (!s) return '';
+    var nome = [s.cognome, s.nome].filter(Boolean).join(' ').trim();
+    return (nome || String(s.codice_fiscale || '')).trim();
+}
+
+function renderServiziFirma() {
+    var tbody = document.getElementById('serviziFirmaTableBody');
+    if (!tbody) return;
+    var list = (appData.servizi_firma || []).slice().sort(function(a, b) {
+        return getServizioFirmaLabel(a).localeCompare(getServizioFirmaLabel(b), 'it', { sensitivity: 'base' });
+    });
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="table-empty-cell">Nessun servizio registrato</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(s) {
+        // Colonne: Soggetto, Codice Fiscale, Scadenza Firma, Restituzione, Azioni
+        return '<tr><td>' + (getServizioFirmaLabel(s) || '-') + '</td>' +
+            '<td>' + (s.codice_fiscale || '-') + '</td>' +
+            '<td>' + (s.firma_data_scadenza ? formatDate(s.firma_data_scadenza) : '-') + '</td>' +
+            '<td>' + (s.firma_data_restituzione ? formatDate(s.firma_data_restituzione) : '-') + '</td>' +
+            '<td><div class="td-actions">' +
+            '<button type="button" data-action="view-servizio-firma" data-id="' + s.id + '" title="Visualizza"><i class="fas fa-eye"></i></button>' +
+            '<button type="button" class="danger" data-action="delete-servizio-firma" data-id="' + s.id + '" title="Elimina"><i class="fas fa-trash"></i></button>' +
+            '</div></td></tr>';
+    }).join('');
+}
+
+// Finestra di inserimento: sei riquadri come in "Nuovo Contratto" (barra del
+// titolo e campi sulla griglia), ognuno con i propri campi.
+function servizioFirmaFormHtml() {
+    var html = '<form id="servizioFirmaForm" class="form-grid">';
+
+    html += '<div class="form-section-title full"><i class="fas fa-circle-plus"></i> Inserimento</div>';
+    html += '<div class="form-group"><label>Codice Fiscale <span class="req">*</span></label><input type="text" id="sf_cf" autocomplete="off" required></div>';
+    html += '<div class="form-group"><label>Cognome <span class="req">*</span></label><input type="text" id="sf_cognome" autocomplete="off" required></div>';
+    html += '<div class="form-group"><label>Nome <span class="req">*</span></label><input type="text" id="sf_nome" autocomplete="off" required></div>';
+
+    html += '<div class="form-section-title full"><i class="fas fa-signature"></i> Firma Digitale</div>';
+    html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="sf_firma_scadenza"></div>';
+    html += '<div class="form-group"><label>Data Restituzione</label><input type="date" id="sf_firma_restituzione"></div>';
+    html += '<label class="form-check"><input type="checkbox" id="sf_firma_remota"> Remota</label></div>';
+    html += '<div class="form-group full"><label>Note</label><textarea id="sf_firma_note"></textarea></div>';
+
+    html += '<div class="form-section-title full"><i class="fas fa-landmark"></i> ADE</div>';
+    html += '<div class="form-group"><label>Password Iniziale</label><input type="text" id="sf_ade_password_iniziale" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>Codice Fiscale</label><input type="text" id="sf_ade_cf" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>Password</label><input type="text" id="sf_ade_password" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>PIN</label><input type="text" id="sf_ade_pin" autocomplete="off"></div>';
+    html += '<div class="form-group full"><label class="form-check"><input type="checkbox" id="sf_ade_dismesso"> Dismesso</label></div>';
+    html += '<div class="form-group"><label>Ragione Sociale</label><input type="text" id="sf_ade_rs" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>PIN</label><input type="text" id="sf_ade_pin_rs" autocomplete="off"></div>';
+    html += '<div class="form-group full"><label>Note</label><textarea id="sf_ade_note"></textarea></div>';
+
+    html += '<div class="form-section-title full"><i class="fas fa-id-badge"></i> SPID</div>';
+    html += '<div class="form-group"><label>Gestore</label><input type="text" id="sf_spid_gestore" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>Nome Utente</label><input type="text" id="sf_spid_nome_utente" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>Password</label><input type="text" id="sf_spid_password" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>PIN Applicazione</label><input type="text" id="sf_spid_pin" autocomplete="off"></div>';
+
+    html += '<div class="form-section-title full"><i class="fas fa-id-card"></i> CIE</div>';
+    html += '<div class="form-group"><label>Password</label><input type="text" id="sf_cie_password" autocomplete="off"></div>';
+    html += '<div class="form-group"><label>PIN</label><input type="text" id="sf_cie_pin" autocomplete="off"></div>';
+
+    html += '<div class="form-section-title full"><i class="fas fa-notes-medical"></i> Tessera Sanitaria</div>';
+    html += '<div class="form-group"><label>PIN</label><input type="text" id="sf_ts_pin" autocomplete="off"></div>';
+
+    html += '<div class="form-actions full">';
+    html += '<button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Salva</button>';
+    html += '</div>';
+    html += '</form>';
+    return html;
+}
+
+async function saveServizioFirma() {
+    var val = function(idCampo) {
+        var el = document.getElementById(idCampo);
+        return el ? String(el.value).trim() : '';
+    };
+    var chk = function(idCampo) {
+        var el = document.getElementById(idCampo);
+        return (el && el.checked) ? 1 : 0;
+    };
+    var cf = val('sf_cf');
+    var cognome = val('sf_cognome');
+    var nome = val('sf_nome');
+    if (!cf || !cognome || !nome) {
+        showToast('Compila codice fiscale, cognome e nome.', 'error');
+        return;
+    }
+    var dati = {
+        cognome: cognome,
+        nome: nome,
+        codice_fiscale: cf,
+        firma_data_scadenza: val('sf_firma_scadenza') || null,
+        firma_data_restituzione: val('sf_firma_restituzione') || null,
+        firma_remota: chk('sf_firma_remota'),
+        firma_note: val('sf_firma_note') || null,
+        ade_password_iniziale: val('sf_ade_password_iniziale') || null,
+        ade_codice_fiscale: val('sf_ade_cf') || null,
+        ade_password: val('sf_ade_password') || null,
+        ade_pin: val('sf_ade_pin') || null,
+        ade_dismesso: chk('sf_ade_dismesso'),
+        ade_ragione_sociale: val('sf_ade_rs') || null,
+        ade_pin_ragione_sociale: val('sf_ade_pin_rs') || null,
+        ade_note: val('sf_ade_note') || null,
+        spid_gestore: val('sf_spid_gestore') || null,
+        spid_nome_utente: val('sf_spid_nome_utente') || null,
+        spid_password: val('sf_spid_password') || null,
+        spid_pin_applicazione: val('sf_spid_pin') || null,
+        cie_password: val('sf_cie_password') || null,
+        cie_pin: val('sf_cie_pin') || null,
+        ts_pin: val('sf_ts_pin') || null
+    };
+    var ins = await db.from('servizi_firma').insert(dati).select('id').single();
+    if (ins.error) {
+        console.error('Errore insert servizio firma:', ins.error);
+        showToast('Errore salvataggio servizio', 'error');
+        return;
+    }
+    appData.servizi_firma.push({ id: ins.data.id, ...dati });
+    closeModal();
+    renderServiziFirma();
+    showToast('Servizio salvato!', 'success');
+}
+
+async function deleteServizioFirma(id) {
+    var { error } = await db.from('servizi_firma').delete().eq('id', id);
+    if (error) { showToast('Errore eliminazione: ' + error.message, 'error'); return; }
+    appData.servizi_firma = (appData.servizi_firma || []).filter(function(s) { return s.id !== id; });
+    closeModal();
+    renderServiziFirma();
+    showToast('Servizio eliminato', 'info');
+}
+
 // --- Verifiche antiriciclaggio ---
 // Etichetta del soggetto: ragione sociale per le aziende, cognome e nome per le
 // persone fisiche (il codice fiscale resta come ultima risorsa).
@@ -3262,6 +3414,7 @@ async function refreshPage(page) {
         case 'deleghe': renderDeleghe(); break;
         case 'scadenze-deleghe': renderScadenzeDeleghe(); break;
         case 'marchi': renderMarchi(); break;
+        case 'firma-digitale': renderServiziFirma(); break;
         case 'scadenze-marchi': renderScadenzeMarchi(); break;
         case 'promemoria': renderPromemoria(); break;
         case 'antiriciclaggio': renderVerifiche(); break;
@@ -3310,6 +3463,12 @@ document.addEventListener('click', function(e) {
         case 'edit-verifica': openModal('editVerifica', id); break;
         case 'delete-verifica': openModal('deleteVerificaConfirm', id); break;
         case 'confirm-delete-verifica': deleteVerifica(id); break;
+        // Firma digitale - ADE - SPID - CIE - Tessera Sanitaria: il pulsante di
+        // inserimento apre la finestra con i riquadri dei servizi.
+        case 'new-servizio-firma': openModal('newServizioFirma'); break;
+        case 'view-servizio-firma': openModal('viewServizioFirma', id); break;
+        case 'delete-servizio-firma': openModal('deleteServizioFirmaConfirm', id); break;
+        case 'confirm-delete-servizio-firma': deleteServizioFirma(id); break;
         case 'export-verifiche-excel': exportVerificheExcel(); break;
         case 'export-scadenze-antiriciclaggio-excel': exportScadenzeAntiriciclaggioExcel(); break;
         case 'export-marchi-excel': exportMarchiExcel(); break;
@@ -4269,6 +4428,52 @@ function openModal(type, id) {
         html += '<div class="form-actions full"><button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button><button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Conferma Completamento</button></div>';
         html += '</form>';
 
+    } else if (type === 'newServizioFirma') {
+        title.textContent = 'Nuovo Inserimento';
+        html = servizioFirmaFormHtml();
+
+    } else if (type === 'viewServizioFirma') {
+        var sfv = (appData.servizi_firma || []).find(function(x) { return x.id === id; });
+        if (!sfv) return;
+        title.textContent = 'Dettagli Servizio';
+        var siNo = function(v) { return v ? 'Sì' : 'No'; };
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md)">';
+        html += '<div class="contract-detail"><label>Cognome</label><span>' + (sfv.cognome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Nome</label><span>' + (sfv.nome || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Codice Fiscale</label><span>' + (sfv.codice_fiscale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Firma - Data Scadenza</label><span>' + formatDate(sfv.firma_data_scadenza) + '</span></div>';
+        html += '<div class="contract-detail"><label>Firma - Data Restituzione</label><span>' + formatDate(sfv.firma_data_restituzione) + '</span></div>';
+        html += '<div class="contract-detail"><label>Firma - Remota</label><span>' + siNo(sfv.firma_remota) + '</span></div>';
+        html += '<div class="contract-detail"><label>Firma - Note</label><span>' + (sfv.firma_note || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Password Iniziale</label><span>' + (sfv.ade_password_iniziale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Codice Fiscale</label><span>' + (sfv.ade_codice_fiscale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Password</label><span>' + (sfv.ade_password || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - PIN</label><span>' + (sfv.ade_pin || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Dismesso</label><span>' + siNo(sfv.ade_dismesso) + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Ragione Sociale</label><span>' + (sfv.ade_ragione_sociale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - PIN Ragione Sociale</label><span>' + (sfv.ade_pin_ragione_sociale || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>ADE - Note</label><span>' + (sfv.ade_note || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>SPID - Gestore</label><span>' + (sfv.spid_gestore || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>SPID - Nome Utente</label><span>' + (sfv.spid_nome_utente || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>SPID - Password</label><span>' + (sfv.spid_password || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>SPID - PIN Applicazione</label><span>' + (sfv.spid_pin_applicazione || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>CIE - Password</label><span>' + (sfv.cie_password || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>CIE - PIN</label><span>' + (sfv.cie_pin || '-') + '</span></div>';
+        html += '<div class="contract-detail"><label>Tessera Sanitaria - PIN</label><span>' + (sfv.ts_pin || '-') + '</span></div>';
+        html += '</div>';
+
+    } else if (type === 'deleteServizioFirmaConfirm') {
+        var sfd = (appData.servizi_firma || []).find(function(x) { return x.id === id; });
+        title.textContent = 'Elimina Servizio';
+        html = '<div style="padding:16px;background:var(--bg);border-radius:var(--radius-md);margin-bottom:16px;border-left:4px solid var(--danger)">';
+        html += '<strong style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Attenzione!</strong><br>';
+        html += '<span>Stai per eliminare il servizio di <strong>' + (sfd ? getServizioFirmaLabel(sfd) : 'N/A') + '</strong>.</span>';
+        html += '</div>';
+        html += '<div class="form-actions full">';
+        html += '<button type="button" class="btn btn-outline" data-action="close-modal">Annulla</button>';
+        html += '<button type="button" class="btn btn-danger" data-action="confirm-delete-servizio-firma" data-id="' + id + '"><i class="fas fa-trash"></i> Elimina</button>';
+        html += '</div>';
+
     }
 
     body.innerHTML = html;
@@ -4460,6 +4665,27 @@ function openModal(type, id) {
 
     var prf = document.getElementById('promemoriaForm');
     if (prf) prf.addEventListener('submit', function(e) { e.preventDefault(); savePromemoria(); });
+
+    var sff = document.getElementById('servizioFirmaForm');
+    if (sff) {
+        sff.addEventListener('submit', function(e) { e.preventDefault(); saveServizioFirma(); });
+        // Suggerimenti dai dati gia' presenti, stessa logica delle altre
+        // finestre: Cognome e Nome propongono i valori dell'anagrafica e il
+        // Codice Fiscale propone le persone fisiche, compilando gli altri due
+        // campi alla scelta.
+        setupPersonFieldAutocomplete(document.getElementById('sf_cognome'), 'cognome');
+        setupPersonFieldAutocomplete(document.getElementById('sf_nome'), 'nome');
+        var sfCf = document.getElementById('sf_cf');
+        if (sfCf) setupCfAutocomplete(sfCf, sff, {
+            tipo: 'pf',
+            onPick: function(p) {
+                var c = document.getElementById('sf_cognome');
+                var n = document.getElementById('sf_nome');
+                if (c) c.value = p.cognome || '';
+                if (n) n.value = p.nome || '';
+            }
+        });
+    }
 
     // Delete confirmation modal
     var deleteInput = document.getElementById('deleteConfirmInput');
