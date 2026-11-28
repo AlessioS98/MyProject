@@ -2608,14 +2608,14 @@ function getServizioFirmaLabel(s) {
     return (nome || String(s.codice_fiscale || '')).trim();
 }
 
-// Sezioni della finestra Inserimento e campi che le compongono. Le caselle di
-// spunta (Remota, Dismesso) sono facoltative e non contano per il
-// completamento: una sezione è completa quando tutti i suoi campi sono
-// compilati, parziale quando ne è compilato almeno uno.
+// Sezioni della finestra Inserimento e campi che le compongono. Anche le
+// caselle di spunta (Remota, Dismesso) contano come campi compilati, perché
+// hanno sempre un valore (Sì/No): una sezione è completa quando tutti i suoi
+// campi sono compilati, parziale quando ne è compilato almeno uno.
 var SEZIONI_SERVIZIO_FIRMA = [
     { nome: 'Inserimento', campi: ['codice_fiscale', 'cognome', 'nome'] },
-    { nome: 'Firma digitale', campi: ['firma_data_scadenza', 'firma_data_restituzione', 'firma_note'] },
-    { nome: 'ADE', campi: ['ade_password_iniziale', 'ade_codice_fiscale', 'ade_password', 'ade_pin', 'ade_ragione_sociale', 'ade_pin_ragione_sociale', 'ade_note'] },
+    { nome: 'Firma digitale', campi: ['firma_data_scadenza', 'firma_data_restituzione', 'firma_note', 'firma_remota'] },
+    { nome: 'ADE', campi: ['ade_password_iniziale', 'ade_codice_fiscale', 'ade_password', 'ade_pin', 'ade_ragione_sociale', 'ade_pin_ragione_sociale', 'ade_note', 'ade_dismesso'] },
     { nome: 'SPID', campi: ['spid_gestore', 'spid_nome_utente', 'spid_password', 'spid_pin_applicazione'] },
     { nome: 'CIE', campi: ['cie_password', 'cie_pin'] },
     { nome: 'Tessera sanitaria', campi: ['ts_pin'] }
@@ -2630,7 +2630,7 @@ var COLONNE_ELENCO_FIRMA = [
         { label: 'Data Scadenza', campo: 'firma_data_scadenza', tipo: 'data' },
         { label: 'Data Restituzione', campo: 'firma_data_restituzione', tipo: 'data' },
         { label: 'Remota', campo: 'firma_remota', tipo: 'bool' },
-        { label: 'Note', campo: 'firma_note' }
+        { label: 'Note', campo: 'firma_note', tipo: 'compilato' }
     ] },
     { nome: 'ADE', titolo: 'ADE', colonne: [
         { label: 'Password Iniziale', campo: 'ade_password_iniziale' },
@@ -2639,8 +2639,8 @@ var COLONNE_ELENCO_FIRMA = [
         { label: 'PIN', campo: 'ade_pin' },
         { label: 'Dismesso', campo: 'ade_dismesso', tipo: 'bool' },
         { label: 'Ragione Sociale', campo: 'ade_ragione_sociale' },
-        { label: 'PIN Ragione Sociale', campo: 'ade_pin_ragione_sociale' },
-        { label: 'Note', campo: 'ade_note' }
+        { label: 'PIN', campo: 'ade_pin_ragione_sociale' },
+        { label: 'Note', campo: 'ade_note', tipo: 'compilato' }
     ] },
     { nome: 'SPID', titolo: 'SPID', colonne: [
         { label: 'Gestore', campo: 'spid_gestore' },
@@ -2657,12 +2657,23 @@ var COLONNE_ELENCO_FIRMA = [
     ] }
 ];
 
+// Caselle di spunta: valgono sempre come campo compilato (Sì o No)
+var CASCELLE_SERVIZIO_FIRMA = ['firma_remota', 'ade_dismesso'];
+
+function campoCompilatoServizioFirma(s, campo) {
+    if (!s) return false;
+    if (CASCELLE_SERVIZIO_FIRMA.indexOf(campo) >= 0) return true;
+    return s[campo] != null && String(s[campo]).trim() !== '';
+}
+
 // Stato di compilazione delle sezioni: solo quelle con almeno un campo
-// compilato, con il numero di campi pieni e il totale.
+// compilato, con il numero di campi pieni e il totale. Le caselle di spunta
+// valgono sempre come compilate, quindi Firma Digitale e ADE compaiono per ogni
+// servizio (almeno con la loro casella a No o Sì).
 function getStatoSezioniServizioFirma(s) {
     return SEZIONI_SERVIZIO_FIRMA.map(function(sez) {
         var compilati = sez.campi.filter(function(c) {
-            return s && s[c] != null && String(s[c]).trim() !== '';
+            return campoCompilatoServizioFirma(s, c);
         }).length;
         return { nome: sez.nome, compilati: compilati, totale: sez.campi.length };
     }).filter(function(st) { return st.compilati > 0; });
@@ -2703,12 +2714,28 @@ function popolaFiltroSezioneFirma() {
     sel.value = corrente;
 }
 
+// Ordine dell'elenco: prima il cognome, poi il nome. Le voci senza
+// cognome/nome finiscono in fondo invece che in cima.
+function confrontaServiziFirma(a, b) {
+    var cmp = function(x, y) {
+        x = String(x == null ? '' : x).trim();
+        y = String(y == null ? '' : y).trim();
+        if (!x && y) return 1;
+        if (x && !y) return -1;
+        return x.localeCompare(y, 'it', { sensitivity: 'base' });
+    };
+    return cmp(a.cognome, b.cognome) || cmp(a.nome, b.nome);
+}
+
 // Valore di un campo nella tabella della singola parte.
 function servizioFirmaValoreCella(col, s) {
     var val = s ? s[col.campo] : null;
+    var compilato = val != null && String(val).trim() !== '';
     if (col.tipo === 'bool') return val ? 'Sì' : 'No';
+    // 'compilato' (es. le Note): non mostra il testo, dice solo se c'è o no
+    if (col.tipo === 'compilato') return compilato ? 'Sì' : 'No';
     if (col.tipo === 'data') return val ? formatDate(val) : '-';
-    return val != null && String(val).trim() !== '' ? String(val) : '-';
+    return compilato ? String(val) : '-';
 }
 
 function renderServiziFirma() {
@@ -2728,15 +2755,12 @@ function renderServiziFirma() {
             '</div></td>';
     };
 
-    var list = (appData.servizi_firma || []).slice().sort(function(a, b) {
-        return getServizioFirmaLabel(a).localeCompare(getServizioFirmaLabel(b), 'it', { sensitivity: 'base' });
-    });
+    var list = (appData.servizi_firma || []).slice().sort(confrontaServiziFirma);
 
     // Intestazioni: nel completo Cognome, Nome, Compilati, Azioni; per una
     // singola parte Cognome, Nome, i campi della parte, Azioni.
     var intestazioni = '<tr><th>Cognome</th><th>Nome</th>';
     if (sez) {
-        intestazioni += '<th>Codice Fiscale</th>';
         sez.colonne.forEach(function(col) { intestazioni += '<th>' + col.label + '</th>'; });
     } else {
         intestazioni += '<th>Compilati</th>';
@@ -2755,7 +2779,7 @@ function renderServiziFirma() {
         });
     }
 
-    var colonneCount = 3 + (sez ? 1 + sez.colonne.length : 0);
+    var colonneCount = 3 + (sez ? sez.colonne.length : 0);
     if (list.length === 0) {
         tbody.innerHTML = '<tr><td colspan="' + colonneCount + '" class="table-empty-cell">' +
             (sez ? 'Nessun servizio con ' + sez.titolo + ' compilata' : 'Nessun servizio registrato') + '</td></tr>';
@@ -2764,7 +2788,6 @@ function renderServiziFirma() {
     tbody.innerHTML = list.map(function(s) {
         var righe = '<td>' + (s.cognome || '-') + '</td><td>' + (s.nome || '-') + '</td>';
         if (sez) {
-            righe += '<td>' + (s.codice_fiscale || '-') + '</td>';
             sez.colonne.forEach(function(col) { righe += '<td>' + servizioFirmaValoreCella(col, s) + '</td>'; });
         } else {
             righe += '<td>' + servizioFirmaCellaCompilati(s) + '</td>';
@@ -2795,7 +2818,7 @@ function servizioFirmaFormHtml(s) {
     html += '<div class="form-section-title full"><i class="fas fa-signature"></i> Firma Digitale</div>';
     html += '<div class="form-group"><label>Data Scadenza</label><input type="date" id="sf_firma_scadenza" value="' + d('firma_data_scadenza') + '"></div>';
     html += '<div class="form-group"><label>Data Restituzione</label><input type="date" id="sf_firma_restituzione" value="' + d('firma_data_restituzione') + '"></div>';
-    html += '<div class="form-group"><label>Remota</label><label class="form-check"><input type="checkbox" id="sf_firma_remota"' + chk('firma_remota') + '> Remota</label></div>';
+    html += '<div class="form-group"><label class="form-check"><input type="checkbox" id="sf_firma_remota"' + chk('firma_remota') + '> Remota</label></div>';
     html += '<div class="form-group full"><label>Note</label><textarea id="sf_firma_note">' + v('firma_note') + '</textarea></div>';
 
     html += '<div class="form-section-title full"><i class="fas fa-landmark"></i> ADE</div>';
@@ -6387,9 +6410,7 @@ function exportServiziFirmaExcel() {
     var sezione = sel ? sel.value : '';
     var sez = COLONNE_ELENCO_FIRMA.filter(function(x) { return x.nome === sezione; })[0] || null;
 
-    var list = (appData.servizi_firma || []).slice().sort(function(a, b) {
-        return getServizioFirmaLabel(a).localeCompare(getServizioFirmaLabel(b), 'it', { sensitivity: 'base' });
-    });
+    var list = (appData.servizi_firma || []).slice().sort(confrontaServiziFirma);
     if (sez) {
         list = list.filter(function(s) {
             return getStatoSezioniServizioFirma(s).some(function(st) { return st.nome === sez.nome; });
@@ -6402,23 +6423,23 @@ function exportServiziFirmaExcel() {
 
     var COLONNE, LARGHEZZE, righeDati;
     if (sez) {
-        COLONNE = ['Cognome', 'Nome', 'Codice Fiscale'];
-        LARGHEZZE = [28, 28, 22];
+        COLONNE = ['Cognome', 'Nome'];
+        LARGHEZZE = [28, 28];
         sez.colonne.forEach(function(col) {
             COLONNE.push(col.label);
-            LARGHEZZE.push(col.tipo === 'data' ? 18 : col.tipo === 'bool' ? 12 : col.label === 'Note' ? 40 : 22);
+            LARGHEZZE.push(col.tipo === 'data' ? 18 : (col.tipo === 'bool' || col.tipo === 'compilato') ? 12 : 22);
         });
         var valoreExcel = function(col, s) {
             var val = s ? s[col.campo] : null;
             if (col.tipo === 'bool') return val ? 'Sì' : 'No';
+            if (col.tipo === 'compilato') return val != null && String(val).trim() !== '' ? 'Sì' : 'No';
             if (col.tipo === 'data') return val ? formatDateExcel(val) : '';
             return val == null ? '' : String(val);
         };
         righeDati = list.map(function(s) {
             var celle = [
                 { t: 's', s: S_TESTO, v: s.cognome || '' },
-                { t: 's', s: S_TESTO, v: s.nome || '' },
-                { t: 's', s: S_TESTO, v: s.codice_fiscale || '' }
+                { t: 's', s: S_TESTO, v: s.nome || '' }
             ];
             sez.colonne.forEach(function(col) {
                 celle.push({ t: 's', s: S_TESTO, v: valoreExcel(col, s) });
